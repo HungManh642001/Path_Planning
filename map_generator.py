@@ -243,11 +243,192 @@ def scenario4_complex_maze():
     })
 
 
+# ============ EASY SCENARIOS (Few obstacles, simple paths) ============
+
+def scenario5_sparse_islands():
+    """Scenario 5: Easy - Sparse islands, plenty of open water"""
+    return create_scenario({
+        'start': (5000, 5000),
+        'start_heading': math.pi / 4,
+        'goal': (450000, 450000),
+        'goal_heading': math.pi / 4,
+        'num_islands': 3,
+        'num_sam': 1,
+        'seed': 111
+    })
+
+
+def scenario6_coastal_path():
+    """Scenario 6: Easy - Light coastal defense, open corridor"""
+    return create_scenario({
+        'start': (10000, 10000),
+        'start_heading': 0,
+        'goal': (480000, 480000),
+        'goal_heading': 0,
+        'num_islands': 2,
+        'num_sam': 2,
+        'seed': 222
+    })
+
+
+def scenario7_diagonal_crossing():
+    """Scenario 7: Easy - Minimal obstacles, diagonal crossing"""
+    return create_scenario({
+        'start': (20000, 20000),
+        'start_heading': math.pi / 4,
+        'goal': (470000, 470000),
+        'goal_heading': math.pi / 4,
+        'num_islands': 4,
+        'num_sam': 0,
+        'seed': 333
+    })
+
+
+def scenario8_open_with_sam():
+    """Scenario 8: Easy - Open terrain with scattered SAM sites"""
+    return create_scenario({
+        'start': (10000, 250000),
+        'start_heading': 0,
+        'goal': (480000, 250000),
+        'goal_heading': 0,
+        'num_islands': 1,
+        'num_sam': 3,
+        'seed': 444
+    })
+
+
+# ============ MEDIUM SCENARIOS (Moderate complexity) ============
+
+def scenario9_island_archipelago():
+    """Scenario 9: Medium - Archipelago with multiple islands"""
+    return create_scenario({
+        'start': (5000, 250000),
+        'start_heading': 0,
+        'goal': (490000, 250000),
+        'goal_heading': 0,
+        'num_islands': 8,
+        'num_sam': 2,
+        'seed': 555
+    })
+
+
+def scenario10_dense_defense():
+    """Scenario 10: Medium - Dense SAM defense network"""
+    return create_scenario({
+        'start': (50000, 50000),
+        'start_heading': math.pi / 4,
+        'goal': (450000, 450000),
+        'goal_heading': math.pi / 4,
+        'num_islands': 3,
+        'num_sam': 8,
+        'seed': 666
+    })
+
+
+def scenario11_serpentine_route():
+    """Scenario 11: Medium - Serpentine path through obstacle field"""
+    return create_scenario({
+        'start': (50000, 100000),
+        'start_heading': 0,
+        'goal': (450000, 400000),
+        'goal_heading': 0,
+        'num_islands': 7,
+        'num_sam': 4,
+        'seed': 777
+    })
+
+
+def scenario12_perimeter_defense():
+    """Scenario 12: Medium - Target protected by perimeter defenses"""
+    return create_scenario({
+        'start': (10000, 250000),
+        'start_heading': 0,
+        'goal': (480000, 250000),
+        'goal_heading': 0,
+        'num_islands': 6,
+        'num_sam': 5,
+        'seed': 888
+    })
+
+
+# ============ HARD SCENARIOS (High complexity, many obstacles) ============
+
+def scenario13_dense_island_field():
+    """Scenario 13: Hard - Very dense island field"""
+    return create_scenario({
+        'start': (25000, 25000),
+        'start_heading': math.pi / 3,
+        'goal': (475000, 475000),
+        'goal_heading': math.pi / 3,
+        'num_islands': 18,
+        'num_sam': 3,
+        'seed': 999
+    })
+
+
+def scenario14_combined_threat():
+    """Scenario 14: Hard - Combined island and SAM threat"""
+    return create_scenario({
+        'start': (30000, 30000),
+        'start_heading': 0,
+        'goal': (470000, 470000),
+        'goal_heading': 0,
+        'num_islands': 12,
+        'num_sam': 10,
+        'seed': 1111
+    })
+
+
+def scenario15_narrow_channel():
+    """Scenario 15: Hard - Forced through narrow channels between obstacles"""
+    return create_scenario({
+        'start': (50000, 250000),
+        'start_heading': 0,
+        'goal': (450000, 250000),
+        'goal_heading': 0,
+        'num_islands': 15,
+        'num_sam': 4,
+        'seed': 2222
+    })
+
+
+def scenario16_extreme_complexity():
+    """Scenario 16: Very Hard - Extreme complexity test"""
+    return create_scenario({
+        'start': (10000, 10000),
+        'start_heading': math.pi / 6,
+        'goal': (490000, 490000),
+        'goal_heading': math.pi / 6,
+        'num_islands': 20,
+        'num_sam': 12,
+        'seed': 3333
+    })
+
+
 def get_all_scenarios():
-    """Return all predefined scenarios"""
+    """Return all 16 predefined scenarios organized by difficulty"""
     return {
-        'open_ocean': scenario1_open_ocean,
-        'single_obstacle': scenario2_single_obstacle,
-        'narrow_gap': scenario3_narrow_gap,
-        'complex_maze': scenario4_complex_maze,
+        # Original scenarios
+        'scenario_01_open_ocean': scenario1_open_ocean,
+        'scenario_02_single_obstacle': scenario2_single_obstacle,
+        'scenario_03_narrow_gap': scenario3_narrow_gap,
+        'scenario_04_complex_maze': scenario4_complex_maze,
+        
+        # Easy scenarios
+        'scenario_05_sparse_islands': scenario5_sparse_islands,
+        'scenario_06_coastal_path': scenario6_coastal_path,
+        'scenario_07_diagonal_crossing': scenario7_diagonal_crossing,
+        'scenario_08_open_with_sam': scenario8_open_with_sam,
+        
+        # Medium scenarios
+        'scenario_09_island_archipelago': scenario9_island_archipelago,
+        'scenario_10_dense_defense': scenario10_dense_defense,
+        'scenario_11_serpentine_route': scenario11_serpentine_route,
+        'scenario_12_perimeter_defense': scenario12_perimeter_defense,
+        
+        # Hard scenarios
+        'scenario_13_dense_island_field': scenario13_dense_island_field,
+        'scenario_14_combined_threat': scenario14_combined_threat,
+        'scenario_15_narrow_channel': scenario15_narrow_channel,
+        'scenario_16_extreme_complexity': scenario16_extreme_complexity,
     }

@@ -69,7 +69,7 @@ def print_result(scenario_name, result, elapsed_time):
 
 def run_scenario(scenario_func, scenario_name, output_dir="results"):
     """
-    Run a single scenario.
+    Run a single scenario with performance instrumentation.
     
     Args:
         scenario_func: Function that returns a scenario dict
@@ -77,63 +77,95 @@ def run_scenario(scenario_func, scenario_name, output_dir="results"):
         output_dir: Directory to save results
     
     Returns:
-        Dict with result and scenario data
+        Dict with result, scenario data, and performance metrics
     """
     
     print_header(f"Running Scenario: {scenario_name}")
     
+    # Create performance metrics tracker
+    metrics = perf.PerformanceMetrics(scenario_name)
+    
     # Create output directory if needed
     os.makedirs(output_dir, exist_ok=True)
     
-    # Generate scenario
-    print("  Generating scenario...")
-    scenario = scenario_func()
-    print(f"    Islands: {len(scenario.get('islands', []))}")
-    print(f"    SAM Sites: {len(scenario.get('sam_sites', []))}")
-    
-    # Preprocess
-    print("  Preprocessing...")
-    preprocessed = prep.prepare_scenario(scenario)
-    
-    # Plan trajectory
-    print("  Planning trajectory...")
-    start_time = time.time()
-    result = astar.plan_trajectory(preprocessed, verbose=True)
-    elapsed_time = time.time() - start_time
-    
-    # Print results
-    print_result(scenario_name, result, elapsed_time)
-    
-    # Visualize
-    print("  Creating visualizations...")
-    
-    # Main trajectory plot
-    main_fig = viz.plot_scenario(scenario, preprocessed, result, 
-                                title=f"{scenario_name} - Missile Trajectory",
-                                save_path=os.path.join(output_dir, f"01_scenario_{scenario_name.lower().replace(' ', '_')}.png"))
-    
-    # Detailed trajectory analysis
-    if result['success']:
-        detail_fig = viz.plot_trajectory_details(result, preprocessed,
-                                                save_path=os.path.join(output_dir, f"02_trajectory_details_{scenario_name.lower().replace(' ', '_')}.png"))
-    
-    # Obstacle inflation comparison
-    obs_fig = viz.plot_obstacles_comparison(scenario, preprocessed,
-                                           save_path=os.path.join(output_dir, f"03_obstacles_{scenario_name.lower().replace(' ', '_')}.png"))
-    
-    return {
-        'scenario_name': scenario_name,
-        'scenario': scenario,
-        'preprocessed': preprocessed,
-        'result': result,
-        'elapsed_time': elapsed_time,
-        'success': result['success'],
-    }
+    try:
+        # Generate scenario
+        print("  Generating scenario...")
+        metrics.start_timer('generation')
+        scenario = scenario_func()
+        metrics.end_timer('generation')
+        print(f"    Islands: {len(scenario.get('islands', []))}")
+        print(f"    SAM Sites: {len(scenario.get('sam_sites', []))}")
+        
+        # Preprocess
+        print("  Preprocessing...")
+        metrics.start_timer('preprocessing')
+        preprocessed = prep.prepare_scenario(scenario)
+        metrics.end_timer('preprocessing')
+        
+        # Plan trajectory
+        print("  Planning trajectory...")
+        metrics.start_timer('planning')
+        start_time = time.time()
+        result = astar.plan_trajectory(preprocessed, verbose=False)
+        elapsed_time = time.time() - start_time
+        metrics.end_timer('planning')
+        
+        # Record search statistics
+        if result.get('stats'):
+            metrics.record_search_stats(result)
+        
+        # Record path statistics
+        if result.get('success') and result.get('path'):
+            metrics.record_path_stats(result['path'], preprocessed)
+        
+        # Print results
+        print_result(scenario_name, result, elapsed_time)
+        
+        # Visualize
+        print("  Creating visualizations...")
+        metrics.start_timer('visualization')
+        
+        # Main trajectory plot
+        main_fig = viz.plot_scenario(scenario, preprocessed, result, 
+                                    title=f"{scenario_name} - Missile Trajectory",
+                                    save_path=os.path.join(output_dir, f"01_scenario_{scenario_name.lower().replace(' ', '_')}.png"))
+        
+        # Detailed trajectory analysis
+        if result['success']:
+            detail_fig = viz.plot_trajectory_details(result, preprocessed,
+                                                    save_path=os.path.join(output_dir, f"02_trajectory_details_{scenario_name.lower().replace(' ', '_')}.png"))
+        
+        # Obstacle inflation comparison
+        obs_fig = viz.plot_obstacles_comparison(scenario, preprocessed,
+                                               save_path=os.path.join(output_dir, f"03_obstacles_{scenario_name.lower().replace(' ', '_')}.png"))
+        
+        metrics.end_timer('visualization')
+        
+        return {
+            'scenario_name': scenario_name,
+            'scenario': scenario,
+            'preprocessed': preprocessed,
+            'result': result,
+            'elapsed_time': elapsed_time,
+            'success': result['success'],
+            'metrics': metrics
+        }
+        
+    except Exception as e:
+        print(f"\n❌ {scenario_name}: FAILED")
+        print(f"   Error: {str(e)}")
+        return {
+            'scenario_name': scenario_name,
+            'success': False,
+            'elapsed_time': 0,
+            'metrics': metrics
+        }
 
 
 def run_all_scenarios(output_dir="results"):
     """
-    Run all 4 scenarios and generate report.
+    Run all 16 scenarios and generate comprehensive evaluation report.
     
     Args:
         output_dir: Directory to save results
@@ -142,7 +174,7 @@ def run_all_scenarios(output_dir="results"):
         List of scenario results
     """
     
-    print_header("MISSILE PATH PLANNING SYSTEM - TEST SUITE")
+    print_header("MISSILE PATH PLANNING SYSTEM - COMPREHENSIVE TEST SUITE (16 SCENARIOS)")
     
     print("\nConfiguration:")
     print(f"  R (turn radius): {config.R} m")
@@ -150,74 +182,151 @@ def run_all_scenarios(output_dir="results"):
     print(f"  L₀ (stabilization distance): {config.L0} m")
     print(f"  d_ss (engagement distance): {config.DSS} m")
     print(f"  Safe margin: {config.SAFE_MARGIN} m")
-    print(f"  Map bounds: {config.MAP_WIDTH} x {config.MAP_HEIGHT} m")
+    print(f"  Map bounds: {config.MAP_WIDTH/1000:.0f}km x {config.MAP_HEIGHT/1000:.0f}km")
     
     results = []
+    performance_comparator = perf.PerformanceComparator()
     
-    # Scenario 1: Open ocean
-    result1 = run_scenario(mg.scenario1_open_ocean, "Open Ocean")
-    results.append(result1)
+    # Get all scenarios from map_generator
+    all_scenarios = mg.get_all_scenarios()
+    scenario_list = list(all_scenarios.items())
     
-    # Scenario 2: Single obstacle
-    result2 = run_scenario(mg.scenario2_single_obstacle, "Single Obstacle")
-    results.append(result2)
+    print(f"\n📋 Running {len(scenario_list)} scenarios...")
+    print(f"   - Scenarios 1-4: Baseline tests")
+    print(f"   - Scenarios 5-8: Easy (sparse obstacles)")
+    print(f"   - Scenarios 9-12: Medium (moderate complexity)")
+    print(f"   - Scenarios 13-16: Hard (high complexity)")
     
-    # Scenario 3: Narrow gap
-    result3 = run_scenario(mg.scenario3_narrow_gap, "Narrow Gap")
-    results.append(result3)
+    # Execute all scenarios
+    for idx, (scenario_key, scenario_func) in enumerate(scenario_list, 1):
+        scenario_name = scenario_key.replace('_', ' ').title()
+        try:
+            result = run_scenario(scenario_func, scenario_name)
+            results.append(result)
+            if result.get('metrics'):
+                performance_comparator.add_result(result['metrics'])
+        except Exception as e:
+            print(f"⚠️  Scenario {idx}: {scenario_name} failed - {str(e)}")
     
-    # Scenario 4: Complex maze
-    result4 = run_scenario(mg.scenario4_complex_maze, "Complex Maze")
-    results.append(result4)
-    
-    # ===== SUMMARY =====
-    print_header("TEST SUMMARY")
+    # ===== COMPREHENSIVE SUMMARY =====
+    print_header("TEST RESULTS SUMMARY")
     
     successful = sum(1 for r in results if r['success'])
     total_time = sum(r['elapsed_time'] for r in results)
     
-    print(f"\nResults:")
+    print(f"\n📊 Overall Performance:")
     print(f"  Total Scenarios: {len(results)}")
     print(f"  Successful: {successful}/{len(results)}")
     print(f"  Success Rate: {100*successful/len(results):.1f}%")
     print(f"  Total Time: {total_time:.2f}s")
+    print(f"  Average Time per Scenario: {total_time/len(results):.2f}s")
     
-    print(f"\nDetailed Results:")
+    # Categorize by difficulty
+    baseline = results[:4]
+    easy = results[4:8]
+    medium = results[8:12]
+    hard = results[12:16]
+    
+    baseline_success = sum(1 for r in baseline if r['success'])
+    easy_success = sum(1 for r in easy if r['success'])
+    medium_success = sum(1 for r in medium if r['success'])
+    hard_success = sum(1 for r in hard if r['success'])
+    
+    print(f"\n📈 Success Rate by Difficulty:")
+    print(f"  Baseline (1-4):    {baseline_success}/4 ({100*baseline_success/4:.0f}%)")
+    print(f"  Easy (5-8):        {easy_success}/4 ({100*easy_success/4:.0f}%)")
+    print(f"  Medium (9-12):     {medium_success}/4 ({100*medium_success/4:.0f}%)")
+    print(f"  Hard (13-16):      {hard_success}/4 ({100*hard_success/4:.0f}%)")
+    
+    print(f"\n📋 Detailed Results:")
+    print(f"{'Idx':<4} {'Scenario':<35} {'Status':<8} {'Time':<8} {'Waypts':<8} {'Obstacles':<12}")
+    print("─" * 75)
+    
     for i, result in enumerate(results, 1):
-        status = "✓" if result['success'] else "✗"
-        print(f"  {i}. {result['scenario_name']:20} [{status}] {result['elapsed_time']:6.2f}s")
+        status = "✓ PASS" if result['success'] else "✗ FAIL"
+        scenario_name = result['scenario_name'][:33]
+        elapsed = result['elapsed_time']
+        waypts = len(result['result']['path']) if result['success'] and result.get('result', {}).get('path') else 0
+        
+        if result.get('scenario'):
+            num_islands = len(result['scenario'].get('islands', []))
+            num_sam = len(result['scenario'].get('sam_sites', []))
+            obstacles = f"{num_islands}I+{num_sam}S"
+        else:
+            obstacles = "N/A"
+        
+        print(f"{i:<4} {scenario_name:<35} {status:<8} {elapsed:>6.2f}s {waypts:>8} {obstacles:>12}")
     
     print(f"\nOutput files saved to: {output_dir}/")
-    print("  - 01_scenario_*.png: Main trajectory visualizations")
+    print("  - 01_scenario_*.png: Main trajectory visualizations (with Dubins curves)")
     print("  - 02_trajectory_details_*.png: Detailed trajectory analysis")
     print("  - 03_obstacles_*.png: Original vs inflated obstacles")
     
-    # Generate summary statistics
-    print("\n" + "="*70)
-    print("  SYSTEM STATISTICS")
-    print("="*70)
+    # ===== DETAILED STATISTICS BY DIFFICULTY =====
+    print_header("DETAILED STATISTICS BY DIFFICULTY LEVEL")
     
-    for result in results:
+    # Baseline statistics
+    print("\n🔵 BASELINE SCENARIOS (1-4):")
+    for result in baseline:
         if result['success']:
             path_length = len(result['result']['path'])
             scenario = result['scenario']
-            print(f"\n{result['scenario_name']}:")
-            print(f"  Obstacles: {len(scenario.get('islands', []))} islands + {len(scenario.get('sam_sites', []))} SAM sites")
-            print(f"  Waypoints: {path_length}")
-            
-            # Calculate total distance
-            path = result['result']['path']
-            total_dist = 0
-            for i in range(len(path) - 1):
-                wp1, _ = path[i]
-                wp2, _ = path[i + 1]
-                dx = wp2[0] - wp1[0]
-                dy = wp2[1] - wp1[1]
-                total_dist += math.sqrt(dx**2 + dy**2)
-            
-            print(f"  Total Distance: {total_dist/1000:.2f} km")
+            islands = len(scenario.get('islands', []))
+            sams = len(scenario.get('sam_sites', []))
+            print(f"  {result['scenario_name']:<30} | Islands: {islands:2} | SAM: {sams:2} | Waypoints: {path_length:2}")
     
-    print("\n" + "="*70)
+    # Easy statistics
+    print("\n🟢 EASY SCENARIOS (5-8):")
+    for result in easy:
+        if result['success']:
+            path_length = len(result['result']['path'])
+            scenario = result['scenario']
+            islands = len(scenario.get('islands', []))
+            sams = len(scenario.get('sam_sites', []))
+            print(f"  {result['scenario_name']:<30} | Islands: {islands:2} | SAM: {sams:2} | Waypoints: {path_length:2}")
+    
+    # Medium statistics
+    print("\n🟡 MEDIUM SCENARIOS (9-12):")
+    for result in medium:
+        if result['success']:
+            path_length = len(result['result']['path'])
+            scenario = result['scenario']
+            islands = len(scenario.get('islands', []))
+            sams = len(scenario.get('sam_sites', []))
+            print(f"  {result['scenario_name']:<30} | Islands: {islands:2} | SAM: {sams:2} | Waypoints: {path_length:2}")
+    
+    # Hard statistics
+    print("\n🔴 HARD SCENARIOS (13-16):")
+    for result in hard:
+        if result['success']:
+            path_length = len(result['result']['path'])
+            scenario = result['scenario']
+            islands = len(scenario.get('islands', []))
+            sams = len(scenario.get('sam_sites', []))
+            print(f"  {result['scenario_name']:<30} | Islands: {islands:2} | SAM: {sams:2} | Waypoints: {path_length:2}")
+    
+    # ===== PERFORMANCE METRICS =====
+    print_header("PERFORMANCE EVALUATION")
+    performance_comparator.print_comparison()
+    
+    # ===== TIMING BREAKDOWN =====
+    print_header("TIMING ANALYSIS")
+    
+    total_planning_time = 0
+    total_visualization_time = 0
+    
+    for result in results:
+        if result.get('metrics'):
+            metrics = result['metrics']
+            if 'planning' in metrics.timings and 'elapsed' in metrics.timings['planning']:
+                total_planning_time += metrics.timings['planning']['elapsed']
+            if 'visualization' in metrics.timings and 'elapsed' in metrics.timings['visualization']:
+                total_visualization_time += metrics.timings['visualization']['elapsed']
+    
+    print(f"\n⏱️ Total Timing Breakdown:")
+    print(f"  Total Planning Time: {total_planning_time:.3f}s")
+    print(f"  Total Visualization Time: {total_visualization_time:.3f}s")
+    print(f"  Average Planning per Scenario: {total_planning_time/len(results):.3f}s")
     
     return results
 
