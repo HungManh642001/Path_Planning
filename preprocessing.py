@@ -41,7 +41,7 @@ def inflate_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MARGIN):
     return inflated
 
 
-def calculate_start_state(origin, init_heading, L0=config.L0, R=config.R):
+def calculate_start_state(origin, init_heading, L0=config.L0, R=config.R, launch_angle=None):
     """
     Calculate the first waypoint W_1 and its heading after launch.
     
@@ -55,6 +55,7 @@ def calculate_start_state(origin, init_heading, L0=config.L0, R=config.R):
         init_heading: Initial heading angle (radians)
         L0: Minimum distance for level flight stabilization
         R: Turn radius
+        launch_angle: Launch angle in degrees (5-25°). If provided, overrides init_heading
     
     Returns:
         Dict with:
@@ -62,6 +63,11 @@ def calculate_start_state(origin, init_heading, L0=config.L0, R=config.R):
             - 'heading': heading angle at W_1
             - 'straight_length': l_1
     """
+    
+    # If launch_angle is provided, convert it to heading angle
+    # launch_angle is elevation angle, heading = 90° - launch_angle in the standard frame
+    if launch_angle is not None:
+        init_heading = math.radians(90.0 - launch_angle)
     
     # Assume we go straight for distance L0
     l_1 = L0
@@ -80,7 +86,7 @@ def calculate_start_state(origin, init_heading, L0=config.L0, R=config.R):
     }
 
 
-def calculate_end_state(target, target_heading, dss=config.DSS, R=config.R):
+def calculate_end_state(target, target_heading, dss=config.DSS, R=config.R, approach_angle=None):
     """
     Calculate the final waypoint W_{n-1} before seeker engagement.
     
@@ -92,6 +98,7 @@ def calculate_end_state(target, target_heading, dss=config.DSS, R=config.R):
         target_heading: Final approach heading (radians)
         dss: Distance for seeker lock-on and guidance
         R: Turn radius
+        approach_angle: Approach angle in degrees (10-45°). If provided, overrides target_heading
     
     Returns:
         Dict with:
@@ -99,6 +106,11 @@ def calculate_end_state(target, target_heading, dss=config.DSS, R=config.R):
             - 'heading': heading angle at W_{n-1}
             - 'engagement_distance': d_ss
     """
+    
+    # If approach_angle is provided, convert it to heading angle
+    # approach_angle is elevation angle, heading = 90° - approach_angle in the standard frame
+    if approach_angle is not None:
+        target_heading = math.radians(90.0 - approach_angle)
     
     # Work backwards from target
     # Position W_{n-1} at distance d_ss before target
@@ -198,7 +210,7 @@ def compute_inflated_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MA
     }
 
 
-def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS):
+def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS, launch_angle=None, approach_angle=None):
     """
     Full preprocessing of a scenario: inflate obstacles, calculate states.
     
@@ -207,6 +219,8 @@ def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS):
         R: Turn radius
         L0: Minimum stabilization distance
         DSS: Seeker engagement distance
+        launch_angle: Launch angle in degrees (5-25°)
+        approach_angle: Approach angle in degrees (10-45°)
     
     Returns:
         Dict with:
@@ -220,8 +234,8 @@ def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS):
     """
     
     # Calculate start and goal waypoints
-    start_state = calculate_start_state(scenario['start'], scenario['start_heading'], L0, R)
-    goal_state = calculate_end_state(scenario['goal'], scenario['goal_heading'], DSS, R)
+    start_state = calculate_start_state(scenario['start'], scenario['start_heading'], L0, R, launch_angle)
+    goal_state = calculate_end_state(scenario['goal'], scenario['goal_heading'], DSS, R, approach_angle)
     
     # Process obstacles
     inflated_data = compute_inflated_obstacles(scenario['obstacles'], R, config.SAFE_MARGIN)

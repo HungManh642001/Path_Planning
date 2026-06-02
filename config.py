@@ -3,6 +3,8 @@ Configuration Module for Missile Path Planning System
 Defines tactical constants and parameters
 """
 
+import math
+
 # ====== DYNAMIC CONSTRAINTS ======
 # Turn radius (m) - fixed for entire trajectory
 R = 500.0
@@ -10,12 +12,28 @@ R = 500.0
 # Maximum turn angle allowed (degrees)
 ALPHA_MAX = 30.0  # in degrees, will be converted to radians
 
+# Convert ALPHA_MAX to radians for calculations
+ALPHA_MAX_RAD = math.radians(ALPHA_MAX)
+
+# Aliases for GUI compatibility
+TURN_RADIUS = R  # Alias for R (turn radius in meters)
+
 # Minimum distance for level flight and stabilization (m)
 # After launch, distance to descend and stabilize for sea-skimming
 L0 = 4000.0
 
 # Distance for seeker to lock and guide to target (m)
 DSS = 23000.0
+
+# Launch angle (degrees) - angle from horizontal at launch
+LAUNCH_ANGLE_MIN = 5.0     # Minimum launch angle
+LAUNCH_ANGLE_MAX = 25.0    # Maximum launch angle
+LAUNCH_ANGLE_DEFAULT = 15.0  # Default launch angle
+
+# Approach angle (degrees) - angle from horizontal at target approach
+APPROACH_ANGLE_MIN = 10.0     # Minimum approach angle
+APPROACH_ANGLE_MAX = 45.0     # Maximum approach angle
+APPROACH_ANGLE_DEFAULT = 30.0  # Default approach angle
 
 # ====== SAFETY & OBSTACLE HANDLING ======
 # Safety margin buffer (m) - distance to expand obstacle boundaries
