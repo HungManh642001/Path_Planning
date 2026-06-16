@@ -8,7 +8,7 @@ import config
 import spatial_utils as su
 
 
-def inflate_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MARGIN):
+def inflate_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MARGIN, alpha_max_rad=config.ALPHA_MAX_RAD):
     """
     Inflate obstacle boundaries by R + SAFE_MARGIN.
     Keeps obstacles independent (no early Convex Hull).
@@ -17,11 +17,12 @@ def inflate_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MARGIN):
         obstacles: List of obstacle dicts with 'type', 'polygon' or 'center'/'radius'
         R: Turn radius
         safe_margin: Additional safety buffer
+        alpha_max_rad: Maximum turn angle allowed (radians)
     
     Returns:
         List of inflated obstacles
     """
-    inflation = R + safe_margin
+    inflation = R * (1 / math.cos(alpha_max_rad / 2) - 1) + safe_margin
     inflated = []
     
     for obstacle in obstacles:
@@ -41,7 +42,7 @@ def inflate_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MARGIN):
     return inflated
 
 
-def calculate_start_state(origin, init_heading, L0=config.L0, R=config.R, launch_angle=None):
+def calculate_start_state(origin, init_heading, L0=config.L0, R=config.R, alpha_max_rad=config.ALPHA_MAX_RAD):
     """
     Calculate the first waypoint W_1 and its heading after launch.
     
@@ -55,25 +56,21 @@ def calculate_start_state(origin, init_heading, L0=config.L0, R=config.R, launch
         init_heading: Initial heading angle (radians)
         L0: Minimum distance for level flight stabilization
         R: Turn radius
-        launch_angle: Launch angle in degrees (5-25°). If provided, overrides init_heading
+        alpha_max_rad: Maximum turn angle allowed (radians)
     
     Returns:
         Dict with:
             - 'waypoint': (x, y) position of W_1
             - 'heading': heading angle at W_1
             - 'straight_length': l_1
+            - 'distance_from_origin': d_1
     """
-    
-    # If launch_angle is provided, convert it to heading angle
-    # launch_angle is elevation angle, heading = 90° - launch_angle in the standard frame
-    if launch_angle is not None:
-        init_heading = math.radians(90.0 - launch_angle)
     
     # Assume we go straight for distance L0
     l_1 = L0
     
     # With minimal turn angle α_1 ≈ 0, d_1 ≈ l_1
-    d_1 = l_1 + R * math.tan(0.0 / 2)
+    d_1 = l_1 + R * math.tan(alpha_max_rad / 2)
     
     # Calculate W_1 position
     w1_x = origin[0] + d_1 * math.cos(init_heading)
@@ -83,10 +80,11 @@ def calculate_start_state(origin, init_heading, L0=config.L0, R=config.R, launch
         'waypoint': (w1_x, w1_y),
         'heading': init_heading,
         'straight_length': l_1,
+        'distance_from_origin': d_1,
     }
 
 
-def calculate_end_state(target, target_heading, dss=config.DSS, R=config.R, approach_angle=None):
+def calculate_end_state(target, target_heading, dss=config.DSS, R=config.R, alpha_max_rad=config.ALPHA_MAX_RAD):
     """
     Calculate the final waypoint W_{n-1} before seeker engagement.
     
@@ -98,29 +96,28 @@ def calculate_end_state(target, target_heading, dss=config.DSS, R=config.R, appr
         target_heading: Final approach heading (radians)
         dss: Distance for seeker lock-on and guidance
         R: Turn radius
-        approach_angle: Approach angle in degrees (10-45°). If provided, overrides target_heading
+        alpha_max_rad: Maximum turn angle allowed (radians)
     
     Returns:
         Dict with:
             - 'waypoint': (x, y) position of W_{n-1}
             - 'heading': heading angle at W_{n-1}
             - 'engagement_distance': d_ss
+            - 'distance_to_target': d_n
     """
-    
-    # If approach_angle is provided, convert it to heading angle
-    # approach_angle is elevation angle, heading = 90° - approach_angle in the standard frame
-    if approach_angle is not None:
-        target_heading = math.radians(90.0 - approach_angle)
+
+    d_n = dss + R * math.tan(alpha_max_rad / 2)
     
     # Work backwards from target
     # Position W_{n-1} at distance d_ss before target
-    w_n_minus_1_x = target[0] - dss * math.cos(target_heading)
-    w_n_minus_1_y = target[1] - dss * math.sin(target_heading)
+    w_n_minus_1_x = target[0] - d_n * math.cos(target_heading)
+    w_n_minus_1_y = target[1] - d_n * math.sin(target_heading)
     
     return {
         'waypoint': (w_n_minus_1_x, w_n_minus_1_y),
         'heading': target_heading,
         'engagement_distance': dss,
+        'distance_to_target': d_n,
     }
 
 
@@ -159,10 +156,11 @@ def validate_kinodynamics(w_i, heading_i, w_next, heading_next, w_next_next=None
     # d_{i+1} = l_{i+1} + R * (tan(α_i/2) + tan(α_{i+1}/2))
     # We need l_{i+1} > 0
     
-    if w_next_next is not None and heading_next_next is not None:
-        delta_heading_next = heading_next_next - heading_next
-        delta_heading_next = math.atan2(math.sin(delta_heading_next), math.cos(delta_heading_next))
-        alpha_next = abs(delta_heading_next)
+    
+    if alpha_max is not None:
+        # delta_heading_next = heading_next_next - heading_next
+        # delta_heading_next = math.atan2(math.sin(delta_heading_next), math.cos(delta_heading_next))
+        alpha_next = alpha_max
         
         # Distance from w_i to w_next
         d_segment = math.sqrt((w_next[0] - w_i[0])**2 + (w_next[1] - w_i[1])**2)
@@ -176,7 +174,7 @@ def validate_kinodynamics(w_i, heading_i, w_next, heading_next, w_next_next=None
     return True, "OK"
 
 
-def compute_inflated_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MARGIN):
+def compute_inflated_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MARGIN, alpha_max_rad=config.ALPHA_MAX_RAD):
     """
     Pre-process all obstacles: inflate them and create buffer zones.
     
@@ -184,6 +182,7 @@ def compute_inflated_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MA
         obstacles: List of raw obstacles
         R: Turn radius
         safe_margin: Safety buffer
+        alpha_max_rad: Maximum turn angle allowed (radians)
     
     Returns:
         Dict with:
@@ -192,7 +191,7 @@ def compute_inflated_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MA
             - 'polygon_obstacles': list of polygon coordinates
     """
     
-    inflated = inflate_obstacles(obstacles, R, safe_margin)
+    inflated = inflate_obstacles(obstacles, R, safe_margin, alpha_max_rad)
     
     circle_obstacles = []
     polygon_obstacles = []
@@ -210,7 +209,7 @@ def compute_inflated_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MA
     }
 
 
-def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS, launch_angle=None, approach_angle=None):
+def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS, safe_margin=config.SAFE_MARGIN, alpha_max_rad=config.ALPHA_MAX_RAD):
     """
     Full preprocessing of a scenario: inflate obstacles, calculate states.
     
@@ -219,8 +218,8 @@ def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS, launch_
         R: Turn radius
         L0: Minimum stabilization distance
         DSS: Seeker engagement distance
-        launch_angle: Launch angle in degrees (5-25°)
-        approach_angle: Approach angle in degrees (10-45°)
+        safe_margin: Safety margin buffer (m) - distance to expand obstacle boundaries
+        alpha_max_rad: Maximum turn angle allowed (radians)
     
     Returns:
         Dict with:
@@ -234,11 +233,11 @@ def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS, launch_
     """
     
     # Calculate start and goal waypoints
-    start_state = calculate_start_state(scenario['start'], scenario['start_heading'], L0, R, launch_angle)
-    goal_state = calculate_end_state(scenario['goal'], scenario['goal_heading'], DSS, R, approach_angle)
+    start_state = calculate_start_state(scenario['start'], scenario['start_heading'], L0, R, alpha_max_rad)
+    goal_state = calculate_end_state(scenario['goal'], scenario['goal_heading'], DSS, R, alpha_max_rad)
     
     # Process obstacles
-    inflated_data = compute_inflated_obstacles(scenario['obstacles'], R, config.SAFE_MARGIN)
+    inflated_data = compute_inflated_obstacles(scenario['obstacles'], R, safe_margin, alpha_max_rad)
     
     return {
         'start_state': start_state,
@@ -247,6 +246,8 @@ def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS, launch_
         'goal_pos': scenario['goal'],
         'start_heading': scenario['start_heading'],
         'goal_heading': scenario['goal_heading'],
+        'turn_radius': R,
+        'alpha_max_rad': alpha_max_rad,
         'obstacles': inflated_data['inflated_obstacles'],
         'circle_obstacles': inflated_data['circle_obstacles'],
         'polygon_obstacles': inflated_data['polygon_obstacles'],

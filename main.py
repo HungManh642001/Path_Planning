@@ -107,7 +107,7 @@ def run_scenario(scenario_func, scenario_name, output_dir="results"):
         print("  Planning trajectory...")
         metrics.start_timer('planning')
         start_time = time.time()
-        result = astar.plan_trajectory(preprocessed, verbose=False)
+        result = astar.plan_trajectory(preprocessed, verbose=True)
         elapsed_time = time.time() - start_time
         metrics.end_timer('planning')
         
@@ -207,7 +207,7 @@ def run_all_scenarios(output_dir="results"):
                 performance_comparator.add_result(result['metrics'])
         except Exception as e:
             print(f"⚠️  Scenario {idx}: {scenario_name} failed - {str(e)}")
-    
+
     # ===== COMPREHENSIVE SUMMARY =====
     print_header("TEST RESULTS SUMMARY")
     

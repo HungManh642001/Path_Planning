@@ -3,20 +3,12 @@ Configuration Module for Missile Path Planning System
 Defines tactical constants and parameters
 """
 
-import math
-
 # ====== DYNAMIC CONSTRAINTS ======
 # Turn radius (m) - fixed for entire trajectory
-R = 500.0
+R = 8000.0
 
 # Maximum turn angle allowed (degrees)
 ALPHA_MAX = 30.0  # in degrees, will be converted to radians
-
-# Convert ALPHA_MAX to radians for calculations
-ALPHA_MAX_RAD = math.radians(ALPHA_MAX)
-
-# Aliases for GUI compatibility
-TURN_RADIUS = R  # Alias for R (turn radius in meters)
 
 # Minimum distance for level flight and stabilization (m)
 # After launch, distance to descend and stabilize for sea-skimming
@@ -26,18 +18,18 @@ L0 = 4000.0
 DSS = 23000.0
 
 # Launch angle (degrees) - angle from horizontal at launch
-LAUNCH_ANGLE_MIN = 5.0     # Minimum launch angle
-LAUNCH_ANGLE_MAX = 25.0    # Maximum launch angle
-LAUNCH_ANGLE_DEFAULT = 15.0  # Default launch angle
+LAUNCH_ANGLE_MIN = -180.0
+LAUNCH_ANGLE_MAX = 180.0
+LAUNCH_ANGLE_DEFAULT = 15.0
 
 # Approach angle (degrees) - angle from horizontal at target approach
-APPROACH_ANGLE_MIN = 10.0     # Minimum approach angle
-APPROACH_ANGLE_MAX = 45.0     # Maximum approach angle
-APPROACH_ANGLE_DEFAULT = 30.0  # Default approach angle
+APPROACH_ANGLE_MIN = -180.0
+APPROACH_ANGLE_MAX = 180.0
+APPROACH_ANGLE_DEFAULT = 30.0
 
 # ====== SAFETY & OBSTACLE HANDLING ======
 # Safety margin buffer (m) - distance to expand obstacle boundaries
-SAFE_MARGIN = 100.0
+SAFE_MARGIN = 10000.0
 
 # ====== COORDINATE SYSTEM ======
 # Map bounds (meters) for simulation
@@ -50,7 +42,7 @@ MAP_ORIGIN = (0.0, 0.0)
 MAX_ITERATIONS = 50000
 
 # Heuristic weight (1.0 = Dijkstra, > 1.0 = more greedy)
-HEURISTIC_WEIGHT = 1.2
+HEURISTIC_WEIGHT = 1.0
 
 # Threshold for considering a point as reached (meters)
 GOAL_THRESHOLD = 200.0
@@ -88,12 +80,12 @@ SCENARIO4_ISLANDS = 20
 SCENARIO4_SAM_SITES = 10
 
 # SAM detection radius (m)
-SAM_RADIUS_MIN = 3000.0
-SAM_RADIUS_MAX = 5000.0
+SAM_RADIUS_MIN = 10000.0
+SAM_RADIUS_MAX = 50000.0
 
 # Island polygon size
-ISLAND_SIZE_MIN = 500.0
-ISLAND_SIZE_MAX = 3000.0
+ISLAND_SIZE_MIN = 5000.0
+ISLAND_SIZE_MAX = 30000.0
 
 # Number of vertices for irregular polygons
 ISLAND_VERTICES_MIN = 4
@@ -112,3 +104,5 @@ def rad_to_deg(radians):
 
 # Pre-compute often-used values
 ALPHA_MAX_RAD = deg_to_rad(ALPHA_MAX)
+
+EPS = 1e-6

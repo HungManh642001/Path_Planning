@@ -76,6 +76,8 @@ class KinodynamicAstar:
         
         self.iteration_count = 0
         self.max_iterations = config.MAX_ITERATIONS
+        self.R = preprocessed_scenario['turn_radius']
+        self.alpha_max_rad = preprocessed_scenario['alpha_max_rad']
         
         # Track if search failed
         self.search_failed = False
@@ -94,7 +96,7 @@ class KinodynamicAstar:
         heading_diff = abs(state.heading - goal_state.heading)
         heading_diff = min(heading_diff, 2*math.pi - heading_diff)
         
-        return dist + config.R * heading_diff
+        return dist + self.R * heading_diff
     
     def get_next_states(self, current_state):
         """
@@ -118,32 +120,30 @@ class KinodynamicAstar:
                 
                 # Calculate heading to node
                 heading_to_node = su.angle_to_heading(current_state.waypoint, node)
+                    
+                # Validate kinodynamics
+                is_valid, _ = prep.validate_kinodynamics(
+                    current_state.waypoint, current_state.heading,
+                    node, heading_to_node,
+                    R=self.R, alpha_max=self.alpha_max_rad
+                )
                 
-                # Try multiple approach headings
-                for heading_offset in [-0.15, 0, 0.15]:  # radians (~8.6 degrees)
-                    next_heading = heading_to_node + heading_offset
-                    
-                    # Validate kinodynamics
-                    is_valid, _ = prep.validate_kinodynamics(
-                        current_state.waypoint, current_state.heading,
-                        node, next_heading
-                    )
-                    
-                    if is_valid and self._check_collision(current_state.waypoint, node):
-                        cost = math.sqrt(dx**2 + dy**2)
-                        next_state = State(node, next_heading)
-                        successors.append((next_state, cost))
+                if is_valid and self._check_collision(current_state.waypoint, node):
+                    cost = math.sqrt(dx**2 + dy**2)
+                    next_state = State(node, heading_to_node)
+                    successors.append((next_state, cost))
         
         # Strategy 2: Radial sampling (12 directions) for exploration
-        num_directions = 12
+        num_directions = 11
         for i in range(num_directions):
-            angle = 2 * math.pi * i / num_directions
+            heading_offset = -self.alpha_max_rad +  2 * self.alpha_max_rad * i / (num_directions - 1)
+            next_heading = current_state.heading + heading_offset
             
             # Variable distance based on search density
-            distance = 3000  # 3km steps
+            distance = 2 * self.R * math.tan(self.alpha_max_rad / 2)  
             
-            next_x = current_state.waypoint[0] + distance * math.cos(angle)
-            next_y = current_state.waypoint[1] + distance * math.sin(angle)
+            next_x = current_state.waypoint[0] + distance * math.cos(next_heading)
+            next_y = current_state.waypoint[1] + distance * math.sin(next_heading)
             next_waypoint = (next_x, next_y)
             
             # Check bounds
@@ -154,19 +154,16 @@ class KinodynamicAstar:
             if not self._check_collision(current_state.waypoint, next_waypoint):
                 continue
             
-            # Next heading follows the direction
-            next_heading = angle
-            
-            # Validate kinodynamic constraints
-            is_valid, _ = prep.validate_kinodynamics(
-                current_state.waypoint, current_state.heading,
-                next_waypoint, next_heading
-            )
-            
-            if is_valid:
-                next_state = State(next_waypoint, next_heading)
-                successors.append((next_state, distance))
+            # # Validate kinodynamic constraints
+            # is_valid, _ = prep.validate_kinodynamics(
+            #     current_state.waypoint, current_state.heading,
+            #     next_waypoint, next_heading, 
+            #     R=self.R, alpha_max=self.alpha_max_rad
+            # )            
         
+            next_state = State(next_waypoint, next_heading)
+            successors.append((next_state, distance))
+    
         return successors  # Return all successors (no artificial limit)
 
     
@@ -194,10 +191,10 @@ class KinodynamicAstar:
     def _in_bounds(self, point):
         """Check if point is within map bounds"""
         x, y = point
-        bounds = self.scenario['start_state']['waypoint']  # Just a rough bound
+        # bounds = self.scenario['start_state']['waypoint']  # Just a rough bound
         
         # Allow some overshoot
-        margin = 5000
+        margin = 0
         return (-margin < x < config.MAP_WIDTH + margin and
                 -margin < y < config.MAP_HEIGHT + margin)
     
@@ -317,7 +314,8 @@ class KinodynamicAstar:
                 heading_to_next = su.angle_to_heading(prev_wp, next_wp)
                 is_valid, _ = prep.validate_kinodynamics(
                     prev_wp, prev_h,
-                    next_wp, heading_to_next
+                    next_wp, heading_to_next,
+                    alpha_max=self.alpha_max_rad
                 )
                 
                 if is_valid:
@@ -381,6 +379,7 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
     
     if verbose:
         print(f"Tangent graph: {len(tangent_graph.nodes)} nodes, {len(tangent_graph.edges)} edges")
+        print(f"Tangent graph: {tangent_graph.nodes}")
     
     # Run A* search
     planner = KinodynamicAstar(preprocessed_scenario, tangent_graph)
@@ -395,12 +394,13 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
         print(f"Search completed: {stats['iterations']}/{stats['max_iterations']} iterations")
         if path:
             print(f"Path found with {len(path)} waypoints")
+            print(path)
         else:
             print("No path found - triggering Lazy Convex Hull fallback")
     
     # Smooth path if found
-    if path:
-        path = planner.smooth_path(path)
+    # if path:
+    #     path = planner.smooth_path(path)
     
     return {
         'path': path,
