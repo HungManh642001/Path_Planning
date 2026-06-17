@@ -314,8 +314,8 @@ def extend_tangent_graph_with_start_goal(graph, start_pos, start_heading, goal_p
         los_clear = True
         for circle in all_obstacles:
             dist = su.point_to_line_distance(circle[0], start_pos, node_pos)
-            # More lenient LOS check (0.9 factor allows some margin)
-            if dist < circle[1] * 0.8:
+            # LOS blocked if the segment enters the (already-inflated) obstacle
+            if dist < circle[1]:
                 los_clear = False
                 break
         
@@ -333,7 +333,8 @@ def extend_tangent_graph_with_start_goal(graph, start_pos, start_heading, goal_p
         los_clear = True
         for circle in all_obstacles:
             dist = su.point_to_line_distance(circle[0], node_pos, goal_pos)
-            if dist < circle[1] * 0.8:
+            # LOS blocked if the segment enters the (already-inflated) obstacle
+            if dist < circle[1]:
                 los_clear = False
                 break
         
@@ -345,7 +346,8 @@ def extend_tangent_graph_with_start_goal(graph, start_pos, start_heading, goal_p
     direct_los = True
     for circle in all_obstacles:
         dist = su.point_to_line_distance(circle[0], start_pos, goal_pos)
-        if dist < circle[1] * 0.8:
+        # LOS blocked if the segment enters the (already-inflated) obstacle
+        if dist < circle[1]:
             direct_los = False
             break
     

@@ -31,3 +31,14 @@ def test_single_polygon_produces_hull_nodes():
             (60000.0, 10000.0), (40000.0, 10000.0)]
     g = gb.generate_bitangents([], [poly], filter_los=True)
     assert len(g.nodes) >= 4
+
+
+def test_start_goal_los_uses_full_radius():
+    # A circle on the direct start->goal line must block the direct edge.
+    circles = [((50000.0, 0.0), 20000.0)]
+    g = gb.generate_bitangents(circles, [])
+    g = gb.extend_tangent_graph_with_start_goal(
+        g, (0.0, 0.0), 0.0, (100000.0, 0.0), 0.0, circles, [])
+    assert g.find_node_index((0.0, 0.0)) is not None
+    neighbors = [p for p, _ in g.get_neighbors((0.0, 0.0))]
+    assert (100000.0, 0.0) not in neighbors, "direct start->goal edge must be blocked by the circle"
