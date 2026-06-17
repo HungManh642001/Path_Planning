@@ -118,3 +118,24 @@ def test_arc_clear_detects_obstacle_in_turn():
     assert planner_blocked._arc_clear(corner, 0.0, math.pi / 2) is False
     # A straight (no-turn) transition is always clear, even with the obstacle.
     assert planner_blocked._arc_clear(corner, 0.0, 0.0) is True
+
+
+def test_smoothing_reduces_or_keeps_waypoints_and_stays_valid():
+    pre = _simple_pre(circles=[((150000.0, 0.0), 20000.0)], goal=(300000.0, 0.0))
+    import graph_builder as gb
+    tg = gb.generate_bitangents(pre['circle_obstacles'], pre['polygon_obstacles'])
+    tg = gb.extend_tangent_graph_with_start_goal(
+        tg, pre['start_state']['waypoint'], pre['start_state']['heading'],
+        pre['goal_state']['waypoint'], pre['goal_state']['heading'],
+        pre['circle_obstacles'], pre['polygon_obstacles'])
+    raw = astar.KinodynamicAstar(pre, tg).search()           # fresh planner
+    result = astar.plan_trajectory(pre, verbose=False)        # builds its own graph + smooths
+    smoothed = result['path']
+    print(f"\nraw waypoints={len(raw) if raw else 0}, smoothed waypoints={len(smoothed) if smoothed else 0}")
+    assert raw is not None and smoothed is not None
+    assert len(smoothed) <= len(raw), f"smoothed {len(smoothed)} > raw {len(raw)}"
+    # smoothed path must remain fully valid
+    assert pv.segments_clear(smoothed, pre['circle_obstacles'], pre['polygon_obstacles'])
+    assert pv.turn_angles_ok(smoothed, pre['alpha_max_rad'])
+    assert pv.arcs_clear(smoothed, pre['turn_radius'],
+                         pre['circle_obstacles'], pre['polygon_obstacles'])

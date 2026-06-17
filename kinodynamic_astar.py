@@ -302,31 +302,36 @@ class KinodynamicAstar:
             return path
         
         smoothed = [path[0]]
-        
+
         i = 1
         while i < len(path) - 1:
-            prev_wp, prev_h = path[i-1]
-            curr_wp, curr_h = path[i]
-            next_wp, next_h = path[i+1]
-            
-            # Try to shortcut from prev to next
+            # Always shortcut FROM the last kept point (smoothed[-1]), not path[i-1].
+            # Using path[i-1] is a bug: after a skip, path[i-1] is a discarded node.
+            prev_wp, prev_h = smoothed[-1]
+            # Geometric inbound heading at prev_wp (the arc there is governed by the
+            # bearing from the previous KEPT waypoint, not the stored A* heading).
+            if len(smoothed) >= 2:
+                prev_h = su.angle_to_heading(smoothed[-2][0], prev_wp)
+            next_wp, next_h = path[i + 1]
+
+            # Try to shortcut from last-kept to next: skip path[i]
             if self._check_collision(prev_wp, next_wp):
-                # Check kinodynamic constraints
+                # Check kinodynamic constraints from last-kept heading to shortcut
                 heading_to_next = su.angle_to_heading(prev_wp, next_wp)
                 is_valid, _ = prep.validate_kinodynamics(
                     prev_wp, prev_h,
                     next_wp, heading_to_next,
                     alpha_max=self.alpha_max_rad
                 )
-                
-                if is_valid:
+                # Also check arc clearance at the shortcut join point
+                if is_valid and self._arc_clear(prev_wp, prev_h, heading_to_next):
                     # Can skip current point
                     i += 1
                     continue
-            
+
             smoothed.append(path[i])
             i += 1
-        
+
         smoothed.append(path[-1])
         return smoothed
     
@@ -400,8 +405,8 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
             print("No path found - triggering Lazy Convex Hull fallback")
     
     # Smooth path if found
-    # if path:
-    #     path = planner.smooth_path(path)
+    if path:
+        path = planner.smooth_path(path)
     
     return {
         'path': path,
