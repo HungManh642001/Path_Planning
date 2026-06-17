@@ -182,3 +182,33 @@ def test_goal_directed_successor_heads_straight_at_goal():
     # are offsets of the current heading and won't match gh exactly. Use a tight bound.
     assert any(abs(astar._angle_diff(s[0].heading, gh)) < math.radians(0.5) for s in succ), \
         "a goal-directed successor pointing straight at the goal must exist"
+
+
+import random as _random
+from shapely.geometry import Polygon as _Poly, LineString as _Line
+
+
+def _brute_force_clear(p1, p2, circles, polys):
+    import spatial_utils as su
+    for c, r in circles:
+        if su.point_to_line_distance(c, p1, p2) < r - 1e-6:
+            return False
+    line = _Line([p1, p2])
+    return not any(line.intersects(_Poly(poly)) for poly in polys)
+
+
+def test_check_collision_matches_bruteforce_with_spatial_index():
+    polys = [[(10000, 10000), (30000, 10000), (30000, 30000), (10000, 30000)],
+             [(60000, 5000), (90000, 5000), (75000, 40000)]]
+    circles = [((50000.0, 50000.0), 8000.0)]
+    pre = _simple_pre(circles=[((50000.0, 50000.0), 8000.0)],
+                      polys=polys)
+    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    rng = _random.Random(1234)
+    for _ in range(400):
+        p1 = (rng.uniform(0, 100000), rng.uniform(0, 100000))
+        p2 = (rng.uniform(0, 100000), rng.uniform(0, 100000))
+        got = planner._check_collision(p1, p2)
+        want = _brute_force_clear(p1, p2, pre['circle_obstacles'], pre['polygon_obstacles'])
+        assert got == want, f"mismatch on {p1}->{p2}: got {got} want {want}"
+    assert hasattr(planner, '_poly_tree')

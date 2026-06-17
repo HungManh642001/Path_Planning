@@ -8,6 +8,7 @@ import math
 from collections import defaultdict
 import numpy as np
 from shapely.geometry import Polygon, LineString
+from shapely import STRtree
 
 import config
 import spatial_utils as su
@@ -61,7 +62,8 @@ class KinodynamicAstar:
         self.scenario = preprocessed_scenario
         self.tangent_graph = tangent_graph
         self._polygons = [Polygon(coords) for coords in preprocessed_scenario['polygon_obstacles']]
-        
+        self._poly_tree = STRtree(self._polygons) if self._polygons else None
+
         # Start and goal states
         self.start_state = State(
             preprocessed_scenario['start_state']['waypoint'],
@@ -200,12 +202,11 @@ class KinodynamicAstar:
             if dist < radius - 1e-6:  # Small tolerance
                 return False
         
-        # Check against polygon obstacles
-        line = LineString([p1, p2])
-        for polygon in self._polygons:
-            if line.intersects(polygon):
+        # Check against polygon obstacles via spatial index (exact predicate).
+        if self._poly_tree is not None:
+            line = LineString([p1, p2])
+            if len(self._poly_tree.query(line, predicate='intersects')) > 0:
                 return False
-        
         return True
     
     def _arc_clear(self, w, h_in, h_out, n=12):
