@@ -234,14 +234,10 @@ def generate_bitangents(circle_obstacles, polygon_obstacles, filter_los=True):
     #     idx = graph.add_node(centroid)
     #     polygon_indices[i] = idx
     
-    all_obstacles = [(c, r) for c, r in circle_obstacles] + \
-                    [((sum(p[0] for p in poly) / len(poly), 
-                      sum(p[1] for p in poly) / len(poly)),
-                      max(math.sqrt((p[0] - sum(pp[0] for pp in poly) / len(poly))**2 +
-                                   (p[1] - sum(pp[1] for pp in poly) / len(poly))**2)
-                         for p in poly))
-                     for poly in polygon_obstacles]
-    
+    all_obstacles = [(c, r) for c, r in circle_obstacles]
+    # Polygons are represented solely by their hull vertices added in
+    # _add_visibility_nodes; the old bounding-circle approximation is dropped.
+
     # Generate bitangents between all pairs of obstacles
     for i in range(len(all_obstacles)):
         for j in range(i + 1, len(all_obstacles)):
