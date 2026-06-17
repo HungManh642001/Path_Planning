@@ -55,6 +55,7 @@ class KinodynamicAstar:
         
         self.scenario = preprocessed_scenario
         self.tangent_graph = tangent_graph
+        self._polygons = [Polygon(coords) for coords in preprocessed_scenario['polygon_obstacles']]
         
         # Start and goal states
         self.start_state = State(
@@ -181,9 +182,8 @@ class KinodynamicAstar:
         
         # Check against polygon obstacles
         line = LineString([p1, p2])
-        for polygon_coords in self.scenario['polygon_obstacles']:
-            polygon = Polygon(polygon_coords)
-            if line.intersects(polygon) or line.within(polygon):
+        for polygon in self._polygons:
+            if line.intersects(polygon):
                 return False
         
         return True
