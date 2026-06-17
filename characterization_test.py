@@ -103,11 +103,27 @@ def scenario_mixed():
                            islands=[_FAR_ISLAND], circles=[((150000, 150000), 30000)])
 
 
+def scenario_two_circles_gap():
+    """Two circles offset from the SW->NE diagonal; the direct route is not blocked, so a path exists (regression anchor for a solvable multi-circle map)."""
+    return _build_scenario(_START, _H, _GOAL, _H, islands=[],
+                           circles=[((180000, 240000), 35000),
+                                    ((280000, 200000), 35000)])
+
+
+def scenario_circle_and_island():
+    """A circle and an island that both straddle the diagonal; the current planner cannot route around them (locked as no-path baseline)."""
+    return _build_scenario(_START, _H, _GOAL, _H,
+                           islands=[_FAR_ISLAND],
+                           circles=[((150000, 180000), 30000)])
+
+
 SCENARIOS = {
     'empty': scenario_empty,
     'one_circle': scenario_one_circle,
     'one_island': scenario_one_island,
     'mixed': scenario_mixed,
+    'two_circles_gap': scenario_two_circles_gap,
+    'circle_and_island': scenario_circle_and_island,
 }
 
 
@@ -210,6 +226,9 @@ EXPECTED = {
     'mixed':      {'valid': False, 'waypoints': 0, 'num_turns': 0, 'total_length_m': 0.0},
 }
 
+EXPECTED['two_circles_gap'] = {'valid': True, 'waypoints': 63, 'num_turns': 2, 'total_length_m': 602459.3199364801}
+EXPECTED['circle_and_island'] = {'valid': False, 'waypoints': 0, 'num_turns': 0, 'total_length_m': 0.0}
+
 
 def _check(scenario_key):
     m = measure(scenario_key)
@@ -240,6 +259,14 @@ def test_one_island():
 
 def test_mixed():
     _check('mixed')
+
+
+def test_two_circles_gap():
+    _check('two_circles_gap')
+
+
+def test_circle_and_island():
+    _check('circle_and_island')
 
 
 # --------------------------------------------------------------------------
