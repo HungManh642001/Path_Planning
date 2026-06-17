@@ -157,19 +157,17 @@ def validate_kinodynamics(w_i, heading_i, w_next, heading_next, w_next_next=None
     # We need l_{i+1} > 0
     
     
-    if alpha_max is not None:
-        # delta_heading_next = heading_next_next - heading_next
-        # delta_heading_next = math.atan2(math.sin(delta_heading_next), math.cos(delta_heading_next))
-        alpha_next = alpha_max
-        
-        # Distance from w_i to w_next
-        d_segment = math.sqrt((w_next[0] - w_i[0])**2 + (w_next[1] - w_i[1])**2)
-        
-        # Calculate required straight length
-        l_required = d_segment - R * (math.tan(alpha / 2) + math.tan(alpha_next / 2))
-        
-        if l_required < 10.0:  # Small threshold for numerical stability
-            return False, f"Straight segment length {l_required:.2f}m is too small (need > 10m)"
+    # Straight-segment (đoản trình) check.
+    if w_next_next is not None and heading_next_next is not None:
+        delta_next = heading_next_next - heading_next
+        alpha_next = abs(math.atan2(math.sin(delta_next), math.cos(delta_next)))
+    else:
+        alpha_next = alpha_max if alpha_max is not None else 0.0
+
+    d_segment = math.hypot(w_next[0] - w_i[0], w_next[1] - w_i[1])
+    l_required = d_segment - R * (math.tan(alpha / 2) + math.tan(alpha_next / 2))
+    if l_required < 10.0:
+        return False, f"Straight segment length {l_required:.2f}m too small (need > 10m)"
     
     return True, "OK"
 
