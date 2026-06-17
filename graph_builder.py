@@ -155,13 +155,6 @@ def _point_circle_tangents(point, circle):
         ))
     return tangent_points
 
-def _line_blocks_circle(line, center, radius, allow_touch):
-    dist = su.point_to_line_distance(center, line.coords[0], line.coords[-1])
-    if allow_touch:
-        return dist < radius - 1e-5
-    return dist < radius - 1e-5
-
-
 def _ring_nodes(center, radius, n):
     pts = []
     for k in range(n):

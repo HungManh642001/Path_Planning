@@ -129,7 +129,9 @@ class KinodynamicAstar:
                     node, heading_to_node,
                     R=self.R, alpha_max=self.alpha_max_rad
                 )
-                if is_valid and self._check_collision(current_state.waypoint, node):
+                if (is_valid
+                        and self._check_collision(current_state.waypoint, node)
+                        and self._arc_clear(current_state.waypoint, current_state.heading, heading_to_node)):
                     turn = abs(_angle_diff(heading_to_node, current_state.heading))
                     cost = math.sqrt(dx * dx + dy * dy) + config.TURN_PENALTY_WEIGHT * turn
                     successors.append((State(node, heading_to_node), cost))
@@ -345,8 +347,13 @@ class KinodynamicAstar:
                     next_wp, heading_to_next,
                     alpha_max=self.alpha_max_rad
                 )
-                # Also check arc clearance at the shortcut join point
-                if is_valid and self._arc_clear(prev_wp, prev_h, heading_to_next):
+                # Also check arc clearance at the shortcut join point (departure arc)
+                # and at the landing arc (next_wp incoming=heading_to_next, outgoing to path[i+2])
+                landing_arc_ok = True
+                if i + 2 < len(path):
+                    out_heading = su.angle_to_heading(next_wp, path[i + 2][0])
+                    landing_arc_ok = self._arc_clear(next_wp, heading_to_next, out_heading)
+                if is_valid and self._arc_clear(prev_wp, prev_h, heading_to_next) and landing_arc_ok:
                     # Can skip current point
                     i += 1
                     continue
@@ -424,7 +431,7 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
             print(f"Path found with {len(path)} waypoints")
             print(path)
         else:
-            print("No path found - triggering Lazy Convex Hull fallback")
+            print("No path found")
     
     # Smooth path if found
     if path:
