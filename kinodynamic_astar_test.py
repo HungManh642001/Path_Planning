@@ -82,3 +82,39 @@ def test_no_dead_stuck_counter():
     src = inspect.getsource(astar.KinodynamicAstar.search)
     assert 'iterations_without_expansion' not in src, \
         "dead early-exit counter must be removed (C4)"
+
+
+def test_produced_path_is_fully_valid_around_circle():
+    pre = _simple_pre(circles=[((150000.0, 0.0), 20000.0)], goal=(300000.0, 0.0))
+    import graph_builder as gb
+    tg = gb.generate_bitangents(pre['circle_obstacles'], pre['polygon_obstacles'])
+    tg = gb.extend_tangent_graph_with_start_goal(
+        tg, pre['start_state']['waypoint'], pre['start_state']['heading'],
+        pre['goal_state']['waypoint'], pre['goal_state']['heading'],
+        pre['circle_obstacles'], pre['polygon_obstacles'])
+    path = astar.KinodynamicAstar(pre, tg).search()
+    assert path is not None
+    assert pv.turn_angles_ok(path, pre['alpha_max_rad'])
+    assert pv.arcs_clear(path, pre['turn_radius'],
+                         pre['circle_obstacles'], pre['polygon_obstacles'])
+
+
+def test_arc_clear_detects_obstacle_in_turn():
+    base = {
+        'start_state': {'waypoint': (0.0, 0.0), 'heading': 0.0},
+        'goal_state': {'waypoint': (200000.0, 0.0), 'heading': 0.0},
+        'turn_radius': 8000.0,
+        'alpha_max_rad': math.radians(30.0),
+        'polygon_obstacles': [],
+    }
+    clear_pre = dict(base, circle_obstacles=[])
+    blocked_pre = dict(base, circle_obstacles=[((97000.0, 3000.0), 1500.0)])
+    planner_clear = astar.KinodynamicAstar(clear_pre, tangent_graph=None)
+    planner_blocked = astar.KinodynamicAstar(blocked_pre, tangent_graph=None)
+    corner = (100000.0, 0.0)
+    # No obstacle -> the turn arc is clear.
+    assert planner_clear._arc_clear(corner, 0.0, math.pi / 2) is True
+    # Obstacle sitting on the inside of the 90-deg turn arc -> blocked.
+    assert planner_blocked._arc_clear(corner, 0.0, math.pi / 2) is False
+    # A straight (no-turn) transition is always clear, even with the obstacle.
+    assert planner_blocked._arc_clear(corner, 0.0, 0.0) is True

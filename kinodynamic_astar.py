@@ -151,16 +151,15 @@ class KinodynamicAstar:
             # Check collision-free path
             if not self._check_collision(current_state.waypoint, next_waypoint):
                 continue
-            
-            # # Validate kinodynamic constraints
-            # is_valid, _ = prep.validate_kinodynamics(
-            #     current_state.waypoint, current_state.heading,
-            #     next_waypoint, next_heading, 
-            #     R=self.R, alpha_max=self.alpha_max_rad
-            # )            
-        
-            next_state = State(next_waypoint, next_heading)
-            successors.append((next_state, distance))
+            is_valid, _ = prep.validate_kinodynamics(
+                current_state.waypoint, current_state.heading,
+                next_waypoint, next_heading,
+                R=self.R, alpha_max=self.alpha_max_rad)
+            if not is_valid:
+                continue
+            if not self._arc_clear(current_state.waypoint, current_state.heading, next_heading):
+                continue
+            successors.append((State(next_waypoint, next_heading), distance))
     
         return successors  # Return all successors (no artificial limit)
 
@@ -185,6 +184,22 @@ class KinodynamicAstar:
         
         return True
     
+    def _arc_clear(self, w, h_in, h_out, n=12):
+        import path_validation as pv
+        alpha = abs(pv._norm(h_out - h_in))
+        if alpha < 1e-9:
+            return True
+        t = self.R * math.tan(alpha / 2)
+        u = (math.cos(h_in), math.sin(h_in))
+        v = (math.cos(h_out), math.sin(h_out))
+        A = (w[0] - u[0] * t, w[1] - u[1] * t)
+        Bp = (w[0] + v[0] * t, w[1] + v[1] * t)
+        pts = pv._arc_points(A, w, Bp, self.R, n)
+        for j in range(len(pts) - 1):
+            if not self._check_collision(pts[j], pts[j + 1]):
+                return False
+        return True
+
     def _in_bounds(self, point):
         """Check if point is within map bounds"""
         x, y = point
