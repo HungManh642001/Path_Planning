@@ -210,7 +210,7 @@ def generate_bitangents(circle_obstacles, polygon_obstacles, filter_los=True):
             circle1 = all_obstacles[i]
             circle2 = all_obstacles[j]
             
-            tangents = su.compute_tangent_lines(circle1, circle2)
+            tangents = _circle_circle_tangents(circle1, circle2)
             
             for tangent in tangents:
                 p1, p2 = tangent
