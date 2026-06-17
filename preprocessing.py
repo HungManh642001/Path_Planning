@@ -68,8 +68,9 @@ def calculate_start_state(origin, init_heading, L0=config.L0, R=config.R, alpha_
     
     # Assume we go straight for distance L0
     l_1 = L0
-    
-    # With minimal turn angle α_1 ≈ 0, d_1 ≈ l_1
+
+    # Conservative: reserve tangent length for the worst-case first turn α₁ = α_max,
+    # so d₁ = L0 + R*tan(α_max/2) and l₁ = L0 exactly (l₁ ≥ L0 holds).
     d_1 = l_1 + R * math.tan(alpha_max_rad / 2)
     
     # Calculate W_1 position
