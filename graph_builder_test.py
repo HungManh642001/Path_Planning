@@ -1,6 +1,7 @@
 import math
 import graph_builder as gb
 import spatial_utils as su
+import config
 
 
 def _dist_point_to_line(p, a, b):
@@ -17,3 +18,16 @@ def test_generated_tangents_do_not_cross_circle_centres():
         for center, radius in circles:
             assert _dist_point_to_line(center, p1, p2) >= radius - 1.0, \
                 f"edge {p1}->{p2} cuts circle at {center}"
+
+
+def test_single_circle_produces_navigation_nodes():
+    circles = [((50000.0, 0.0), 20000.0)]
+    g = gb.generate_bitangents(circles, [], filter_los=True)
+    assert len(g.nodes) == config.OBSTACLE_RING_SAMPLES
+
+
+def test_single_polygon_produces_hull_nodes():
+    poly = [(40000.0, -10000.0), (60000.0, -10000.0),
+            (60000.0, 10000.0), (40000.0, 10000.0)]
+    g = gb.generate_bitangents([], [poly], filter_los=True)
+    assert len(g.nodes) >= 4

@@ -54,6 +54,9 @@ MIN_TANGENT_ANGLE = 10.0
 # Number of sampling points on each tangent
 TANGENT_SAMPLES = 50
 
+# Number of boundary support nodes sampled around each circular obstacle
+OBSTACLE_RING_SAMPLES = 16
+
 # ====== VISUALIZATION ======
 PLOT_BITANGENTS = True
 PLOT_BUFFER_ZONES = True

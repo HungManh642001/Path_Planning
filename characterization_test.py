@@ -226,7 +226,7 @@ EXPECTED = {
     'mixed':      {'valid': False, 'waypoints': 0, 'num_turns': 0, 'total_length_m': 0.0},
 }
 
-EXPECTED['two_circles_gap'] = {'valid': True, 'waypoints': 63, 'num_turns': 2, 'total_length_m': 602459.3199364801}
+EXPECTED['two_circles_gap'] = {'valid': True, 'waypoints': 3, 'num_turns': 2, 'total_length_m': 602707.3708132997}
 EXPECTED['circle_and_island'] = {'valid': False, 'waypoints': 0, 'num_turns': 0, 'total_length_m': 0.0}
 
 

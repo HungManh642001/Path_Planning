@@ -161,6 +161,44 @@ def _line_blocks_circle(line, center, radius, allow_touch):
         return dist < radius - 1e-5
     return dist < radius - 1e-5
 
+
+def _ring_nodes(center, radius, n):
+    pts = []
+    for k in range(n):
+        ang = 2.0 * math.pi * k / n
+        pts.append((center[0] + radius * math.cos(ang),
+                    center[1] + radius * math.sin(ang)))
+    return pts
+
+
+def _add_visibility_nodes(graph, circle_obstacles, polygon_obstacles):
+    """Add boundary support nodes per obstacle and connect mutually-visible
+    pairs whose connecting segment clears all obstacles."""
+    nodes = []
+    for center, radius in circle_obstacles:
+        nodes.extend(_ring_nodes(center, radius, config.OBSTACLE_RING_SAMPLES))
+    for poly in polygon_obstacles:
+        nodes.extend(Polygon(poly).convex_hull.exterior.coords[:-1])
+
+    poly_shapes = [Polygon(poly) for poly in polygon_obstacles]
+
+    def clear(a, b):
+        for center, radius in circle_obstacles:
+            if su.point_to_line_distance(center, a, b) < radius - 1.0:
+                return False
+        line = LineString([a, b])
+        for poly_shape in poly_shapes:
+            if line.crosses(poly_shape):
+                return False
+        return True
+
+    for n in nodes:
+        graph.add_node(n)
+    for i in range(len(nodes)):
+        for j in range(i + 1, len(nodes)):
+            if clear(nodes[i], nodes[j]):
+                graph.add_edge(nodes[i], nodes[j])
+
 def generate_bitangents(circle_obstacles, polygon_obstacles, filter_los=True):
     """
     Generate bitangent lines between obstacles.
@@ -231,7 +269,8 @@ def generate_bitangents(circle_obstacles, polygon_obstacles, filter_los=True):
                         continue
                 
                 graph.add_edge(p1, p2)
-    
+
+    _add_visibility_nodes(graph, circle_obstacles, polygon_obstacles)
     return graph
 
 
