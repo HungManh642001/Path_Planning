@@ -51,6 +51,9 @@ HEURISTIC_WEIGHT = 1.0
 # Threshold for considering a point as reached (meters)
 GOAL_THRESHOLD = 200.0
 
+# Cost added per radian of heading change at a transition (meters per radian)
+TURN_PENALTY_WEIGHT = 4000.0
+
 # ====== TANGENT GRAPH ======
 # Minimum angle between tangent lines (degrees)
 MIN_TANGENT_ANGLE = 10.0

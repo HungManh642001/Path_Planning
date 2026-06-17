@@ -139,3 +139,14 @@ def test_smoothing_reduces_or_keeps_waypoints_and_stays_valid():
     assert pv.turn_angles_ok(smoothed, pre['alpha_max_rad'])
     assert pv.arcs_clear(smoothed, pre['turn_radius'],
                          pre['circle_obstacles'], pre['polygon_obstacles'])
+
+
+def test_turn_penalty_makes_turning_cost_more_than_straight():
+    pre = _simple_pre()  # empty map, no tangent graph
+    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    succ = planner.get_next_states(planner.start_state)
+    # all radial successors share the same step distance; the straight-ahead one
+    # (smallest heading change) must cost strictly less than the sharpest-turn one.
+    straight = min(succ, key=lambda s: abs(astar._angle_diff(s[0].heading, planner.start_state.heading)))
+    turned = max(succ, key=lambda s: abs(astar._angle_diff(s[0].heading, planner.start_state.heading)))
+    assert turned[1] > straight[1], "a sharper turn must cost more once a turn penalty exists"

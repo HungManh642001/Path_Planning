@@ -15,6 +15,11 @@ import preprocessing as prep
 import graph_builder as gb
 
 
+def _angle_diff(a, b):
+    """Smallest signed difference a-b normalised to [-pi, pi]."""
+    return math.atan2(math.sin(a - b), math.cos(a - b))
+
+
 class State:
     """Represents a missile state: (waypoint, heading)"""
     
@@ -129,7 +134,9 @@ class KinodynamicAstar:
                     R=self.R, alpha_max=self.alpha_max_rad
                 )
                 if is_valid and self._check_collision(current_state.waypoint, node):
-                    successors.append((State(node, heading_to_node), math.sqrt(dx * dx + dy * dy)))
+                    turn = abs(_angle_diff(heading_to_node, current_state.heading))
+                    cost = math.sqrt(dx * dx + dy * dy) + config.TURN_PENALTY_WEIGHT * turn
+                    successors.append((State(node, heading_to_node), cost))
         
         # Strategy 2: Radial sampling (12 directions) for exploration
         num_directions = 11
@@ -159,7 +166,9 @@ class KinodynamicAstar:
                 continue
             if not self._arc_clear(current_state.waypoint, current_state.heading, next_heading):
                 continue
-            successors.append((State(next_waypoint, next_heading), distance))
+            turn = abs(_angle_diff(next_heading, current_state.heading))
+            cost = distance + config.TURN_PENALTY_WEIGHT * turn
+            successors.append((State(next_waypoint, next_heading), cost))
     
         return successors  # Return all successors (no artificial limit)
 
