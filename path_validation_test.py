@@ -30,3 +30,33 @@ def test_multi_segment_path_blocked_on_second_leg():
     path = [((0.0, 0.0), 0.0), ((100.0, 0.0), 0.0), ((100.0, 100.0), 0.0)]
     blocking = ((100.0, 50.0), 10.0)  # sits on the second (vertical) leg
     assert pv.segments_clear(path, circle_obstacles=[blocking], polygon_obstacles=[]) is False
+
+
+def test_turn_angles_straight_line_is_zero():
+    path = [((0.0, 0.0), 0.0), ((100.0, 0.0), 0.0), ((200.0, 0.0), 0.0)]
+    angles = pv.turn_angles(path)
+    assert len(angles) == 1
+    assert abs(angles[0]) < 1e-9
+
+
+def test_turn_angles_right_angle():
+    path = [((0.0, 0.0), 0.0), ((100.0, 0.0), 0.0), ((100.0, 100.0), 0.0)]
+    angles = pv.turn_angles(path)
+    assert abs(angles[0] - math.pi / 2) < 1e-9
+
+
+def test_turn_angle_limit_ok():
+    path = [((0.0, 0.0), 0.0), ((100.0, 0.0), 0.0), ((200.0, 50.0), 0.0)]
+    assert pv.turn_angles_ok(path, alpha_max_rad=math.radians(30.0)) is True
+
+
+def test_turn_angle_limit_violated():
+    path = [((0.0, 0.0), 0.0), ((100.0, 0.0), 0.0), ((150.0, 100.0), 0.0)]
+    assert pv.turn_angles_ok(path, alpha_max_rad=math.radians(30.0)) is False
+
+
+def test_straight_segment_lengths_positive_for_long_legs():
+    path = [((0.0, 0.0), 0.0), ((100000.0, 0.0), 0.0),
+            ((200000.0, 10000.0), 0.0), ((300000.0, 20000.0), 0.0)]
+    ok, detail = pv.straight_segments_ok(path, R=8000.0, L0=4000.0, dss=23000.0)
+    assert ok is True, detail

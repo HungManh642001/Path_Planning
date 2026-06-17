@@ -44,3 +44,56 @@ def segments_clear(path, circle_obstacles, polygon_obstacles):
         if not _segment_clear(a, b, circle_obstacles, polygon_obstacles):
             return False
     return True
+
+
+def _seg_heading(a, b):
+    return math.atan2(b[1] - a[1], b[0] - a[0])
+
+
+def _norm(delta):
+    return math.atan2(math.sin(delta), math.cos(delta))
+
+
+def turn_angles(path):
+    """Turn angle (rad, magnitude) at each interior waypoint, from segment geometry."""
+    angles = []
+    for i in range(1, len(path) - 1):
+        h_in = _seg_heading(path[i - 1][0], path[i][0])
+        h_out = _seg_heading(path[i][0], path[i + 1][0])
+        angles.append(abs(_norm(h_out - h_in)))
+    return angles
+
+
+def turn_angles_ok(path, alpha_max_rad):
+    return all(a <= alpha_max_rad + 1e-9 for a in turn_angles(path))
+
+
+def _seg_len(a, b):
+    return math.hypot(b[0] - a[0], b[1] - a[1])
+
+
+def straight_segments_ok(path, R, L0, dss):
+    """Check đoản trình straight-portion constraints from the spec.
+
+    Returns (ok, detail). alpha at interior waypoints comes from turn_angles();
+    endpoints have no turn before/after them (alpha = 0 at O and at T).
+    """
+    n_seg = len(path) - 1
+    if n_seg < 1:
+        return True, "trivial"
+    alphas = [0.0] + turn_angles(path) + [0.0]  # alpha at each waypoint index
+    for i in range(n_seg):
+        d = _seg_len(path[i][0], path[i + 1][0])
+        a_i = alphas[i]
+        a_next = alphas[i + 1]
+        l = d - R * (math.tan(a_i / 2) + math.tan(a_next / 2))
+        if i == 0:                       # first đoản trình: l1 >= L0
+            if l < L0 - 1.0:
+                return False, f"first segment l={l:.1f} < L0={L0}"
+        elif i == n_seg - 1:             # last đoản trình: ln = l - dss >= 0
+            if l - dss < -1.0:
+                return False, f"last segment usable l={l - dss:.1f} < 0"
+        else:                            # middle: l > 0
+            if l < 1.0:
+                return False, f"middle segment {i} l={l:.1f} <= 0"
+    return True, "ok"
