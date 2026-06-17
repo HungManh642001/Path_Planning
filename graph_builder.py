@@ -291,63 +291,41 @@ def extend_tangent_graph_with_start_goal(graph, start_pos, start_heading, goal_p
     # Add start and goal as nodes
     start_idx = graph.add_node(start_pos)
     goal_idx = graph.add_node(goal_pos)
-    
-    all_obstacles = [(c, r) for c, r in circle_obstacles] + \
-                    [((sum(p[0] for p in poly) / len(poly), 
-                      sum(p[1] for p in poly) / len(poly)),
-                      max(math.sqrt((p[0] - sum(pp[0] for pp in poly) / len(poly))**2 +
-                                   (p[1] - sum(pp[1] for pp in poly) / len(poly))**2)
-                         for p in poly))
-                     for poly in polygon_obstacles]
-    
-    # Connect start to all graph nodes with better LOS checking
+
+    poly_shapes = [Polygon(poly) for poly in polygon_obstacles]
+
+    def clear(a, b):
+        for center, radius in circle_obstacles:
+            if su.point_to_line_distance(center, a, b) < radius:
+                return False
+        line = LineString([a, b])
+        for poly_shape in poly_shapes:
+            if line.intersects(poly_shape):
+                return False
+        return True
+
+    # Connect start to all graph nodes with exact LOS checking
     num_connections = 0
     for node_pos in graph.nodes:
         if node_pos == start_pos:
             continue
-        
-        # Check line-of-sight from start to node
-        los_clear = True
-        for circle in all_obstacles:
-            dist = su.point_to_line_distance(circle[0], start_pos, node_pos)
-            # LOS blocked if the segment enters the (already-inflated) obstacle
-            if dist < circle[1]:
-                los_clear = False
-                break
-        
-        if los_clear:
+
+        if clear(start_pos, node_pos):
             graph.add_edge(start_pos, node_pos)
             num_connections += 1
-    
+
     # Connect goal to all graph nodes
     num_goal_connections = 0
     for node_pos in graph.nodes:
         if node_pos == goal_pos:
             continue
-        
-        # Check line-of-sight from node to goal
-        los_clear = True
-        for circle in all_obstacles:
-            dist = su.point_to_line_distance(circle[0], node_pos, goal_pos)
-            # LOS blocked if the segment enters the (already-inflated) obstacle
-            if dist < circle[1]:
-                los_clear = False
-                break
-        
-        if los_clear:
+
+        if clear(node_pos, goal_pos):
             graph.add_edge(node_pos, goal_pos)
             num_goal_connections += 1
-    
+
     # Direct connection start to goal (if possible)
-    direct_los = True
-    for circle in all_obstacles:
-        dist = su.point_to_line_distance(circle[0], start_pos, goal_pos)
-        # LOS blocked if the segment enters the (already-inflated) obstacle
-        if dist < circle[1]:
-            direct_los = False
-            break
-    
-    if direct_los:
+    if clear(start_pos, goal_pos):
         graph.add_edge(start_pos, goal_pos)
     
     return graph
