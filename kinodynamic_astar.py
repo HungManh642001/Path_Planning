@@ -90,19 +90,15 @@ class KinodynamicAstar:
     
     def heuristic(self, state, goal_state):
         """
-        Compute heuristic distance from state to goal.
-        Simple Euclidean distance with heading consideration.
+        Admissible Euclidean lower-bound heuristic.
+        Returns straight-line distance to the goal waypoint.
+        The old `dist + R * heading_diff` term was inadmissible because heading
+        is corrected gradually while travelling, so it over-estimated remaining
+        cost and could cause A* to return suboptimal paths.
         """
         dx = goal_state.waypoint[0] - state.waypoint[0]
         dy = goal_state.waypoint[1] - state.waypoint[1]
-        
-        dist = math.sqrt(dx**2 + dy**2)
-        
-        # Add heading mismatch penalty
-        heading_diff = abs(state.heading - goal_state.heading)
-        heading_diff = min(heading_diff, 2*math.pi - heading_diff)
-        
-        return dist + self.R * heading_diff
+        return math.sqrt(dx * dx + dy * dy)
     
     def get_next_states(self, current_state):
         """

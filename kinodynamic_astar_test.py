@@ -150,3 +150,24 @@ def test_turn_penalty_makes_turning_cost_more_than_straight():
     straight = min(succ, key=lambda s: abs(astar._angle_diff(s[0].heading, planner.start_state.heading)))
     turned = max(succ, key=lambda s: abs(astar._angle_diff(s[0].heading, planner.start_state.heading)))
     assert turned[1] > straight[1], "a sharper turn must cost more once a turn penalty exists"
+
+
+def test_heuristic_is_euclidean_lower_bound():
+    pre = _simple_pre()
+    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    s = planner.start_state
+    g = planner.goal_state
+    euclid = math.hypot(g.waypoint[0] - s.waypoint[0], g.waypoint[1] - s.waypoint[1])
+    h = planner.heuristic(s, g)
+    assert abs(h - euclid) < 1e-6, "heuristic must equal Euclidean distance (admissible)"
+
+    # Strengthen: build a state with a heading DIFFERENT from goal_state.heading so
+    # the old `dist + R * heading_diff` formula would return dist + R * pi/2, not
+    # just dist.  The heuristic must still equal pure Euclidean distance regardless
+    # of heading, so the old formula is guaranteed to fail this assertion.
+    differing_heading_state = astar.State(s.waypoint, g.heading + math.pi / 2)
+    h2 = planner.heuristic(differing_heading_state, g)
+    # euclid distance is identical (same waypoints); heading must NOT add anything
+    assert abs(h2 - euclid) < 1e-6, \
+        f"heuristic with heading diff pi/2 returned {h2:.2f}, expected Euclidean {euclid:.2f}; " \
+        f"heading penalty R*pi/2 = {planner.R * math.pi / 2:.2f} must be removed"
