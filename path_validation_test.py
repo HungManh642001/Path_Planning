@@ -60,3 +60,16 @@ def test_straight_segment_lengths_positive_for_long_legs():
             ((200000.0, 10000.0), 0.0), ((300000.0, 20000.0), 0.0)]
     ok, detail = pv.straight_segments_ok(path, R=8000.0, L0=4000.0, dss=23000.0)
     assert ok is True, detail
+
+
+def test_arc_clear_when_no_obstacle():
+    path = [((0.0, 0.0), 0.0), ((100000.0, 0.0), 0.0), ((200000.0, 50000.0), 0.0)]
+    assert pv.arcs_clear(path, R=8000.0, circle_obstacles=[], polygon_obstacles=[]) is True
+
+
+def test_arc_blocked_by_obstacle_on_inside_of_turn():
+    # Corner at (100000,0) turning left; inside of the turn is +y.
+    path = [((0.0, 0.0), 0.0), ((100000.0, 0.0), 0.0), ((100000.0, 100000.0), 0.0)]
+    blocking = ((100000.0 - 3000.0, 3000.0), 1500.0)
+    assert pv.arcs_clear(path, R=8000.0, circle_obstacles=[blocking],
+                         polygon_obstacles=[]) is False

@@ -97,3 +97,53 @@ def straight_segments_ok(path, R, L0, dss):
             if l < 1.0:
                 return False, f"middle segment {i} l={l:.1f} <= 0"
     return True, "ok"
+
+
+def _unit(a, b):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    d = math.hypot(dx, dy)
+    return (dx / d, dy / d) if d > 0 else (0.0, 0.0)
+
+
+def _arc_points(w_prev, w, w_next, R, n=24):
+    """Sample the radius-R turn arc that replaces corner w."""
+    u = _unit(w_prev, w)      # incoming direction
+    v = _unit(w, w_next)      # outgoing direction
+    alpha = abs(_norm(math.atan2(v[1], v[0]) - math.atan2(u[1], u[0])))
+    if alpha < 1e-9:
+        return []
+    t = R * math.tan(alpha / 2)              # tangent length along each leg
+    A = (w[0] - u[0] * t, w[1] - u[1] * t)   # tangent point on incoming leg
+    s = 1.0 if (u[0] * v[1] - u[1] * v[0]) > 0 else -1.0   # left(+)/right(-) turn
+    n_in = (-u[1] * s, u[0] * s)             # inward normal of incoming leg
+    C = (A[0] + R * n_in[0], A[1] + R * n_in[1])   # arc centre
+    start = math.atan2(A[1] - C[1], A[0] - C[0])
+    pts = []
+    for k in range(n + 1):
+        ang = start + s * alpha * (k / n)
+        pts.append((C[0] + R * math.cos(ang), C[1] + R * math.sin(ang)))
+    return pts
+
+
+def arcs_clear(path, R, circle_obstacles, polygon_obstacles):
+    """True iff every turn arc clears all obstacles."""
+    for i in range(1, len(path) - 1):
+        pts = _arc_points(path[i - 1][0], path[i][0], path[i + 1][0], R)
+        for j in range(len(pts) - 1):
+            if not _segment_clear(pts[j], pts[j + 1], circle_obstacles, polygon_obstacles):
+                return False
+    return True
+
+
+def path_is_valid(path, circle_obstacles, polygon_obstacles, R, alpha_max_rad, L0, dss):
+    """One-call full validity gate used by later phases."""
+    if not path or len(path) < 2:
+        return False
+    if not segments_clear(path, circle_obstacles, polygon_obstacles):
+        return False
+    if not turn_angles_ok(path, alpha_max_rad):
+        return False
+    if not arcs_clear(path, R, circle_obstacles, polygon_obstacles):
+        return False
+    ok, _ = straight_segments_ok(path, R, L0, dss)
+    return ok
