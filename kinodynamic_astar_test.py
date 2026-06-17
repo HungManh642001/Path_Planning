@@ -7,10 +7,10 @@ import config
 import spatial_utils as su
 
 
-def _simple_pre(circles=(), polys=()):
+def _simple_pre(circles=(), polys=(), start=(2000, 2000), goal=(100000, 0)):
     scenario = {
-        'start': (2000, 2000), 'start_heading': 0.0,
-        'goal': (100000, 0), 'goal_heading': 0.0,
+        'start': start, 'start_heading': 0.0,
+        'goal': goal, 'goal_heading': 0.0,
         'obstacles': [{'type': 'circle', 'center': c, 'radius': r} for c, r in circles]
                      + [{'type': 'polygon', 'polygon': p} for p in polys],
         'islands': [], 'sam_sites': [],
@@ -39,9 +39,11 @@ def test_state_tuple_distinguishes_far_states():
     assert a != b
 
 
-@pytest.mark.skip(reason="completeness expected after Phase 2 (lattice/adjacency); re-enable in Task 2.2")
 def test_finds_valid_path_around_single_circle():
-    pre = _simple_pre(circles=[((50000.0, 0.0), 20000.0)])
+    # Circle at (150000,0) r=20000 -> inflated ~30.3 km. Goal far enough right
+    # that the goal waypoint (offset back by DSS) clears the inflated circle,
+    # but the circle still blocks the direct start->goal line, forcing a detour.
+    pre = _simple_pre(circles=[((150000.0, 0.0), 20000.0)], goal=(300000.0, 0.0))
     import graph_builder as gb
     tg = gb.generate_bitangents(pre['circle_obstacles'], pre['polygon_obstacles'])
     tg = gb.extend_tangent_graph_with_start_goal(
@@ -52,3 +54,24 @@ def test_finds_valid_path_around_single_circle():
     path = planner.search()
     assert path is not None, "planner must find a route around one circle"
     assert pv.segments_clear(path, pre['circle_obstacles'], pre['polygon_obstacles'])
+
+
+def test_strategy1_uses_graph_adjacency(monkeypatch):
+    import graph_builder as gb
+    pre = _simple_pre(circles=[((50000.0, 0.0), 20000.0)])
+    tg = gb.generate_bitangents(pre['circle_obstacles'], pre['polygon_obstacles'])
+    tg = gb.extend_tangent_graph_with_start_goal(
+        tg, pre['start_state']['waypoint'], pre['start_state']['heading'],
+        pre['goal_state']['waypoint'], pre['goal_state']['heading'],
+        pre['circle_obstacles'], pre['polygon_obstacles'])
+    planner = astar.KinodynamicAstar(pre, tg)
+
+    calls = {'n': 0}
+    orig = tg.get_neighbors
+    def counting(pos):
+        calls['n'] += 1
+        return orig(pos)
+    monkeypatch.setattr(tg, 'get_neighbors', counting)
+
+    planner.get_next_states(planner.start_state)
+    assert calls['n'] >= 1, "Strategy 1 must consult graph adjacency, not scan all nodes"

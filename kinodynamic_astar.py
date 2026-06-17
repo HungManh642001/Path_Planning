@@ -110,29 +110,26 @@ class KinodynamicAstar:
         
         successors = []
         
-        # Strategy 1: Use tangent graph nodes as waypoints (primary)
+        # Strategy 1: expand graph-adjacent nodes (+ direct goal attempt)
         if self.tangent_graph is not None:
-            for node in self.tangent_graph.nodes:
-                # Skip if same as current (within 100m)
+            neighbors = self.tangent_graph.get_neighbors(current_state.waypoint)
+            goal_wp = self.goal_state.waypoint
+            candidates = [wp for wp, _cost in neighbors]
+            if goal_wp not in candidates:
+                candidates.append(goal_wp)
+            for node in candidates:
                 dx = node[0] - current_state.waypoint[0]
                 dy = node[1] - current_state.waypoint[1]
-                if dx**2 + dy**2 < 10000:  # 100m threshold
+                if dx * dx + dy * dy < 10000:
                     continue
-                
-                # Calculate heading to node
                 heading_to_node = su.angle_to_heading(current_state.waypoint, node)
-                    
-                # Validate kinodynamics
                 is_valid, _ = prep.validate_kinodynamics(
                     current_state.waypoint, current_state.heading,
                     node, heading_to_node,
                     R=self.R, alpha_max=self.alpha_max_rad
                 )
-                
                 if is_valid and self._check_collision(current_state.waypoint, node):
-                    cost = math.sqrt(dx**2 + dy**2)
-                    next_state = State(node, heading_to_node)
-                    successors.append((next_state, cost))
+                    successors.append((State(node, heading_to_node), math.sqrt(dx * dx + dy * dy)))
         
         # Strategy 2: Radial sampling (12 directions) for exploration
         num_directions = 11
