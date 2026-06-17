@@ -41,6 +41,10 @@ MAP_ORIGIN = (0.0, 0.0)
 # Maximum iterations for A* search
 MAX_ITERATIONS = 50000
 
+# State-lattice quantisation for A* de-duplication
+STATE_POS_QUANTUM = 1000.0          # meters
+STATE_HEADING_QUANTUM_DEG = 3.0     # degrees
+
 # Heuristic weight (1.0 = Dijkstra, > 1.0 = more greedy)
 HEURISTIC_WEIGHT = 1.0
 

@@ -4,6 +4,7 @@ import preprocessing as prep
 import kinodynamic_astar as astar
 import path_validation as pv
 import config
+import spatial_utils as su
 
 
 def _simple_pre(circles=(), polys=()):
@@ -24,6 +25,18 @@ def test_polygons_are_prebuilt_shapely_objects():
     assert hasattr(planner, '_polygons')
     assert all(isinstance(p, Polygon) for p in planner._polygons)
     assert len(planner._polygons) == 1
+
+
+def test_state_tuple_buckets_nearby_states_together():
+    a = su.state_to_tuple((123456.0, 7000.0), 0.10)
+    b = su.state_to_tuple((123456.0 + 200.0, 7000.0 + 200.0), 0.10 + math.radians(1.0))
+    assert a == b, "states within one lattice cell must hash equal"
+
+
+def test_state_tuple_distinguishes_far_states():
+    a = su.state_to_tuple((0.0, 0.0), 0.0)
+    b = su.state_to_tuple((5000.0, 0.0), 0.0)
+    assert a != b
 
 
 @pytest.mark.skip(reason="completeness expected after Phase 2 (lattice/adjacency); re-enable in Task 2.2")

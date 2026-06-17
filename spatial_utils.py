@@ -336,5 +336,10 @@ def calculate_straight_segment_length(heading1, heading2, R):
 
 
 def state_to_tuple(waypoint, heading):
-    """Convert (waypoint, heading) state to tuple for hashing"""
-    return (round(waypoint[0], 1), round(waypoint[1], 1), round(heading, 4))
+    """Quantise (waypoint, heading) onto the search lattice for hashing/dedup."""
+    q = config.STATE_POS_QUANTUM
+    hq = math.radians(config.STATE_HEADING_QUANTUM_DEG)
+    hx = int(waypoint[0] // q)
+    hy = int(waypoint[1] // q)
+    hh = round(math.atan2(math.sin(heading), math.cos(heading)) / hq)
+    return (hx, hy, hh)
