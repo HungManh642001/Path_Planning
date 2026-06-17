@@ -165,7 +165,24 @@ class KinodynamicAstar:
             turn = abs(_angle_diff(next_heading, current_state.heading))
             cost = distance + config.TURN_PENALTY_WEIGHT * turn
             successors.append((State(next_waypoint, next_heading), cost))
-    
+
+        # Goal-directed successor: head straight at the goal when feasible, stepping
+        # at most one radial step (or exactly to the goal if closer).
+        # Only fires when the full straight-line corridor to the goal is clear so
+        # it does not pollute the search with dead-end partial steps toward a blocked goal.
+        goal_wp = self.goal_state.waypoint
+        gh = su.angle_to_heading(current_state.waypoint, goal_wp)
+        turn = abs(_angle_diff(gh, current_state.heading))
+        if turn <= self.alpha_max_rad and self._check_collision(current_state.waypoint, goal_wp):
+            d = math.hypot(goal_wp[0] - current_state.waypoint[0],
+                           goal_wp[1] - current_state.waypoint[1])
+            step = min(d, 2 * self.R * math.tan(self.alpha_max_rad / 2))
+            cand = (current_state.waypoint[0] + step * math.cos(gh),
+                    current_state.waypoint[1] + step * math.sin(gh))
+            if (self._in_bounds(cand)
+                    and self._arc_clear(current_state.waypoint, current_state.heading, gh)):
+                successors.append((State(cand, gh), step + config.TURN_PENALTY_WEIGHT * turn))
+
         return successors  # Return all successors (no artificial limit)
 
     

@@ -171,3 +171,14 @@ def test_heuristic_is_euclidean_lower_bound():
     assert abs(h2 - euclid) < 1e-6, \
         f"heuristic with heading diff pi/2 returned {h2:.2f}, expected Euclidean {euclid:.2f}; " \
         f"heading penalty R*pi/2 = {planner.R * math.pi / 2:.2f} must be removed"
+
+
+def test_goal_directed_successor_heads_straight_at_goal():
+    pre = _simple_pre()  # empty map; Strategy 2 + goal-directed only
+    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    succ = planner.get_next_states(planner.start_state)
+    gh = su.angle_to_heading(planner.start_state.waypoint, planner.goal_state.waypoint)
+    # The goal-directed successor heads EXACTLY at the goal; the radial fan headings
+    # are offsets of the current heading and won't match gh exactly. Use a tight bound.
+    assert any(abs(astar._angle_diff(s[0].heading, gh)) < math.radians(0.5) for s in succ), \
+        "a goal-directed successor pointing straight at the goal must exist"
