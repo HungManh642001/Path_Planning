@@ -212,9 +212,6 @@ class KinodynamicAstar:
         ))
         self.g_scores[self.start_state] = 0
         
-        # Track iterations without expansion
-        iterations_without_expansion = 0
-        
         while self.open_set and self.iteration_count < self.max_iterations:
             self.iteration_count += 1
             
@@ -225,8 +222,7 @@ class KinodynamicAstar:
                 continue
             
             self.closed_set.add(current)
-            iterations_without_expansion = 0
-            
+
             # Check if reached goal
             dist_to_goal = math.sqrt(
                 (current.waypoint[0] - self.goal_state.waypoint[0])**2 +
@@ -240,16 +236,13 @@ class KinodynamicAstar:
             # Expand neighbors
             successors = self.get_next_states(current)
             
-            if not successors:
-                iterations_without_expansion += 1
-            
             for next_state, transition_cost in successors:
                 if next_state in self.closed_set:
                     continue
                 
                 tentative_g = self.g_scores[current] + transition_cost
                 
-                if tentative_g < self.g_scores[next_state]:
+                if tentative_g < self.g_scores.get(next_state, float('inf')):
                     # Better path found
                     self.came_from[next_state] = current
                     self.g_scores[next_state] = tentative_g
@@ -261,11 +254,7 @@ class KinodynamicAstar:
                         self.iteration_count,
                         next_state
                     ))
-            
-            # Early exit if stuck
-            if iterations_without_expansion > 10:
-                break
-        
+
         # No path found
         self.search_failed = True
         return None

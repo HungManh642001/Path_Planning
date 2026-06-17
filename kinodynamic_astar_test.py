@@ -75,3 +75,10 @@ def test_strategy1_uses_graph_adjacency(monkeypatch):
 
     planner.get_next_states(planner.start_state)
     assert calls['n'] >= 1, "Strategy 1 must consult graph adjacency, not scan all nodes"
+
+
+def test_no_dead_stuck_counter():
+    import inspect
+    src = inspect.getsource(astar.KinodynamicAstar.search)
+    assert 'iterations_without_expansion' not in src, \
+        "dead early-exit counter must be removed (C4)"
