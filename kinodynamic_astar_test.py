@@ -56,25 +56,6 @@ def test_finds_valid_path_around_single_circle():
     assert pv.segments_clear(path, pre['circle_obstacles'], pre['polygon_obstacles'])
 
 
-def test_strategy1_uses_graph_adjacency(monkeypatch):
-    import graph_builder as gb
-    pre = _simple_pre(circles=[((50000.0, 0.0), 20000.0)])
-    tg = gb.generate_bitangents(pre['circle_obstacles'], pre['polygon_obstacles'])
-    tg = gb.extend_tangent_graph_with_start_goal(
-        tg, pre['start_state']['waypoint'], pre['start_state']['heading'],
-        pre['goal_state']['waypoint'], pre['goal_state']['heading'],
-        pre['circle_obstacles'], pre['polygon_obstacles'])
-    planner = astar.KinodynamicAstar(pre, tg)
-
-    calls = {'n': 0}
-    orig = tg.get_neighbors
-    def counting(pos):
-        calls['n'] += 1
-        return orig(pos)
-    monkeypatch.setattr(tg, 'get_neighbors', counting)
-
-    planner.get_next_states(planner.start_state)
-    assert calls['n'] >= 1, "Strategy 1 must consult graph adjacency, not scan all nodes"
 
 
 def test_no_dead_stuck_counter():
@@ -131,14 +112,15 @@ def test_smoothing_reduces_or_keeps_waypoints_and_stays_valid():
 
 
 def test_turn_penalty_makes_turning_cost_more_than_straight():
-    pre = _simple_pre()  # empty map, no tangent graph
+    # Goal directly behind the start heading (turn 180deg > alpha_max) => no graph
+    # candidate is valid => radial fallback fires, giving the 11-way fan to compare.
+    pre = _simple_pre(goal=(-50000.0, 0.0))
     planner = astar.KinodynamicAstar(pre, tangent_graph=None)
     succ = planner.get_next_states(planner.start_state)
-    # all radial successors share the same step distance; the straight-ahead one
-    # (smallest heading change) must cost strictly less than the sharpest-turn one.
+    assert len(succ) >= 2
     straight = min(succ, key=lambda s: abs(astar._angle_diff(s[0].heading, planner.start_state.heading)))
     turned = max(succ, key=lambda s: abs(astar._angle_diff(s[0].heading, planner.start_state.heading)))
-    assert turned[1] > straight[1], "a sharper turn must cost more once a turn penalty exists"
+    assert turned[1] > straight[1], "a sharper turn must cost more (turn penalty)"
 
 
 def test_heuristic_is_euclidean_lower_bound():
@@ -201,3 +183,33 @@ def test_check_collision_matches_bruteforce_with_spatial_index():
         want = _brute_force_clear(p1, p2, pre['circle_obstacles'], pre['polygon_obstacles'])
         assert got == want, f"mismatch on {p1}->{p2}: got {got} want {want}"
     assert hasattr(planner, '_poly_tree')
+
+
+import spatial_utils as su2  # alias to avoid clashing if su already imported
+
+
+def test_dynamic_successors_include_circle_tangents():
+    # Circle nearly straight ahead and small, so BOTH tangent directions are within
+    # alpha_max of the start heading (this task runs at the default alpha_max=30 deg).
+    # From start, successors must include the circle's tangent points (computed against
+    # the INFLATED radius, which is what the planner stores) — no tangent_graph used.
+    circle_raw = ((60000.0, 6000.0), 8000.0)
+    pre = _simple_pre(circles=[circle_raw], goal=(120000.0, 0.0))
+    inflated_center, inflated_radius = pre['circle_obstacles'][0]
+    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    succ = planner.get_next_states(planner.start_state)
+    tang = su2.circle_tangent_points(planner.start_state.waypoint, inflated_center, inflated_radius)
+    succ_wps = [s[0].waypoint for s in succ]
+    assert tang, "expected two tangent points from start to the inflated circle"
+    assert any(min(math.hypot(w[0]-t[0], w[1]-t[1]) for w in succ_wps) < 1.0 for t in tang), \
+        "dynamic successors must include circle tangent points"
+
+
+def test_radial_fallback_when_no_graph_candidate():
+    # empty map: no obstacles, so tangent set is just the goal. If the goal is directly
+    # reachable it is a successor; force the not-directly-reachable case by a goal behind
+    # the start heading so the direct jump turn > alpha_max, exercising the radial fallback.
+    pre = _simple_pre(goal=(-50000.0, 0.0))   # goal behind start (start_heading=0)
+    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    succ = planner.get_next_states(planner.start_state)
+    assert len(succ) > 0, "radial fallback must produce successors when no graph candidate is valid"

@@ -215,18 +215,21 @@ LENGTH_ABS_TOL_M = 1.0          # meters
 # itself a baseline characteristic worth watching, not an assertion target.
 RUNTIME_CEILING_S = 300.0
 
-# Baseline captured from the current algorithm (2026-06-16).
-# KEY FINDING: only the obstacle-free case is solved (a straight start->goal
-# line). The planner fails to route around even a single obstacle and returns
-# no path. valid=False => length/turns/waypoints are all 0.
+# Baseline captured from the current algorithm (2026-06-18), after Task 4:
+# dynamic tangent successors (circle tangent points + polygon hull vertices +
+# goal). The one_circle scenario is now SOLVED (valid=True). Polygon-only
+# scenarios (one_island, mixed, circle_and_island) still fail — radial fallback
+# runs out of iterations before routing around pure polygon obstacles.
 EXPECTED = {
     'empty':      {'valid': True,  'waypoints': 2, 'num_turns': 0, 'total_length_m': 602280.4888642486},
-    'one_circle': {'valid': False, 'waypoints': 0, 'num_turns': 0, 'total_length_m': 0.0},
+    # one_circle: dynamic tangent successors now route around the circle (was False/0/0/0)
+    'one_circle': {'valid': True,  'waypoints': 4, 'num_turns': 3, 'total_length_m': 610745.7365217851},
     'one_island': {'valid': False, 'waypoints': 0, 'num_turns': 0, 'total_length_m': 0.0},
     'mixed':      {'valid': False, 'waypoints': 0, 'num_turns': 0, 'total_length_m': 0.0},
 }
 
-EXPECTED['two_circles_gap'] = {'valid': True, 'waypoints': 3, 'num_turns': 2, 'total_length_m': 602707.3708132997}
+# two_circles_gap: length shifted by ~2.4 m due to changed successor geometry
+EXPECTED['two_circles_gap'] = {'valid': True, 'waypoints': 3, 'num_turns': 2, 'total_length_m': 602709.8018659366}
 EXPECTED['circle_and_island'] = {'valid': False, 'waypoints': 0, 'num_turns': 0, 'total_length_m': 0.0}
 
 
