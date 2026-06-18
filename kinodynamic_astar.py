@@ -132,8 +132,7 @@ class KinodynamicAstar:
                     R=self.R, alpha_max=self.alpha_max_rad
                 )
                 if (is_valid
-                        and self._check_collision(current_state.waypoint, node)
-                        and self._arc_clear(current_state.waypoint, current_state.heading, heading_to_node)):
+                        and self._check_collision(current_state.waypoint, node)):
                     turn = abs(_angle_diff(heading_to_node, current_state.heading))
                     cost = math.sqrt(dx * dx + dy * dy) + config.TURN_PENALTY_WEIGHT * turn
                     successors.append((State(node, heading_to_node), cost))
@@ -164,8 +163,6 @@ class KinodynamicAstar:
                 R=self.R, alpha_max=self.alpha_max_rad)
             if not is_valid:
                 continue
-            if not self._arc_clear(current_state.waypoint, current_state.heading, next_heading):
-                continue
             turn = abs(_angle_diff(next_heading, current_state.heading))
             cost = distance + config.TURN_PENALTY_WEIGHT * turn
             successors.append((State(next_waypoint, next_heading), cost))
@@ -183,8 +180,7 @@ class KinodynamicAstar:
             step = min(d, 2 * self.R * math.tan(self.alpha_max_rad / 2))
             cand = (current_state.waypoint[0] + step * math.cos(gh),
                     current_state.waypoint[1] + step * math.sin(gh))
-            if (self._in_bounds(cand)
-                    and self._arc_clear(current_state.waypoint, current_state.heading, gh)):
+            if self._in_bounds(cand):
                 successors.append((State(cand, gh), step + config.TURN_PENALTY_WEIGHT * turn))
 
         return successors  # Return all successors (no artificial limit)
@@ -209,22 +205,6 @@ class KinodynamicAstar:
                 return False
         return True
     
-    def _arc_clear(self, w, h_in, h_out, n=12):
-        import path_validation as pv
-        alpha = abs(pv._norm(h_out - h_in))
-        if alpha < 1e-9:
-            return True
-        t = self.R * math.tan(alpha / 2)
-        u = (math.cos(h_in), math.sin(h_in))
-        v = (math.cos(h_out), math.sin(h_out))
-        A = (w[0] - u[0] * t, w[1] - u[1] * t)
-        Bp = (w[0] + v[0] * t, w[1] + v[1] * t)
-        pts = pv._arc_points(A, w, Bp, self.R, n)
-        for j in range(len(pts) - 1):
-            if not self._check_collision(pts[j], pts[j + 1]):
-                return False
-        return True
-
     def _in_bounds(self, point):
         """Check if point is within map bounds"""
         x, y = point
@@ -348,13 +328,7 @@ class KinodynamicAstar:
                     next_wp, heading_to_next,
                     alpha_max=self.alpha_max_rad
                 )
-                # Also check arc clearance at the shortcut join point (departure arc)
-                # and at the landing arc (next_wp incoming=heading_to_next, outgoing to path[i+2])
-                landing_arc_ok = True
-                if i + 2 < len(path):
-                    out_heading = su.angle_to_heading(next_wp, path[i + 2][0])
-                    landing_arc_ok = self._arc_clear(next_wp, heading_to_next, out_heading)
-                if is_valid and self._arc_clear(prev_wp, prev_h, heading_to_next) and landing_arc_ok:
+                if is_valid and self._check_collision(prev_wp, next_wp):
                     # Can skip current point
                     i += 1
                     continue
