@@ -8,7 +8,7 @@ Defines tactical constants and parameters
 R = 8000.0
 
 # Maximum turn angle allowed (degrees)
-ALPHA_MAX = 30.0  # in degrees, will be converted to radians
+ALPHA_MAX = 90.0  # in degrees, will be converted to radians
 
 # Minimum distance for level flight and stabilization (m)
 # After launch, distance to descend and stabilize for sea-skimming
@@ -40,6 +40,9 @@ MAP_ORIGIN = (0.0, 0.0)
 # ====== A* SEARCH ======
 # Maximum iterations for A* search
 MAX_ITERATIONS = 50000
+
+# Wall-clock budget for a single search (seconds). None = no time limit.
+TIME_BUDGET_S = 0.9
 
 # State-lattice quantisation for A* de-duplication
 STATE_POS_QUANTUM = 1000.0          # meters

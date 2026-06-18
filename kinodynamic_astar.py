@@ -201,6 +201,10 @@ class KinodynamicAstar:
             Path (list of (waypoint, heading) tuples) or None if no path found
         """
         
+        import time
+        _start = time.perf_counter()
+        _budget = config.TIME_BUDGET_S
+
         # Initialize
         self.start_state.h_cost = self.heuristic(self.start_state, self.goal_state)
         heapq.heappush(self.open_set, (
@@ -209,10 +213,12 @@ class KinodynamicAstar:
             self.start_state
         ))
         self.g_scores[self.start_state] = 0
-        
+
         while self.open_set and self.iteration_count < self.max_iterations:
+            if _budget is not None and (time.perf_counter() - _start) > _budget:
+                break
             self.iteration_count += 1
-            
+
             # Pop best state from open set
             _, _, current = heapq.heappop(self.open_set)
             

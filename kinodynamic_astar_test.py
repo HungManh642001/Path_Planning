@@ -213,3 +213,20 @@ def test_radial_fallback_when_no_graph_candidate():
     planner = astar.KinodynamicAstar(pre, tangent_graph=None)
     succ = planner.get_next_states(planner.start_state)
     assert len(succ) > 0, "radial fallback must produce successors when no graph candidate is valid"
+
+
+import time as _time
+
+
+def test_search_respects_time_budget(monkeypatch):
+    # Force a tiny budget and a scenario that would otherwise run to the iteration cap;
+    # search must return within a small multiple of the budget.
+    monkeypatch.setattr(config, 'TIME_BUDGET_S', 0.05)
+    # dense-ish: several polygons straddling the route so the graph can't trivially solve it
+    polys = [[(40000+i*1000, 0), (60000+i*1000, 0), (50000+i*1000, 40000)] for i in range(6)]
+    pre = _simple_pre(polys=polys, goal=(120000.0, 0.0))
+    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    t0 = _time.perf_counter()
+    planner.search()
+    dt = _time.perf_counter() - t0
+    assert dt < 0.5, f"search ignored the 0.05s budget (took {dt:.3f}s)"
