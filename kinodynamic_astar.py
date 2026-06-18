@@ -320,18 +320,16 @@ class KinodynamicAstar:
             next_wp, next_h = path[i + 1]
 
             # Try to shortcut from last-kept to next: skip path[i]
-            if self._check_collision(prev_wp, next_wp):
-                # Check kinodynamic constraints from last-kept heading to shortcut
-                heading_to_next = su.angle_to_heading(prev_wp, next_wp)
-                is_valid, _ = prep.validate_kinodynamics(
-                    prev_wp, prev_h,
-                    next_wp, heading_to_next,
-                    alpha_max=self.alpha_max_rad
-                )
-                if is_valid and self._check_collision(prev_wp, next_wp):
-                    # Can skip current point
-                    i += 1
-                    continue
+            heading_to_next = su.angle_to_heading(prev_wp, next_wp)
+            is_valid, _ = prep.validate_kinodynamics(
+                prev_wp, prev_h,
+                next_wp, heading_to_next,
+                R=self.R, alpha_max=self.alpha_max_rad
+            )
+            if is_valid and self._check_collision(prev_wp, next_wp):
+                # Can skip current point
+                i += 1
+                continue
 
             smoothed.append(path[i])
             i += 1
