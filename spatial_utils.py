@@ -343,3 +343,24 @@ def state_to_tuple(waypoint, heading):
     hy = int(waypoint[1] // q)
     hh = round(math.atan2(math.sin(heading), math.cos(heading)) / hq)
     return (hx, hy, hh)
+
+
+def circle_tangent_points(point, center, radius):
+    """Tangent points on a circle from an external point.
+
+    Returns the two points where lines from `point` touch the circle, or []
+    if `point` is inside or on the circle (no real tangent).
+    """
+    px, py = point
+    cx, cy = center
+    dx, dy = px - cx, py - cy
+    d2 = dx * dx + dy * dy
+    if d2 <= radius * radius + 1e-9:
+        return []
+    d = math.sqrt(d2)
+    theta = math.atan2(dy, dx)          # center -> point direction
+    alpha = math.acos(radius / d)       # half-angle of the tangent cone
+    return [
+        (cx + radius * math.cos(theta + alpha), cy + radius * math.sin(theta + alpha)),
+        (cx + radius * math.cos(theta - alpha), cy + radius * math.sin(theta - alpha)),
+    ]
