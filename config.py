@@ -31,6 +31,29 @@ APPROACH_ANGLE_DEFAULT = 30.0
 # Safety margin buffer (m) - distance to expand obstacle boundaries
 SAFE_MARGIN = 10000.0
 
+# Polygon inflation join style: 'mitre' keeps sharp corners so each obstacle
+# yields a few real corner vertices (used as navigation waypoints) instead of
+# ~70 rounded arc points. mitre_limit caps the corner-spike length; it is large
+# enough that the mitre polygon always CONTAINS the exact round Minkowski buffer
+# (preserving the arc-clearance guarantee) for the convex-ish islands here.
+POLYGON_MITRE_LIMIT = 2.0
+
+# Circle-wrap straight step (m). When a waypoint sits ON a circle boundary (a
+# tangent point), the planner can no longer tangent further around that circle
+# (a point on the circle has no tangent). This adds one extra successor: fly
+# STRAIGHT, keeping the current heading, for WRAP_STEP_M. Because it is straight
+# (no turn), it needs no đoản trình arc reservation; it steps just off the circle
+# so the next expansion can tangent further around it — wrapping the circle with
+# a chain of short tangent segments (a circumscribed polygon) without an explicit
+# arc model. Smaller = finer wrap.
+WRAP_STEP_M = 2000.0
+
+# Tolerance (m) by which a segment may graze inside a circle's INFLATED boundary.
+# Tangent / wrap segments ride that boundary, so discretisation dips them a few
+# metres inside the inflation band; this never approaches the RAW obstacle (the
+# band is ~13 km thick). Only deeper penetration is treated as a collision.
+CIRCLE_GRAZE_TOL_M = 50.0
+
 # ====== COORDINATE SYSTEM ======
 # Map bounds (meters) for simulation
 MAP_WIDTH = 500000.0

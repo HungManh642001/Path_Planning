@@ -29,9 +29,14 @@ def _segment_clear(a, b, circle_obstacles, polygon_obstacles, tol=1e-6):
         # is accepted; tol is subtracted (not added) so only genuine penetration fails.
         if _point_to_segment_distance(center, a, b) < radius - tol:
             return False
+    # A segment is blocked ONLY when it enters a polygon's INTERIOR (DE-9IM
+    # interior/interior overlap, pattern 'T********'). Touching the boundary is
+    # allowed: a waypoint may sit on a polygon corner (corners are valid navigation
+    # targets, like circle tangent points), and a segment may run ALONG an edge to
+    # hug the obstacle boundary. Interior penetration still fails.
     line = LineString([a, b])
     for coords in polygon_obstacles:
-        if line.intersects(Polygon(coords)):
+        if Polygon(coords).relate_pattern(line, 'T********'):
             return False
     return True
 
@@ -135,15 +140,26 @@ def arcs_clear(path, R, circle_obstacles, polygon_obstacles):
     return True
 
 
-def path_is_valid(path, circle_obstacles, polygon_obstacles, R, alpha_max_rad, L0, dss):
-    """One-call full validity gate used by later phases."""
+def path_is_valid(path, circle_obstacles, polygon_obstacles, R, alpha_max_rad, L0, dss,
+                  raw_circle_obstacles=None, raw_polygon_obstacles=None):
+    """One-call full validity gate used by later phases.
+
+    Straight segments must clear the INFLATED obstacles (keeping the full safety
+    margin on the straight legs). Turn arcs, however, are designed to bulge into
+    the inflation band by up to R*(1/cos(alpha_max/2)-1) and only need to clear
+    the RAW obstacle — so when the raw obstacle sets are supplied, arcs are
+    validated against them. They default to the inflated sets for backward
+    compatibility (correct for circle-tangent paths, whose arcs bulge outward).
+    """
     if not path or len(path) < 2:
         return False
     if not segments_clear(path, circle_obstacles, polygon_obstacles):
         return False
     if not turn_angles_ok(path, alpha_max_rad):
         return False
-    if not arcs_clear(path, R, circle_obstacles, polygon_obstacles):
+    arc_circles = raw_circle_obstacles if raw_circle_obstacles is not None else circle_obstacles
+    arc_polys = raw_polygon_obstacles if raw_polygon_obstacles is not None else polygon_obstacles
+    if not arcs_clear(path, R, arc_circles, arc_polys):
         return False
     ok, _ = straight_segments_ok(path, R, L0, dss)
     return ok

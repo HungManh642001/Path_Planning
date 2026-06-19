@@ -230,3 +230,122 @@ def test_search_respects_time_budget(monkeypatch):
     planner.search()
     dt = _time.perf_counter() - t0
     assert dt < 0.5, f"search ignored the 0.05s budget (took {dt:.3f}s)"
+
+
+def test_polygon_vertex_is_reachable_successor():
+    # A polygon straddling the path ahead. Its hull vertices must be reachable
+    # successors: a segment that ENDS AT a polygon vertex (touching the boundary
+    # at its endpoint) must NOT be rejected as a collision. Before the fix every
+    # vertex was rejected because shapely `intersects` flags the endpoint touch.
+    poly = [(60000.0, -20000.0), (60000.0, 20000.0), (90000.0, 20000.0), (90000.0, -20000.0)]
+    pre = _simple_pre(polys=[poly], goal=(150000.0, 0.0))
+    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    from shapely.geometry import Polygon
+    hull = list(Polygon(pre['polygon_obstacles'][0]).convex_hull.exterior.coords[:-1])
+    succ = planner.get_next_states(planner.start_state)
+    succ_wps = [s[0].waypoint for s in succ]
+    assert any(
+        min(math.hypot(w[0] - v[0], w[1] - v[1]) for w in succ_wps) < 1.0
+        for v in hull
+    ), "at least one polygon hull vertex must be a reachable successor"
+
+
+def test_collision_through_polygon_interior_still_blocked():
+    # The endpoint-trim fix must NOT weaken real collision detection: a segment
+    # that cuts straight through the polygon interior is still a collision.
+    poly = [(60000.0, -20000.0), (60000.0, 20000.0), (90000.0, 20000.0), (90000.0, -20000.0)]
+    pre = _simple_pre(polys=[poly])
+    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    inflated = pre['polygon_obstacles'][0]
+    xs = [p[0] for p in inflated]; ys = [p[1] for p in inflated]
+    cx = (min(xs) + max(xs)) / 2
+    left = (min(xs) - 5000.0, (min(ys) + max(ys)) / 2)
+    right = (max(xs) + 5000.0, (min(ys) + max(ys)) / 2)
+    assert planner._check_collision(left, right) is False, \
+        "a segment through the polygon interior must be blocked"
+
+
+def test_goal_candidate_rejected_when_final_turn_exceeds_amax():
+    # goal_heading is WEST (180 deg); approaching W_{n-1} from the west means the
+    # terminal turn (approach -> goal_heading) is ~180 deg > alpha_max. The goal
+    # must NOT be offered as a direct successor (final-turn constraint at W_{n-1}).
+    scenario = {
+        'start': (0.0, 0.0), 'start_heading': 0.0,
+        'goal': (200000.0, 0.0), 'goal_heading': math.radians(180.0),
+        'obstacles': [], 'islands': [], 'sam_sites': [],
+    }
+    pre = prep.prepare_scenario(scenario)
+    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    gwp = planner.goal_state.waypoint
+    succ = planner.get_next_states(planner.start_state)
+    assert not any(math.hypot(s[0].waypoint[0] - gwp[0], s[0].waypoint[1] - gwp[1]) < 1.0
+                   for s in succ), \
+        "goal requiring a >alpha_max terminal turn must be rejected"
+
+
+def test_goal_candidate_accepted_when_final_turn_ok():
+    # goal_heading EAST (0 deg), approach also roughly east => terminal turn ~0.
+    # The goal must be a direct successor.
+    scenario = {
+        'start': (0.0, 0.0), 'start_heading': 0.0,
+        'goal': (200000.0, 0.0), 'goal_heading': 0.0,
+        'obstacles': [], 'islands': [], 'sam_sites': [],
+    }
+    pre = prep.prepare_scenario(scenario)
+    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    gwp = planner.goal_state.waypoint
+    succ = planner.get_next_states(planner.start_state)
+    assert any(math.hypot(s[0].waypoint[0] - gwp[0], s[0].waypoint[1] - gwp[1]) < 1.0
+               for s in succ), \
+        "goal with a feasible terminal turn must be a direct successor"
+
+
+def test_segment_along_polygon_edge_is_clear():
+    # Boundary-following: a segment that runs ALONG a polygon edge (on the boundary,
+    # not through the interior) must be allowed, so the planner can hug an obstacle
+    # boundary to route around it. Only interior penetration is a collision.
+    poly = [(60000.0, -20000.0), (60000.0, 20000.0),
+            (90000.0, 20000.0), (90000.0, -20000.0)]
+    pre = _simple_pre(polys=[poly])
+    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    inflated = pre['polygon_obstacles'][0]
+    # two consecutive vertices of the inflated polygon -> the edge between them
+    a, b = inflated[0], inflated[1]
+    assert planner._check_collision(a, b) is True, \
+        "a segment running along a polygon edge (boundary) must be allowed"
+
+
+def test_wrap_step_successor_added_when_on_circle_boundary():
+    # When the current waypoint sits ON a circle's inflated boundary, get_next_states
+    # must add a STRAIGHT continuation successor (same heading, WRAP_STEP_M ahead).
+    # This step is zero-turn so it is NOT subject to the đoản trình arc constraint:
+    # WRAP_STEP_M (2000m) < R*tan(alpha_max/2) (8000m), so if đoản trình were applied
+    # the step would be rejected. Its presence proves the constraint is skipped.
+    circle_raw = ((100000.0, 0.0), 20000.0)
+    pre = _simple_pre(circles=[circle_raw], goal=(300000.0, 0.0))
+    c, r = pre['circle_obstacles'][0]                 # inflated circle
+    P = (c[0], c[1] + r)                              # top of the inflated circle
+    h = 0.0                                           # tangent at the top (horizontal)
+    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    succ = planner.get_next_states(astar.State(P, h))
+    expected = (P[0] + config.WRAP_STEP_M * math.cos(h),
+                P[1] + config.WRAP_STEP_M * math.sin(h))
+    assert any(
+        math.hypot(s[0].waypoint[0] - expected[0], s[0].waypoint[1] - expected[1]) < 1.0
+        and abs(astar._angle_diff(s[0].heading, h)) < 1e-9
+        for s in succ), "a straight wrap-step successor must be added on a circle boundary"
+
+
+def test_wrap_step_not_added_when_off_circle():
+    # Far from any circle boundary, no wrap-step successor (heading-preserving point
+    # exactly WRAP_STEP_M ahead) should be generated.
+    circle_raw = ((100000.0, 0.0), 20000.0)
+    pre = _simple_pre(circles=[circle_raw], goal=(300000.0, 0.0))
+    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    P = (5000.0, 90000.0)                             # nowhere near the circle boundary
+    h = 0.0
+    succ = planner.get_next_states(astar.State(P, h))
+    straight = (P[0] + config.WRAP_STEP_M, P[1])
+    assert not any(
+        math.hypot(s[0].waypoint[0] - straight[0], s[0].waypoint[1] - straight[1]) < 1.0
+        for s in succ), "no wrap-step should be added when not on a circle boundary"

@@ -112,12 +112,24 @@ class KinodynamicAstar:
         P = current_state.waypoint
         h = current_state.heading
 
+        # --- Wrap step: straight continuation off a circle boundary ---
+        # A point ON a circle has no tangent to that circle, so the planner cannot
+        # tangent further around it. Flying STRAIGHT (same heading) for WRAP_STEP_M
+        # steps just off the circle so the next expansion can tangent further along
+        # it. This step is zero-turn, so it carries no đoản trình arc reservation.
+        if self._on_circle_boundary(P):
+            nx = (P[0] + config.WRAP_STEP_M * math.cos(h),
+                  P[1] + config.WRAP_STEP_M * math.sin(h))
+            if self._in_bounds(nx) and self._check_collision(P, nx):
+                successors.append((State(nx, h), config.WRAP_STEP_M))
+
         # --- Strategy A: dynamic tangent / vertex / goal candidates ---
+        goal_wp = self.goal_state.waypoint
         candidates = []
         for center, radius in self.scenario['circle_obstacles']:
             candidates.extend(su.circle_tangent_points(P, center, radius))
         candidates.extend(self._poly_vertices)
-        candidates.append(self.goal_state.waypoint)
+        candidates.append(goal_wp)
 
         for node in candidates:
             dx = node[0] - P[0]
@@ -128,6 +140,12 @@ class KinodynamicAstar:
             turn = abs(_angle_diff(heading_to_node, h))
             if turn > self.alpha_max_rad:
                 continue
+            # At the final waypoint W_{n-1} the missile must turn from the approach
+            # heading onto goal_heading; that terminal turn must also be feasible.
+            if node is goal_wp:
+                final_turn = abs(_angle_diff(self.goal_state.heading, heading_to_node))
+                if final_turn > self.alpha_max_rad:
+                    continue
             is_valid, _ = prep.validate_kinodynamics(
                 P, h, node, heading_to_node, R=self.R, alpha_max=self.alpha_max_rad)
             if not is_valid:
@@ -170,19 +188,34 @@ class KinodynamicAstar:
         Returns True if collision-free, False otherwise.
         """
         
-        # Check against circle obstacles
+        # Check against circle obstacles. A small grazing tolerance lets tangent /
+        # wrap segments ride the inflated boundary (they dip a few metres inside the
+        # ~13 km inflation band by discretisation but never approach the raw obstacle).
         for center, radius in self.scenario['circle_obstacles']:
             dist = su.point_to_line_distance(center, p1, p2)
-            if dist < radius - 1e-6:  # Small tolerance
+            if dist < radius - config.CIRCLE_GRAZE_TOL_M:
                 return False
         
-        # Check against polygon obstacles via spatial index (exact predicate).
+        # Check against polygon obstacles via spatial index. A segment is blocked
+        # ONLY when it enters a polygon's INTERIOR (DE-9IM interior/interior
+        # overlap). Merely touching the boundary is allowed: this lets a waypoint
+        # sit on a polygon corner (the corners ARE navigation targets) and lets a
+        # segment run ALONG an edge to hug the obstacle boundary. The STRtree gives
+        # a bounding-box prefilter; the exact predicate runs only on candidates.
         if self._poly_tree is not None:
             line = LineString([p1, p2])
-            if len(self._poly_tree.query(line, predicate='intersects')) > 0:
-                return False
+            for idx in self._poly_tree.query(line):
+                if self._polygons[idx].relate_pattern(line, 'T********'):
+                    return False
         return True
     
+    def _on_circle_boundary(self, point, tol=1.0):
+        """True if `point` lies on (within tol of) any inflated circle boundary."""
+        for center, radius in self.scenario['circle_obstacles']:
+            if abs(math.hypot(point[0] - center[0], point[1] - center[1]) - radius) < tol:
+                return True
+        return False
+
     def _in_bounds(self, point):
         """Check if point is within map bounds"""
         x, y = point

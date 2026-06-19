@@ -11,7 +11,6 @@ import numpy as np
 
 import config
 import spatial_utils as su
-import dubins_curves as dc
 
 
 def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario", 
@@ -122,46 +121,34 @@ def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
         path = result['path']
         waypoints = [wp for wp, heading in path]
         
-        # Draw Dubins curves between waypoints
+        # Draw the flown trajectory: straight legs + radius-R turn arcs at each
+        # corner (the planner's actual kinodynamic model). This replaces the legacy
+        # Dubins renderer, whose placeholder sampler dropped whole segments (LRL/RRL
+        # -> no samples) so the line appeared to jump between waypoints.
         try:
-            dubins_paths = dc.compute_dubins_path_between_waypoints(path, config.R)
-            
-            # Sample all Dubins paths for smooth trajectory
-            all_samples = dc.sample_all_dubins_paths(dubins_paths, samples_per_segment=30)
-            
-            if all_samples:
-                dubins_xs = [s[0] for s in all_samples]
-                dubins_ys = [s[1] for s in all_samples]
-                
-                # Draw smooth Dubins trajectory (thick blue line)
-                ax.plot(dubins_xs, dubins_ys, 'b-', linewidth=3.0, label='Dubins Trajectory',
+            samples = su.arc_line_trajectory(waypoints, config.R)
+
+            if samples and len(samples) >= 2:
+                traj_xs = [s[0] for s in samples]
+                traj_ys = [s[1] for s in samples]
+
+                # Draw smooth arc-line trajectory (thick blue line)
+                ax.plot(traj_xs, traj_ys, 'b-', linewidth=3.0, label='Flight Trajectory',
                        alpha=0.9, zorder=3)
-                
+
                 # Draw waypoint markers
                 for i, wp in enumerate(waypoints):
                     ax.plot(wp[0], wp[1], 'bo', markersize=8, alpha=0.7, zorder=4)
                     if i % max(1, len(waypoints)//5) == 0:  # Label every 5th or fewer
                         ax.text(wp[0]+300, wp[1]+300, f'W{i}', fontsize=9, alpha=0.6)
-                
-                # Draw turn circles at waypoints
-                for i, (wp, heading) in enumerate(path[:-1]):
-                    next_heading = path[i + 1][1]
-                    
-                    if abs(next_heading - heading) > 0.01:
-                        # Draw turn arc
-                        arc_radius = config.R * 0.25
-                        arc_patch = MplCircle(wp, arc_radius, fill=False, 
-                                            edgecolor='blue', linewidth=1, 
-                                            linestyle=':', alpha=0.4)
-                        ax.add_patch(arc_patch)
             else:
-                # Fallback: draw straight lines if Dubins fails
+                # Fallback: draw straight lines if trajectory sampling fails
                 for i in range(len(waypoints) - 1):
                     wp1 = waypoints[i]
                     wp2 = waypoints[i + 1]
-                    ax.plot([wp1[0], wp2[0]], [wp1[1], wp2[1]], 'b-', linewidth=2.5, 
+                    ax.plot([wp1[0], wp2[0]], [wp1[1], wp2[1]], 'b-', linewidth=2.5,
                            label='Trajectory' if i == 0 else '')
-        
+
         except Exception as e:
             # Fallback to straight line segments
             for i in range(len(waypoints) - 1):

@@ -215,24 +215,27 @@ LENGTH_ABS_TOL_M = 1.0          # meters
 # itself a baseline characteristic worth watching, not an assertion target.
 RUNTIME_CEILING_S = 300.0
 
-# Baseline captured from the current algorithm (2026-06-18), after Task 5:
-# alpha_max raised to 90 deg + wall-clock budget (0.9 s). Wider turn envelope
-# shortens the empty and two_circles_gap paths and reduces waypoints/turns for
-# one_circle. Polygon-only scenarios (one_island, mixed, circle_and_island)
-# still fail — exhausted by the time budget, radial fallback cannot route around
-# pure polygon obstacles within 0.9 s.
+# Baseline captured from the current algorithm (2026-06-18), after the
+# polygon-vertex navigation fix: mitre-join inflation gives each polygon a few
+# real corner vertices, the collision test trims segment endpoints so those
+# corners are reachable, and the final turn at W_{n-1} is now enforced. As a
+# result every polygon scenario (one_island, mixed, circle_and_island) now
+# SOLVES — previously they exhausted the time budget with no path. All solved
+# paths are collision_free=True.
 EXPECTED = {
     # alpha_max=90: start/goal offsets change -> shorter direct path
     'empty':      {'valid': True,  'waypoints': 2, 'num_turns': 0, 'total_length_m': 590567.6759431466},
-    # one_circle: wider alpha reduces waypoints 4->3, turns 3->2, path shorter
-    'one_circle': {'valid': True,  'waypoints': 3, 'num_turns': 2, 'total_length_m': 600860.0659143396},
-    'one_island': {'valid': False, 'waypoints': 0, 'num_turns': 0, 'total_length_m': 0.0},
-    'mixed':      {'valid': False, 'waypoints': 0, 'num_turns': 0, 'total_length_m': 0.0},
+    # one_circle: wider alpha + circle-wrap step tweak the route slightly
+    'one_circle': {'valid': True,  'waypoints': 3, 'num_turns': 2, 'total_length_m': 600997.2120512484},
+    # one_island: now routes via the inflated polygon's corner vertices
+    'one_island': {'valid': True,  'waypoints': 3, 'num_turns': 2, 'total_length_m': 598044.7940680764},
+    # mixed: circle + island, routed via tangents and a polygon corner
+    'mixed':      {'valid': True,  'waypoints': 4, 'num_turns': 3, 'total_length_m': 602800.2285523218},
 }
 
 # two_circles_gap: length shortened by ~11.9 km due to wider alpha_max=90
-EXPECTED['two_circles_gap'] = {'valid': True, 'waypoints': 3, 'num_turns': 2, 'total_length_m': 590801.7691269267}
-EXPECTED['circle_and_island'] = {'valid': False, 'waypoints': 0, 'num_turns': 0, 'total_length_m': 0.0}
+EXPECTED['two_circles_gap'] = {'valid': True, 'waypoints': 3, 'num_turns': 2, 'total_length_m': 590684.8922174857}
+EXPECTED['circle_and_island'] = {'valid': True, 'waypoints': 3, 'num_turns': 2, 'total_length_m': 600191.9114849268}
 
 
 def _check(scenario_key):

@@ -208,7 +208,10 @@ def inflate_polygon(polygon_coords, inflation):
     Uses Shapely's buffer operation.
     """
     polygon = Polygon(polygon_coords)
-    expanded = polygon.buffer(inflation)
+    # Mitre join keeps sharp corners (few real vertices for navigation) and the
+    # result contains the round Minkowski buffer, so arc-clearance is preserved.
+    expanded = polygon.buffer(inflation, join_style='mitre',
+                              mitre_limit=config.POLYGON_MITRE_LIMIT)
     
     if expanded.geom_type == 'Polygon':
         return list(expanded.exterior.coords[:-1])  # Exclude closing point
@@ -364,3 +367,56 @@ def circle_tangent_points(point, center, radius):
         (cx + radius * math.cos(theta + alpha), cy + radius * math.sin(theta + alpha)),
         (cx + radius * math.cos(theta - alpha), cy + radius * math.sin(theta - alpha)),
     ]
+
+
+def arc_line_trajectory(points, R, arc_samples=20):
+    """Build the flown trajectory through a list of (x, y) waypoints.
+
+    The missile flies straight along each leg and rounds every interior corner
+    with a turn arc of radius R (tangent length R*tan(alpha/2) back along each
+    leg). Returns a flat list of (x, y) samples forming a single continuous
+    polyline from the first to the last waypoint — this matches the planner's
+    actual kinodynamic model (straight đoản trình + radius-R arcs), unlike the
+    legacy Dubins renderer.
+
+    Args:
+        points: list of (x, y) waypoints (headings are derived from geometry).
+        R: turn radius (m).
+        arc_samples: number of segments used to sample each corner arc.
+    """
+    if len(points) < 2:
+        return list(points)
+
+    def _unit(a, b):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        d = math.hypot(dx, dy)
+        return (dx / d, dy / d) if d > 0 else (0.0, 0.0)
+
+    traj = [points[0]]
+    for i in range(1, len(points) - 1):
+        w_prev, w, w_next = points[i - 1], points[i], points[i + 1]
+        u = _unit(w_prev, w)      # incoming direction
+        v = _unit(w, w_next)      # outgoing direction
+        alpha = abs(math.atan2(math.sin(math.atan2(v[1], v[0]) - math.atan2(u[1], u[0])),
+                               math.cos(math.atan2(v[1], v[0]) - math.atan2(u[1], u[0]))))
+        if alpha < 1e-9:
+            # No turn: go straight to the corner.
+            traj.append(w)
+            continue
+        t = R * math.tan(alpha / 2)
+        # Clamp the tangent inset so adjacent arcs do not overrun short legs.
+        leg_in = math.hypot(w[0] - w_prev[0], w[1] - w_prev[1])
+        leg_out = math.hypot(w_next[0] - w[0], w_next[1] - w[1])
+        t = min(t, leg_in * 0.5, leg_out * 0.5)
+        r = t / math.tan(alpha / 2) if alpha > 1e-9 else R   # effective radius after clamp
+        A = (w[0] - u[0] * t, w[1] - u[1] * t)               # entry tangent point
+        s = 1.0 if (u[0] * v[1] - u[1] * v[0]) > 0 else -1.0  # left(+)/right(-)
+        n_in = (-u[1] * s, u[0] * s)                          # inward normal
+        C = (A[0] + r * n_in[0], A[1] + r * n_in[1])          # arc centre
+        start = math.atan2(A[1] - C[1], A[0] - C[0])
+        traj.append(A)
+        for k in range(1, arc_samples + 1):
+            ang = start + s * alpha * (k / arc_samples)
+            traj.append((C[0] + r * math.cos(ang), C[1] + r * math.sin(ang)))
+    traj.append(points[-1])
+    return traj
