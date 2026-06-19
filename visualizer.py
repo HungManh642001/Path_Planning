@@ -11,10 +11,11 @@ import numpy as np
 
 import config
 import spatial_utils as su
+import trajectory as tr
 
 
-def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario", 
-                 save_path=None, figsize=(14, 12)):
+def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
+                 save_path=None, figsize=(14, 12), trajectory_mode='dubins'):
     """
     Create comprehensive visualization of mission scenario and trajectory.
     
@@ -126,14 +127,16 @@ def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
         # Dubins renderer, whose placeholder sampler dropped whole segments (LRL/RRL
         # -> no samples) so the line appeared to jump between waypoints.
         try:
-            samples = su.arc_line_trajectory(waypoints, config.R)
+            R = preprocessed.get('turn_radius', config.R)
+            samples = [(x, y) for (x, y) in tr.sample_trajectory(path, R, mode=trajectory_mode)]
 
             if samples and len(samples) >= 2:
                 traj_xs = [s[0] for s in samples]
                 traj_ys = [s[1] for s in samples]
 
-                # Draw smooth arc-line trajectory (thick blue line)
-                ax.plot(traj_xs, traj_ys, 'b-', linewidth=3.0, label='Flight Trajectory',
+                # Draw smooth trajectory (thick blue line)
+                _label = 'Dubins Trajectory' if trajectory_mode == 'dubins' else 'Straight Segments'
+                ax.plot(traj_xs, traj_ys, 'b-', linewidth=3.0, label=_label,
                        alpha=0.9, zorder=3)
 
                 # Draw waypoint markers
