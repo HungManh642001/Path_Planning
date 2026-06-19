@@ -157,13 +157,13 @@ def compute_dubins_path_between_waypoints(waypoints, turn_radius):
     return dubins_paths
 
 
-def sample_all_dubins_paths(dubins_paths, samples_per_segment=50):
+def sample_all_dubins_paths(dubins_paths, step=50):
     """
     Sample all Dubins paths to get smooth trajectory points.
 
     Args:
         dubins_paths: List of DubinsPath objects
-        samples_per_segment: Number of samples per path segment (used as step size)
+        step: Step size in metres for sampling along path segments
 
     Returns:
         List of (x, y, heading) tuples representing smooth trajectory
@@ -171,7 +171,7 @@ def sample_all_dubins_paths(dubins_paths, samples_per_segment=50):
     all_samples = []
 
     for i, dubins_path in enumerate(dubins_paths):
-        samples = dubins_path.sample_path(step=samples_per_segment)
+        samples = dubins_path.sample_path(step=step)
 
         # Skip first sample of subsequent segments (avoid duplicates)
         if i > 0 and samples:
