@@ -10,8 +10,6 @@ points for drawing. Two modes:
                 always continuous.
 """
 
-import math
-
 import dubins_curves as dc
 import spatial_utils as su
 

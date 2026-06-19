@@ -52,3 +52,22 @@ def test_arc_points_lie_on_turning_circle():
     cx, cy = 0.0, R
     on_circle = sum(1 for (x, y, _) in pts if abs(math.hypot(x - cx, y - cy) - R) < 1e-6)
     assert on_circle >= len(pts) // 2, "arc samples must lie on the turning circle"
+
+
+def test_all_six_words_are_reachable():
+    # Verify that each of the 6 Dubins words is the shortest path for some config.
+    # Configs discovered by brute-force sweep with R=10.0.
+    R = 10.0
+    expected_words = {
+        'LSL': ((0.0, 0.0), 0.0,             (5.0, 0.0),   0.0),
+        'RSR': ((0.0, 0.0), 0.0,             (-5.0, 0.0),  math.pi / 6),
+        'LSR': ((0.0, 0.0), 0.0,             (80.0, 30.0), 0.0),
+        'RSL': ((0.0, 0.0), 0.0,             (15.0, 0.0),  math.pi / 6),
+        'RLR': ((0.0, 0.0), 0.0,             (0.0, 30.0),  0.0),
+        'LRL': ((0.0, 0.0), 0.0,             (5.0, 0.0),   math.pi / 2),
+    }
+    for word, (sp_pos, sp_h, gp_pos, gp_h) in expected_words.items():
+        path = dc.DubinsPath(sp_pos, sp_h, gp_pos, gp_h, radius=R)
+        sp = path.shortest_path()
+        assert sp is not None, f"shortest_path() returned None for {word} config"
+        assert sp['word'] == word, f"expected {word}, got {sp['word']}"
