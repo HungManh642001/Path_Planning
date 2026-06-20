@@ -8,6 +8,20 @@ import config
 import spatial_utils as su
 
 
+def inflation_offsets(R=config.R, alpha_max_rad=config.ALPHA_MAX_RAD, safe_margin=config.SAFE_MARGIN):
+    """Two obstacle boundary offsets for display:
+
+      ring 1 = safe_margin                                    (pure safety buffer)
+      ring 2 = safe_margin + R*(1/cos(alpha_max/2) - 1)       (full inflation)
+
+    The turn term guarantees that a turn at the maximum angle still clears the
+    obstacle. Ring 2 equals the single total inflation that `inflate_obstacles`
+    applies, so the outer ring coincides with the planner's inflated obstacle.
+    """
+    turn_term = R * (1.0 / math.cos(alpha_max_rad / 2.0) - 1.0)
+    return safe_margin, safe_margin + turn_term
+
+
 def inflate_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MARGIN, alpha_max_rad=config.ALPHA_MAX_RAD):
     """
     Inflate obstacle boundaries by R + SAFE_MARGIN.
@@ -247,6 +261,7 @@ def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS, safe_ma
         'goal_heading': scenario['goal_heading'],
         'turn_radius': R,
         'alpha_max_rad': alpha_max_rad,
+        'safe_margin': safe_margin,
         'obstacles': inflated_data['inflated_obstacles'],
         'circle_obstacles': inflated_data['circle_obstacles'],
         'polygon_obstacles': inflated_data['polygon_obstacles'],

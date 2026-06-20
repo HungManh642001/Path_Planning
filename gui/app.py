@@ -113,7 +113,13 @@ class PlannerApp:
                 self._drag_xy[0] - self._aim_anchor[0], self._drag_xy[1] - self._aim_anchor[1])
             ov['circle_preview'] = (self._aim_anchor, r)
         elif self.mode in ('start', 'goal') and self._aim_anchor is not None and self._drag_xy is not None:
-            ov['aim'] = (self._aim_anchor, self._drag_xy)
+            a, d = self._aim_anchor, self._drag_xy
+            if self.mode == 'goal':
+                # Approach arrow points INTO the target: same drag direction, but
+                # the head sits at T so it lines up with the incoming flight path.
+                ov['aim'] = ((2 * a[0] - d[0], 2 * a[1] - d[1]), a)
+            else:
+                ov['aim'] = (a, d)               # departure: head at the drag point
         return ov
 
     def on_map_press(self, x, y):

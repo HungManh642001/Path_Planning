@@ -14,6 +14,8 @@ from matplotlib.patches import Circle as MplCircle, Polygon as MplPolygon
 
 import config
 import trajectory as tr
+import preprocessing as prep
+import spatial_utils as su
 
 
 class MapCanvas:
@@ -68,32 +70,52 @@ class MapCanvas:
         self.ax.set_ylabel('North (m)')
         self.ax.grid(True, alpha=0.3)
 
-    def _draw_heading_arrow(self, pos, heading, color):
+    def _draw_heading_arrow(self, pos, heading, color, toward=False):
+        """Heading arrow. toward=False: tail at pos, head ahead (departure dir).
+        toward=True: head AT pos, tail behind (approach dir into the point) -- so
+        the incoming flight path overlaps the arrow at the target."""
         length = config.MAP_WIDTH * 0.06
         dx = length * math.cos(heading)
         dy = length * math.sin(heading)
-        self.ax.annotate('', xy=(pos[0] + dx, pos[1] + dy), xytext=(pos[0], pos[1]),
-                         arrowprops=dict(arrowstyle='-|>', color=color, lw=2))
+        if toward:
+            self.ax.annotate('', xy=(pos[0], pos[1]), xytext=(pos[0] - dx, pos[1] - dy),
+                             arrowprops=dict(arrowstyle='-|>', color=color, lw=2))
+        else:
+            self.ax.annotate('', xy=(pos[0] + dx, pos[1] + dy), xytext=(pos[0], pos[1]),
+                             arrowprops=dict(arrowstyle='-|>', color=color, lw=2))
 
     def render(self, state, result, preprocessed, render_mode, overlay=None):
         self._draw_empty()
         overlay = overlay or {}
 
-        # Inflated obstacle boundaries (raw + R*(1/cos(a/2)-1) + safe margin),
-        # drawn as a dashed safety zone behind the raw obstacle. Available only
-        # after a run (preprocessed holds the inflated geometry).
+        # Two boundary rings per obstacle (available after a run):
+        #   ring 1 (orange) = raw + safe_margin               -- safety buffer
+        #   ring 2 (red)    = raw + safe_margin + inflation    -- planner clearance
         if preprocessed:
-            inflated = False
-            for center, radius in preprocessed.get('circle_obstacles', []):
-                self.ax.add_patch(MplCircle(center, radius, facecolor='none',
-                                            edgecolor='red', linestyle='--', linewidth=1.0,
-                                            alpha=0.6, label='Inflated (safe margin)' if not inflated else None))
-                inflated = True
-            for coords in preprocessed.get('polygon_obstacles', []):
-                self.ax.add_patch(MplPolygon(coords, closed=True, facecolor='none',
-                                             edgecolor='red', linestyle='--', linewidth=1.0,
-                                             alpha=0.6, label='Inflated (safe margin)' if not inflated else None))
-                inflated = True
+            R = preprocessed.get('turn_radius', config.R)
+            alpha = preprocessed.get('alpha_max_rad', config.ALPHA_MAX_RAD)
+            sm = preprocessed.get('safe_margin', config.SAFE_MARGIN)
+            ring1_off, ring2_off = prep.inflation_offsets(R, alpha, sm)
+            labelled = False
+            for o in state['obstacles']:
+                lab1 = 'Safe margin' if not labelled else None
+                lab2 = 'Inflation' if not labelled else None
+                if o['type'] == 'circle':
+                    c, rr = o['center'], o['radius']
+                    self.ax.add_patch(MplCircle(c, rr + ring1_off, facecolor='none',
+                                                edgecolor='orange', linestyle='--', linewidth=1.0,
+                                                alpha=0.7, label=lab1))
+                    self.ax.add_patch(MplCircle(c, rr + ring2_off, facecolor='none',
+                                                edgecolor='red', linestyle='--', linewidth=1.0,
+                                                alpha=0.7, label=lab2))
+                else:
+                    self.ax.add_patch(MplPolygon(su.inflate_polygon(o['polygon'], ring1_off),
+                                                 closed=True, facecolor='none', edgecolor='orange',
+                                                 linestyle='--', linewidth=1.0, alpha=0.7, label=lab1))
+                    self.ax.add_patch(MplPolygon(su.inflate_polygon(o['polygon'], ring2_off),
+                                                 closed=True, facecolor='none', edgecolor='red',
+                                                 linestyle='--', linewidth=1.0, alpha=0.7, label=lab2))
+                labelled = True
 
         for o in state['obstacles']:
             if o['type'] == 'circle':
@@ -103,10 +125,12 @@ class MapCanvas:
 
         if state['start'] is not None:
             self.ax.plot(*state['start'], 'go', markersize=10, label='Launch O')
+            # Departure arrow: points away from O (direction of travel leaving O).
             self._draw_heading_arrow(state['start'], state.get('start_heading', 0.0), 'green')
         if state['goal'] is not None:
             self.ax.plot(*state['goal'], 'r*', markersize=16, label='Target T')
-            self._draw_heading_arrow(state['goal'], state.get('goal_heading', 0.0), 'red')
+            # Approach arrow: points INTO T, so the arriving flight path overlaps it.
+            self._draw_heading_arrow(state['goal'], state.get('goal_heading', 0.0), 'red', toward=True)
 
         # in-progress drawing overlay
         poly_pts = overlay.get('poly_pts') or []
