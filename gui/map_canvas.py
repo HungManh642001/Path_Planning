@@ -115,12 +115,20 @@ class MapCanvas:
 
         if result and result.get('path'):
             R = (preprocessed or {}).get('turn_radius', config.R)
-            pts = tr.sample_trajectory(result['path'], R, mode=render_mode)
+            full = tr.build_full_path(result['path'], preprocessed or {})
+            pts = tr.sample_trajectory(full, R, mode=render_mode)
             if len(pts) >= 2:
                 self.ax.plot([p[0] for p in pts], [p[1] for p in pts], 'b-', linewidth=2.5,
                              label='Dubins' if render_mode == 'dubins' else 'Straight')
             for wp, _ in result['path']:
                 self.ax.plot(wp[0], wp[1], 'bo', markersize=5, alpha=0.7)
+            if render_mode == 'dubins':
+                turns = tr.turn_markers(full, R)
+                for j, t in enumerate(turns):
+                    self.ax.plot(*t['start'], '^', color='darkgreen', markersize=8,
+                                 label='Turn start' if j == 0 else None)
+                    self.ax.plot(*t['end'], 'v', color='purple', markersize=8,
+                                 label='Turn end' if j == 0 else None)
 
         handles, labels = self.ax.get_legend_handles_labels()
         if labels:

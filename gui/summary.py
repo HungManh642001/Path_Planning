@@ -27,7 +27,9 @@ def compute_summary(result, preprocessed, raw_circles, raw_polys, render_mode, r
     if not (result.get('success') and path):
         return base
 
-    pts = tr.sample_trajectory(path, R, mode=render_mode)
+    # Distance over the FULL flown path O..T (matches what the canvas draws).
+    full = tr.build_full_path(path, preprocessed)
+    pts = tr.sample_trajectory(full, R, mode=render_mode)
     dist = sum(math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1])
                for i in range(len(pts) - 1))
 

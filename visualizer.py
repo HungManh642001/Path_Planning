@@ -128,7 +128,9 @@ def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
         # -> no samples) so the line appeared to jump between waypoints.
         try:
             R = preprocessed.get('turn_radius', config.R)
-            samples = [(x, y) for (x, y) in tr.sample_trajectory(path, R, mode=trajectory_mode)]
+            # Span the full mission O..T (the planner path covers only W_1..W_{n-1}).
+            full = tr.build_full_path(path, preprocessed)
+            samples = [(x, y) for (x, y) in tr.sample_trajectory(full, R, mode=trajectory_mode)]
 
             if samples and len(samples) >= 2:
                 traj_xs = [s[0] for s in samples]
@@ -144,6 +146,15 @@ def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
                     ax.plot(wp[0], wp[1], 'bo', markersize=8, alpha=0.7, zorder=4)
                     if i % max(1, len(waypoints)//5) == 0:  # Label every 5th or fewer
                         ax.text(wp[0]+300, wp[1]+300, f'W{i}', fontsize=9, alpha=0.6)
+
+                # Mark where each turn arc begins and ends.
+                if trajectory_mode == 'dubins':
+                    turns = tr.turn_markers(full, R)
+                    for j, t in enumerate(turns):
+                        ax.plot(*t['start'], '^', color='darkgreen', markersize=9, zorder=5,
+                                label='Turn start' if j == 0 else None)
+                        ax.plot(*t['end'], 'v', color='purple', markersize=9, zorder=5,
+                                label='Turn end' if j == 0 else None)
             else:
                 # Fallback: draw straight lines if trajectory sampling fails
                 for i in range(len(waypoints) - 1):
