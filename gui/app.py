@@ -12,9 +12,15 @@ import kinodynamic_astar as astar
 import gui.params as gp
 import gui.summary as gsummary
 import gui.scenario_io as sio
+import gui.interaction as gi
 from gui.config_panel import ConfigPanel
 from gui.map_canvas import MapCanvas
 from gui.results_panel import ResultsPanel
+
+# Minimum drag distances (map metres) distinguishing an aim/size from a click.
+_AIM_MIN_M = config.MAP_WIDTH * 0.01      # ~5 km on the 500 km map
+_RADIUS_MIN_M = 1000.0
+_POLY_CLOSE_TOL_M = config.MAP_WIDTH * 0.02
 
 
 def _build_scenario_dict(state):
@@ -60,6 +66,8 @@ class PlannerApp:
         self.mode = 'idle'          # idle | start | goal | polygon | circle
         self._poly_pts = []
         self._circle_center = None
+        self._aim_anchor = None     # press point for start/goal aim & circle centre
+        self._drag_xy = None        # current drag point (for live preview)
 
         container = ttk.Frame(root); container.pack(fill=tk.BOTH, expand=True)
         self.config_panel = ConfigPanel(
@@ -70,7 +78,8 @@ class PlannerApp:
             on_clear=self.on_clear, on_load=self.on_load, on_save=self.on_save)
         self.config_panel.widget().pack(side=tk.LEFT, fill=tk.Y, padx=4, pady=4)
 
-        self.canvas = MapCanvas(container, on_map_click=self.on_map_click)
+        self.canvas = MapCanvas(container, on_press=self.on_map_press,
+                                on_drag=self.on_map_drag, on_release=self.on_map_release)
         self.canvas.widget().pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         self.results = ResultsPanel(container, on_render_mode_change=self.on_mode_change)
@@ -82,38 +91,87 @@ class PlannerApp:
         self.mode = mode
         self._poly_pts = []
         self._circle_center = None
-        self.results.log(f'Mode: {mode} (click on the map)')
+        self._aim_anchor = None
+        self._drag_xy = None
+        hints = {
+            'start': 'Launch: click to place, drag to aim heading',
+            'goal': 'Target: click to place, drag to aim heading',
+            'circle': 'SAM: press centre, drag out to the radius, release',
+            'polygon': 'Island: click each vertex, click near the first to close',
+        }
+        self.results.log(hints.get(mode, f'Mode: {mode}'))
 
-    def on_map_click(self, x, y):
-        if self.mode == 'start':
-            self.state['start'] = (x, y); self.mode = 'idle'
-        elif self.mode == 'goal':
-            self.state['goal'] = (x, y); self.mode = 'idle'
+    def _current_overlay(self):
+        """In-progress drawing overlay for the canvas (live preview)."""
+        ov = {}
+        if self.mode == 'polygon':
+            ov['poly_pts'] = list(self._poly_pts)
+            if self._poly_pts and self._drag_xy is not None:
+                ov['rubber'] = self._drag_xy
+        elif self.mode == 'circle' and self._aim_anchor is not None:
+            r = 0.0 if self._drag_xy is None else math.hypot(
+                self._drag_xy[0] - self._aim_anchor[0], self._drag_xy[1] - self._aim_anchor[1])
+            ov['circle_preview'] = (self._aim_anchor, r)
+        elif self.mode in ('start', 'goal') and self._aim_anchor is not None and self._drag_xy is not None:
+            ov['aim'] = (self._aim_anchor, self._drag_xy)
+        return ov
+
+    def on_map_press(self, x, y):
+        if self.mode in ('start', 'goal'):
+            self._aim_anchor = (x, y)
+            self._drag_xy = (x, y)
+            self.state[self.mode] = (x, y)          # place immediately; aim on drag
         elif self.mode == 'circle':
-            if self._circle_center is None:
-                self._circle_center = (x, y)
-                self.results.log('Click again to set radius')
-            else:
-                r = math.hypot(x - self._circle_center[0], y - self._circle_center[1])
-                self.state['obstacles'].append({'type': 'circle', 'center': self._circle_center, 'radius': r})
-                self._circle_center = None; self.mode = 'idle'
+            self._aim_anchor = (x, y)
+            self._drag_xy = (x, y)
         elif self.mode == 'polygon':
-            close_tol = config.MAP_WIDTH * 0.02
             if (len(self._poly_pts) >= 3 and
-                    math.hypot(x - self._poly_pts[0][0], y - self._poly_pts[0][1]) < close_tol):
+                    math.hypot(x - self._poly_pts[0][0], y - self._poly_pts[0][1]) < _POLY_CLOSE_TOL_M):
                 self.state['obstacles'].append({'type': 'polygon', 'polygon': list(self._poly_pts)})
                 self._poly_pts = []
                 self.mode = 'idle'
                 self.results.log('Polygon closed')
             else:
                 self._poly_pts.append((x, y))
-                self.results.log(f'Polygon point {len(self._poly_pts)} (click near first point to close)')
+                self.results.log(f'Vertex {len(self._poly_pts)} (click near the first to close)')
+        self._redraw()
+
+    def on_map_drag(self, x, y):
+        if self.mode in ('start', 'goal', 'circle', 'polygon'):
+            self._drag_xy = (x, y)
+            if self.mode in ('start', 'goal') and self._aim_anchor is not None:
+                h = gi.heading_from_drag(self._aim_anchor, (x, y), _AIM_MIN_M)
+                if h is not None:
+                    self.state[self.mode + '_heading'] = h
+            self._redraw()
+
+    def on_map_release(self, x, y):
+        if self.mode in ('start', 'goal') and self._aim_anchor is not None:
+            h = gi.heading_from_drag(self._aim_anchor, (x, y), _AIM_MIN_M)
+            if h is not None:
+                self.state[self.mode + '_heading'] = h
+            self._aim_anchor = None
+            self._drag_xy = None
+            self.mode = 'idle'
+        elif self.mode == 'circle' and self._aim_anchor is not None:
+            r = math.hypot(x - self._aim_anchor[0], y - self._aim_anchor[1])
+            if r >= _RADIUS_MIN_M:
+                self.state['obstacles'].append(
+                    {'type': 'circle', 'center': self._aim_anchor, 'radius': r})
+                self.results.log(f'SAM added (r={r/1000:.1f} km)')
+            self._aim_anchor = None
+            self._drag_xy = None
+            self.mode = 'idle'
+        # polygon: vertices are committed on press; release is a no-op
         self._redraw()
 
     def on_clear(self):
         self.state['obstacles'] = []
         self._poly_pts = []
+        self._aim_anchor = None
+        self._drag_xy = None
         self.result = None
+        self.preprocessed = None
         self._redraw()
 
     def on_save(self):
@@ -165,4 +223,4 @@ class PlannerApp:
 
     def _redraw(self):
         self.canvas.render(self.state, self.result, self.preprocessed,
-                           self.results.render_mode())
+                           self.results.render_mode(), overlay=self._current_overlay())
