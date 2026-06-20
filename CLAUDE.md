@@ -16,7 +16,7 @@ python launch_gui.py                     # Interactive Tk GUI: click to place st
 python performance_eval.py               # Performance metric helpers (also imported by main.py)
 ```
 
-There **is** a pytest suite — run `python -m pytest -q` from the repo root. Test files are named `*_test.py` (these ARE committed); `test_*.py` is gitignored, so name scratch tests that way to keep them out of git. `main.py` is a separate batch harness that runs all scenarios and writes PNGs.
+There **is** a pytest suite under `tests/` — run `python -m pytest -q` from the repo root (`pytest.ini` sets `pythonpath = .` so tests can `import config` / `import core.* / render.* / gui.*`, and `testpaths = tests`). Test files are named `*_test.py` (these ARE committed); `test_*.py` is gitignored, so name scratch tests that way to keep them out of git. `main.py` is a separate batch harness that runs all scenarios and writes PNGs.
 
 To run/debug a single scenario instead of all 16, call the pieces directly (this is the canonical pipeline):
 
