@@ -13,6 +13,7 @@ import gui.params as gp
 import gui.summary as gsummary
 import gui.scenario_io as sio
 import gui.interaction as gi
+import trajectory as tr
 from gui.config_panel import ConfigPanel
 from gui.map_canvas import MapCanvas
 from gui.results_panel import ResultsPanel
@@ -221,8 +222,27 @@ class PlannerApp:
             self.result, self.preprocessed, self.raw_circles, self.raw_polys,
             self.results.render_mode(), runtime_s)
         self.results.show_summary(summary)
-        self.results.log('Done' if summary['success'] else 'No path found')
+        if summary['success']:
+            self.results.log('Done')
+            self._log_turn_angles()
+        else:
+            self.results.log('No path found')
         self._redraw()
+
+    def _log_turn_angles(self):
+        """Log the turn angle at every turning waypoint (full path O..T)."""
+        R = self.preprocessed.get('turn_radius', config.R)
+        full = tr.build_full_path(self.result['path'], self.preprocessed)
+        turns = tr.turn_markers(full, R)
+        if not turns:
+            self.results.log('Turn angles: none (straight run)')
+            return
+        self.results.log('Turn angles per waypoint:')
+        for i, t in enumerate(turns, start=1):
+            a = t['angle_deg']
+            side = 'L' if a > 0 else 'R'
+            mx, my = t['mid']
+            self.results.log(f'  W{i}: {abs(a):5.1f} deg {side}  @({mx/1000:.1f}, {my/1000:.1f}) km')
 
     def on_mode_change(self, _mode):
         self._redraw()              # re-render only; do NOT re-plan

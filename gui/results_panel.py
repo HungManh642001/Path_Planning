@@ -38,8 +38,14 @@ class ResultsPanel:
 
         ttk.Separator(self.frame).pack(fill=tk.X, pady=6)
         ttk.Label(self.frame, text='Log', font=('Arial', 10, 'bold')).pack(anchor=tk.W)
-        self._log = tk.Text(self.frame, height=14, width=30, font=('Courier', 8))
-        self._log.pack(fill=tk.BOTH, expand=True)
+        log_box = ttk.Frame(self.frame)
+        log_box.pack(fill=tk.BOTH, expand=True)
+        log_bar = ttk.Scrollbar(log_box, orient=tk.VERTICAL)
+        log_bar.pack(side=tk.RIGHT, fill=tk.Y)
+        self._log = tk.Text(log_box, height=14, width=30, font=('Courier', 8),
+                            yscrollcommand=log_bar.set)
+        self._log.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        log_bar.config(command=self._log.yview)
 
     def widget(self):
         return self.frame

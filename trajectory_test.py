@@ -51,6 +51,18 @@ def test_dubins_turn_arc_is_tangent_fillet_radius_R():
     assert abs(d_start - R * math.tan(math.radians(45.0))) < 1.0
 
 
+def test_turn_markers_report_signed_turn_angle():
+    R = 8000.0
+    # left turn (CCW) of 90 deg at the middle waypoint
+    left = [((0.0, 0.0), 0.0), ((100000.0, 0.0), 0.0), ((100000.0, 100000.0), math.pi / 2)]
+    t = tr.turn_markers(left, R)[0]
+    assert abs(t['angle_deg'] - 90.0) < 1e-6                  # +90 = left/CCW
+    # right turn (CW) of 90 deg
+    right = [((0.0, 0.0), 0.0), ((100000.0, 0.0), 0.0), ((100000.0, -100000.0), -math.pi / 2)]
+    t2 = tr.turn_markers(right, R)[0]
+    assert abs(t2['angle_deg'] + 90.0) < 1e-6                 # -90 = right/CW
+
+
 def test_dubins_final_leg_preserves_approach_heading():
     # The last rendered segment must arrive exactly along the final leg heading
     # (so the approach to the target matches the required approach heading).

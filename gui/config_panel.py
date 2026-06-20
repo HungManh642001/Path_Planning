@@ -35,16 +35,15 @@ class ConfigPanel:
         body = ttk.Frame(self.frame)
         body.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self._scroll_canvas = tk.Canvas(body, width=260, highlightthickness=0)
-        vbar = ttk.Scrollbar(body, orient=tk.VERTICAL, command=self._scroll_canvas.yview)
-        self._scroll_canvas.configure(yscrollcommand=vbar.set)
-        vbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self._vbar = ttk.Scrollbar(body, orient=tk.VERTICAL, command=self._scroll_canvas.yview)
+        self._scroll_canvas.configure(yscrollcommand=self._vbar.set)
         self._scroll_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._scrollable = False        # only true once content overflows
+        self._vbar_shown = False
         inner = ttk.Frame(self._scroll_canvas)
         self._inner_id = self._scroll_canvas.create_window((0, 0), window=inner, anchor='nw')
-        inner.bind('<Configure>',
-                   lambda e: self._scroll_canvas.configure(scrollregion=self._scroll_canvas.bbox('all')))
-        self._scroll_canvas.bind('<Configure>',
-                                 lambda e: self._scroll_canvas.itemconfigure(self._inner_id, width=e.width))
+        inner.bind('<Configure>', lambda e: self._update_scrollregion())
+        self._scroll_canvas.bind('<Configure>', self._on_canvas_configure)
         self._scroll_canvas.bind_all('<MouseWheel>', self._on_mousewheel)
         self._scroll_canvas.bind_all('<Button-4>', self._on_mousewheel)
         self._scroll_canvas.bind_all('<Button-5>', self._on_mousewheel)
@@ -143,7 +142,40 @@ class ConfigPanel:
         else:
             self._adv_frame.pack_forget()
 
+    def _on_canvas_configure(self, event):
+        self._scroll_canvas.itemconfigure(self._inner_id, width=event.width)
+        self._update_scrollregion()
+
+    def _update_scrollregion(self):
+        """Recompute scrollability: only scroll/show the bar once content overflows."""
+        bbox = self._scroll_canvas.bbox('all')
+        if bbox is None:
+            return
+        self._scroll_canvas.configure(scrollregion=bbox)
+        content_h = bbox[3] - bbox[1]
+        view_h = self._scroll_canvas.winfo_height()
+        self._scrollable = content_h > view_h + 1
+        if self._scrollable and not self._vbar_shown:
+            self._vbar.pack(side=tk.RIGHT, fill=tk.Y)
+            self._vbar_shown = True
+        elif not self._scrollable and self._vbar_shown:
+            self._vbar.pack_forget()
+            self._vbar_shown = False
+            self._scroll_canvas.yview_moveto(0.0)        # snap back to top
+
+    def _pointer_over_panel(self, event):
+        w = self.frame.winfo_containing(event.x_root, event.y_root)
+        while w is not None:
+            if w == self.frame:
+                return True
+            w = getattr(w, 'master', None)
+        return False
+
     def _on_mousewheel(self, event):
+        # No scrolling until the panel content overflows, and only when the
+        # pointer is actually over the left panel.
+        if not self._scrollable or not self._pointer_over_panel(event):
+            return
         if event.num == 4:
             delta = -1
         elif event.num == 5:

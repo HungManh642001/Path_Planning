@@ -136,6 +136,7 @@ def _dubins_arc_path(waypoints, R, step, arc_samples=_ARC_SAMPLES):
         for k in range(1, arc_samples + 1):
             a = ang0 + s * a_abs * (k / arc_samples)
             pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
-        turns.append({'start': start, 'mid': tuple(wp), 'end': end})
+        turns.append({'start': start, 'mid': tuple(wp), 'end': end,
+                      'angle_deg': math.degrees(alpha)})    # +left/CCW, -right/CW
     _extend_straight(pts, tuple(waypoints[-1]), step)     # final straight leg
     return pts, turns
