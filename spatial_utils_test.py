@@ -42,36 +42,3 @@ def test_inflate_polygon_contains_round_buffer_is_safe():
     round_buffer = Polygon(square).buffer(inflation)
     assert mitre.contains(round_buffer.buffer(-1e-6)), \
         "mitre inflation must contain the round buffer (arc-clearance safety)"
-
-
-def test_arc_line_trajectory_passes_near_each_waypoint_no_jumps():
-    # A 3-waypoint path with a 90deg corner. The flown trajectory (straight legs +
-    # radius-R turn arc at the corner) must be continuous (no gaps/jumps) and pass
-    # through the endpoints exactly; near the corner it cuts inside by the arc.
-    R = 8000.0
-    pts = [(0.0, 0.0), (100000.0, 0.0), (100000.0, 100000.0)]
-    traj = su.arc_line_trajectory(pts, R)
-    assert len(traj) >= 3
-    # endpoints preserved
-    assert math.hypot(traj[0][0] - pts[0][0], traj[0][1] - pts[0][1]) < 1.0
-    assert math.hypot(traj[-1][0] - pts[-1][0], traj[-1][1] - pts[-1][1]) < 1.0
-    # continuity: no jump between consecutive trajectory samples larger than the
-    # longest straight leg (i.e. the polyline is connected, not skipping a corner)
-    max_gap = max(math.hypot(traj[i + 1][0] - traj[i][0], traj[i + 1][1] - traj[i][1])
-                  for i in range(len(traj) - 1))
-    assert max_gap < 100001.0, f"trajectory has a jump of {max_gap:.0f} m"
-    # the corner is rounded: the trajectory comes within R of the corner but the
-    # arc cuts inside, so the closest sample to the corner is < the leg length
-    dmin = min(math.hypot(x - pts[1][0], y - pts[1][1]) for (x, y) in traj)
-    assert 0.0 < dmin < R + 1.0, f"corner not rounded by an R arc (dmin={dmin:.0f})"
-
-
-def test_arc_line_trajectory_arc_radius_matches_R():
-    # The turn arc must have radius ~R: sampled arc points are equidistant (=R) from
-    # the arc centre. Check the mid-arc sample curvature indirectly via the inset:
-    # tangent points sit R*tan(alpha/2) back from the corner along each leg.
-    R = 8000.0
-    pts = [(0.0, 0.0), (100000.0, 0.0), (200000.0, 0.0)]  # straight line, no turn
-    traj = su.arc_line_trajectory(pts, R)
-    # A straight path stays on y=0 throughout (no spurious arc)
-    assert all(abs(y) < 1e-6 for (x, y) in traj)

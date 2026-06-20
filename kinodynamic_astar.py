@@ -13,7 +13,6 @@ from shapely import STRtree
 import config
 import spatial_utils as su
 import preprocessing as prep
-import graph_builder as gb
 
 
 def _angle_diff(a, b):
@@ -50,17 +49,15 @@ class State:
 class KinodynamicAstar:
     """Kinodynamic A* path planner for missile trajectory"""
     
-    def __init__(self, preprocessed_scenario, tangent_graph=None):
+    def __init__(self, preprocessed_scenario):
         """
         Initialize the planner.
-        
+
         Args:
             preprocessed_scenario: Output from preprocessing.prepare_scenario()
-            tangent_graph: TangentGraph object (optional, will be generated if not provided)
         """
-        
+
         self.scenario = preprocessed_scenario
-        self.tangent_graph = tangent_graph
         self._polygons = [Polygon(coords) for coords in preprocessed_scenario['polygon_obstacles']]
         self._poly_tree = STRtree(self._polygons) if self._polygons else None
         self._poly_vertices = []
@@ -402,8 +399,8 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
     if verbose:
         print("Initializing Kinodynamic A*...")
 
-    # Run A* search (dynamic successors; no static graph needed)
-    planner = KinodynamicAstar(preprocessed_scenario, tangent_graph=None)
+    # Run A* search (dynamic successors)
+    planner = KinodynamicAstar(preprocessed_scenario)
     
     if verbose:
         print("Starting A* search...")
@@ -428,5 +425,4 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
         'success': path is not None,
         'stats': planner.get_search_stats(),
         'planner': planner,
-        'tangent_graph': None,
     }

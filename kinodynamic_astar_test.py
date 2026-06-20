@@ -20,7 +20,7 @@ def _simple_pre(circles=(), polys=(), start=(2000, 2000), goal=(100000, 0)):
 
 def test_polygons_are_prebuilt_shapely_objects():
     pre = _simple_pre(polys=[[(0, 0), (10, 0), (10, 10), (0, 10)]])
-    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    planner = astar.KinodynamicAstar(pre)
     from shapely.geometry import Polygon
     assert hasattr(planner, '_polygons')
     assert all(isinstance(p, Polygon) for p in planner._polygons)
@@ -44,13 +44,7 @@ def test_finds_valid_path_around_single_circle():
     # that the goal waypoint (offset back by DSS) clears the inflated circle,
     # but the circle still blocks the direct start->goal line, forcing a detour.
     pre = _simple_pre(circles=[((150000.0, 0.0), 20000.0)], goal=(300000.0, 0.0))
-    import graph_builder as gb
-    tg = gb.generate_bitangents(pre['circle_obstacles'], pre['polygon_obstacles'])
-    tg = gb.extend_tangent_graph_with_start_goal(
-        tg, pre['start_state']['waypoint'], pre['start_state']['heading'],
-        pre['goal_state']['waypoint'], pre['goal_state']['heading'],
-        pre['circle_obstacles'], pre['polygon_obstacles'])
-    planner = astar.KinodynamicAstar(pre, tg)
+    planner = astar.KinodynamicAstar(pre)
     path = planner.search()
     assert path is not None, "planner must find a route around one circle"
     assert pv.segments_clear(path, pre['circle_obstacles'], pre['polygon_obstacles'])
@@ -67,13 +61,7 @@ def test_no_dead_stuck_counter():
 
 def test_produced_path_is_fully_valid_around_circle():
     pre = _simple_pre(circles=[((150000.0, 0.0), 20000.0)], goal=(300000.0, 0.0))
-    import graph_builder as gb
-    tg = gb.generate_bitangents(pre['circle_obstacles'], pre['polygon_obstacles'])
-    tg = gb.extend_tangent_graph_with_start_goal(
-        tg, pre['start_state']['waypoint'], pre['start_state']['heading'],
-        pre['goal_state']['waypoint'], pre['goal_state']['heading'],
-        pre['circle_obstacles'], pre['polygon_obstacles'])
-    path = astar.KinodynamicAstar(pre, tg).search()
+    path = astar.KinodynamicAstar(pre).search()
     assert path is not None
     assert pv.turn_angles_ok(path, pre['alpha_max_rad'])
     assert pv.arcs_clear(path, pre['turn_radius'],
@@ -92,14 +80,8 @@ def test_arc_clear_method_removed():
 
 def test_smoothing_reduces_or_keeps_waypoints_and_stays_valid():
     pre = _simple_pre(circles=[((150000.0, 0.0), 20000.0)], goal=(300000.0, 0.0))
-    import graph_builder as gb
-    tg = gb.generate_bitangents(pre['circle_obstacles'], pre['polygon_obstacles'])
-    tg = gb.extend_tangent_graph_with_start_goal(
-        tg, pre['start_state']['waypoint'], pre['start_state']['heading'],
-        pre['goal_state']['waypoint'], pre['goal_state']['heading'],
-        pre['circle_obstacles'], pre['polygon_obstacles'])
-    raw = astar.KinodynamicAstar(pre, tg).search()           # fresh planner
-    result = astar.plan_trajectory(pre, verbose=False)        # builds its own graph + smooths
+    raw = astar.KinodynamicAstar(pre).search()                # un-smoothed search path
+    result = astar.plan_trajectory(pre, verbose=False)        # search + smooth
     smoothed = result['path']
     print(f"\nraw waypoints={len(raw) if raw else 0}, smoothed waypoints={len(smoothed) if smoothed else 0}")
     assert raw is not None and smoothed is not None
@@ -115,7 +97,7 @@ def test_turn_penalty_makes_turning_cost_more_than_straight():
     # Goal directly behind the start heading (turn 180deg > alpha_max) => no graph
     # candidate is valid => radial fallback fires, giving the 11-way fan to compare.
     pre = _simple_pre(goal=(-50000.0, 0.0))
-    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    planner = astar.KinodynamicAstar(pre)
     succ = planner.get_next_states(planner.start_state)
     assert len(succ) >= 2
     straight = min(succ, key=lambda s: abs(astar._angle_diff(s[0].heading, planner.start_state.heading)))
@@ -125,7 +107,7 @@ def test_turn_penalty_makes_turning_cost_more_than_straight():
 
 def test_heuristic_is_euclidean_lower_bound():
     pre = _simple_pre()
-    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    planner = astar.KinodynamicAstar(pre)
     s = planner.start_state
     g = planner.goal_state
     euclid = math.hypot(g.waypoint[0] - s.waypoint[0], g.waypoint[1] - s.waypoint[1])
@@ -146,7 +128,7 @@ def test_heuristic_is_euclidean_lower_bound():
 
 def test_goal_directed_successor_heads_straight_at_goal():
     pre = _simple_pre()  # empty map; Strategy 2 + goal-directed only
-    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    planner = astar.KinodynamicAstar(pre)
     succ = planner.get_next_states(planner.start_state)
     gh = su.angle_to_heading(planner.start_state.waypoint, planner.goal_state.waypoint)
     # The goal-directed successor heads EXACTLY at the goal; the radial fan headings
@@ -174,7 +156,7 @@ def test_check_collision_matches_bruteforce_with_spatial_index():
     circles = [((50000.0, 50000.0), 8000.0)]
     pre = _simple_pre(circles=[((50000.0, 50000.0), 8000.0)],
                       polys=polys)
-    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    planner = astar.KinodynamicAstar(pre)
     rng = _random.Random(1234)
     for _ in range(400):
         p1 = (rng.uniform(0, 100000), rng.uniform(0, 100000))
@@ -196,7 +178,7 @@ def test_dynamic_successors_include_circle_tangents():
     circle_raw = ((60000.0, 6000.0), 8000.0)
     pre = _simple_pre(circles=[circle_raw], goal=(120000.0, 0.0))
     inflated_center, inflated_radius = pre['circle_obstacles'][0]
-    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    planner = astar.KinodynamicAstar(pre)
     succ = planner.get_next_states(planner.start_state)
     tang = su2.circle_tangent_points(planner.start_state.waypoint, inflated_center, inflated_radius)
     succ_wps = [s[0].waypoint for s in succ]
@@ -210,7 +192,7 @@ def test_radial_fallback_when_no_graph_candidate():
     # reachable it is a successor; force the not-directly-reachable case by a goal behind
     # the start heading so the direct jump turn > alpha_max, exercising the radial fallback.
     pre = _simple_pre(goal=(-50000.0, 0.0))   # goal behind start (start_heading=0)
-    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    planner = astar.KinodynamicAstar(pre)
     succ = planner.get_next_states(planner.start_state)
     assert len(succ) > 0, "radial fallback must produce successors when no graph candidate is valid"
 
@@ -225,7 +207,7 @@ def test_search_respects_time_budget(monkeypatch):
     # dense-ish: several polygons straddling the route so the graph can't trivially solve it
     polys = [[(40000+i*1000, 0), (60000+i*1000, 0), (50000+i*1000, 40000)] for i in range(6)]
     pre = _simple_pre(polys=polys, goal=(120000.0, 0.0))
-    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    planner = astar.KinodynamicAstar(pre)
     t0 = _time.perf_counter()
     planner.search()
     dt = _time.perf_counter() - t0
@@ -239,7 +221,7 @@ def test_polygon_vertex_is_reachable_successor():
     # vertex was rejected because shapely `intersects` flags the endpoint touch.
     poly = [(60000.0, -20000.0), (60000.0, 20000.0), (90000.0, 20000.0), (90000.0, -20000.0)]
     pre = _simple_pre(polys=[poly], goal=(150000.0, 0.0))
-    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    planner = astar.KinodynamicAstar(pre)
     from shapely.geometry import Polygon
     hull = list(Polygon(pre['polygon_obstacles'][0]).convex_hull.exterior.coords[:-1])
     succ = planner.get_next_states(planner.start_state)
@@ -255,7 +237,7 @@ def test_collision_through_polygon_interior_still_blocked():
     # that cuts straight through the polygon interior is still a collision.
     poly = [(60000.0, -20000.0), (60000.0, 20000.0), (90000.0, 20000.0), (90000.0, -20000.0)]
     pre = _simple_pre(polys=[poly])
-    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    planner = astar.KinodynamicAstar(pre)
     inflated = pre['polygon_obstacles'][0]
     xs = [p[0] for p in inflated]; ys = [p[1] for p in inflated]
     cx = (min(xs) + max(xs)) / 2
@@ -275,7 +257,7 @@ def test_goal_candidate_rejected_when_final_turn_exceeds_amax():
         'obstacles': [], 'islands': [], 'sam_sites': [],
     }
     pre = prep.prepare_scenario(scenario)
-    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    planner = astar.KinodynamicAstar(pre)
     gwp = planner.goal_state.waypoint
     succ = planner.get_next_states(planner.start_state)
     assert not any(math.hypot(s[0].waypoint[0] - gwp[0], s[0].waypoint[1] - gwp[1]) < 1.0
@@ -292,7 +274,7 @@ def test_goal_candidate_accepted_when_final_turn_ok():
         'obstacles': [], 'islands': [], 'sam_sites': [],
     }
     pre = prep.prepare_scenario(scenario)
-    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    planner = astar.KinodynamicAstar(pre)
     gwp = planner.goal_state.waypoint
     succ = planner.get_next_states(planner.start_state)
     assert any(math.hypot(s[0].waypoint[0] - gwp[0], s[0].waypoint[1] - gwp[1]) < 1.0
@@ -307,7 +289,7 @@ def test_segment_along_polygon_edge_is_clear():
     poly = [(60000.0, -20000.0), (60000.0, 20000.0),
             (90000.0, 20000.0), (90000.0, -20000.0)]
     pre = _simple_pre(polys=[poly])
-    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    planner = astar.KinodynamicAstar(pre)
     inflated = pre['polygon_obstacles'][0]
     # two consecutive vertices of the inflated polygon -> the edge between them
     a, b = inflated[0], inflated[1]
@@ -326,7 +308,7 @@ def test_wrap_step_successor_added_when_on_circle_boundary():
     c, r = pre['circle_obstacles'][0]                 # inflated circle
     P = (c[0], c[1] + r)                              # top of the inflated circle
     h = 0.0                                           # tangent at the top (horizontal)
-    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    planner = astar.KinodynamicAstar(pre)
     succ = planner.get_next_states(astar.State(P, h))
     expected = (P[0] + config.WRAP_STEP_M * math.cos(h),
                 P[1] + config.WRAP_STEP_M * math.sin(h))
@@ -341,7 +323,7 @@ def test_wrap_step_not_added_when_off_circle():
     # exactly WRAP_STEP_M ahead) should be generated.
     circle_raw = ((100000.0, 0.0), 20000.0)
     pre = _simple_pre(circles=[circle_raw], goal=(300000.0, 0.0))
-    planner = astar.KinodynamicAstar(pre, tangent_graph=None)
+    planner = astar.KinodynamicAstar(pre)
     P = (5000.0, 90000.0)                             # nowhere near the circle boundary
     h = 0.0
     succ = planner.get_next_states(astar.State(P, h))

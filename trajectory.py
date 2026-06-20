@@ -26,8 +26,6 @@ planner's path only covers the interior waypoints W_1..W_{n-1}.
 
 import math
 
-import spatial_utils as su  # noqa: F401  (kept available as a geometry helper)
-
 _ARC_SAMPLES = 24  # even -> a sample lands exactly on the waypoint (arc midpoint)
 
 

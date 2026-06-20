@@ -76,14 +76,7 @@ def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
                                          edgecolor='darkred', linewidth=1, 
                                          linestyle='--', alpha=0.5)
                 ax.add_patch(buffer_patch)
-    
-    # ====== DRAW TANGENT GRAPH ======
-    if config.PLOT_BITANGENTS and result and result.get('tangent_graph'):
-        graph = result['tangent_graph']
-        for edge in graph.edges:
-            p1, p2 = edge
-            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], 'gray', alpha=0.2, linewidth=0.5)
-    
+
     # ====== DRAW START & GOAL ======
     if config.PLOT_START_END_MARKERS:
         # Original launch point O

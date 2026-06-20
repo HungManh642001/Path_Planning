@@ -31,7 +31,6 @@ PARAM_SPECS = [
     {'key': 'polygon_mitre_limit',   'label': 'Polygon Mitre Limit', 'group': 'advanced', 'min': 1.0,    'max': 5.0,     'default': config.POLYGON_MITRE_LIMIT},
     {'key': 'wrap_step_m',           'label': 'Wrap Step (m)',       'group': 'advanced', 'min': 500.0,  'max': 20000.0, 'default': config.WRAP_STEP_M},
     {'key': 'circle_graze_tol_m',    'label': 'Circle Graze Tol (m)','group': 'advanced', 'min': 0.0,    'max': 500.0,   'default': config.CIRCLE_GRAZE_TOL_M},
-    {'key': 'obstacle_ring_samples', 'label': 'Ring Samples',        'group': 'advanced', 'min': 6.0,    'max': 64.0,    'default': float(config.OBSTACLE_RING_SAMPLES)},
 ]
 
 
@@ -51,7 +50,6 @@ def apply_overrides(values):
     config.POLYGON_MITRE_LIMIT = float(values['polygon_mitre_limit'])
     config.WRAP_STEP_M = float(values['wrap_step_m'])
     config.CIRCLE_GRAZE_TOL_M = float(values['circle_graze_tol_m'])
-    config.OBSTACLE_RING_SAMPLES = int(values['obstacle_ring_samples'])
     # ALPHA_MAX is stored in degrees in config; keep it consistent.
     config.ALPHA_MAX = float(values['alpha_max_deg'])
     return {

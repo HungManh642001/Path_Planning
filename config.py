@@ -80,41 +80,14 @@ GOAL_THRESHOLD = 1000.0  # meters; reachable given STATE_POS_QUANTUM
 # Cost added per radian of heading change at a transition (meters per radian)
 TURN_PENALTY_WEIGHT = 4000.0
 
-# ====== TANGENT GRAPH ======
-# Minimum angle between tangent lines (degrees)
-MIN_TANGENT_ANGLE = 10.0
-
-# Number of sampling points on each tangent
-TANGENT_SAMPLES = 50
-
-# Number of boundary support nodes sampled around each circular obstacle
-OBSTACLE_RING_SAMPLES = 16
-
 # ====== VISUALIZATION ======
-PLOT_BITANGENTS = True
 PLOT_BUFFER_ZONES = True
 PLOT_START_END_MARKERS = True
 
 # Figure DPI for saving
 FIGURE_DPI = 150
 
-# ====== SCENARIO PARAMETERS ======
-# Scenario 1: Open ocean
-SCENARIO1_ISLANDS = 0
-SCENARIO1_SAM_SITES = 0
-
-# Scenario 2: Single obstacle
-SCENARIO2_ISLANDS = 1
-SCENARIO2_SAM_SITES = 1
-
-# Scenario 3: Narrow gap
-SCENARIO3_ISLANDS = 2
-SCENARIO3_SAM_SITES = 0
-
-# Scenario 4: Complex maze
-SCENARIO4_ISLANDS = 20
-SCENARIO4_SAM_SITES = 10
-
+# ====== SCENARIO GENERATION (map_generator) ======
 # SAM detection radius (m)
 SAM_RADIUS_MIN = 10000.0
 SAM_RADIUS_MAX = 50000.0
