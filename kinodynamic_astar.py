@@ -267,8 +267,15 @@ class KinodynamicAstar:
             )
             
             if dist_to_goal < config.GOAL_THRESHOLD:
-                # Found path
-                return self._reconstruct_path(current)
+                # Reaching the goal region is not enough: the missile must arrive
+                # able to turn onto the approach heading within alpha_max. A state
+                # that wrap-stepped / flew straight into the region can be close but
+                # badly misaligned; accepting it would force a > alpha_max terminal
+                # turn at W_{n-1}. Require an aligned arrival; otherwise keep
+                # searching (the goal_wp candidate provides an aligned approach).
+                approach_turn = abs(_angle_diff(self.goal_state.heading, current.heading))
+                if approach_turn <= self.alpha_max_rad:
+                    return self._reconstruct_path(current)
             
             # Expand neighbors
             successors = self.get_next_states(current)
@@ -343,7 +350,18 @@ class KinodynamicAstar:
                 next_wp, heading_to_next,
                 R=self.R, alpha_max=self.alpha_max_rad
             )
-            if is_valid and self._check_collision(prev_wp, next_wp):
+            # Skipping path[i] changes the ARRIVAL direction at the next waypoint,
+            # so its onward turn must be re-checked (the old code only validated the
+            # turn at prev_wp). If next_wp is the last waypoint, its onward turn is
+            # the terminal turn onto goal_heading. Without this check, smoothing can
+            # bend the approach past alpha_max even when the search path was valid.
+            if i + 1 == len(path) - 1:
+                onward_heading = self.goal_state.heading
+            else:
+                onward_heading = su.angle_to_heading(next_wp, path[i + 2][0])
+            downstream_turn = abs(_angle_diff(onward_heading, heading_to_next))
+            if (is_valid and downstream_turn <= self.alpha_max_rad
+                    and self._check_collision(prev_wp, next_wp)):
                 # Can skip current point
                 i += 1
                 continue

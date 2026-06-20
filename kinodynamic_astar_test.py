@@ -349,3 +349,60 @@ def test_wrap_step_not_added_when_off_circle():
     assert not any(
         math.hypot(s[0].waypoint[0] - straight[0], s[0].waypoint[1] - straight[1]) < 1.0
         for s in succ), "no wrap-step should be added when not on a circle boundary"
+
+
+# --------------------------------------------------------------------------
+# Approach-heading feasibility: the planner must not accept reaching the goal
+# region with an arrival heading that would force a > alpha_max terminal turn,
+# and smoothing must not introduce such a turn either. (Regression: a path that
+# wrap-stepped straight into the goal region arrived ~113 deg off goal_heading.)
+# --------------------------------------------------------------------------
+def _all_turns_deg(path, goal_heading):
+    """Turn angle (deg) at each interior waypoint of [path] + the terminal turn
+    from the last leg onto goal_heading."""
+    pts = [wp for wp, _ in path]
+    legs = [math.atan2(pts[i + 1][1] - pts[i][1], pts[i + 1][0] - pts[i][0])
+            for i in range(len(pts) - 1)]
+    turns = []
+    for i in range(len(legs) - 1):
+        d = abs(math.atan2(math.sin(legs[i + 1] - legs[i]), math.cos(legs[i + 1] - legs[i])))
+        turns.append(math.degrees(d))
+    # terminal turn from the final leg onto the required approach heading
+    term = abs(math.atan2(math.sin(goal_heading - legs[-1]), math.cos(goal_heading - legs[-1])))
+    turns.append(math.degrees(term))
+    return turns
+
+
+def _dense_scenario(start_heading_deg, goal_heading_deg):
+    return {
+        'start': (150000.0, 80000.0), 'start_heading': math.radians(start_heading_deg),
+        'goal': (370000.0, 470000.0), 'goal_heading': math.radians(goal_heading_deg),
+        'obstacles': [
+            {'type': 'circle', 'center': (255000.0, 285000.0), 'radius': 42000.0},
+            {'type': 'circle', 'center': (330000.0, 250000.0), 'radius': 35000.0},
+            {'type': 'polygon', 'polygon': [(150000, 240000), (210000, 250000),
+                                            (220000, 310000), (160000, 330000), (130000, 290000)]},
+            {'type': 'polygon', 'polygon': [(230000, 110000), (345000, 120000),
+                                            (340000, 200000), (240000, 205000)]},
+        ], 'islands': [], 'sam_sites': [],
+    }
+
+
+def test_solved_path_never_exceeds_alpha_max_at_any_waypoint():
+    # Sweep a dense map with varied launch/approach headings. Any path the planner
+    # reports as successful must respect the max turn angle at EVERY waypoint,
+    # including the terminal turn onto the approach heading.
+    tol = 0.5
+    for sh in (30, 60, 90, 120, 150):
+        for gh in (70, 160, 200, 230, 250, 270, 290):
+            scenario = _dense_scenario(sh, gh)
+            pre = prep.prepare_scenario(scenario)
+            res = astar.plan_trajectory(pre, verbose=False)
+            if not res['success']:
+                continue
+            amax = math.degrees(pre['alpha_max_rad'])
+            turns = _all_turns_deg(res['path'], pre['goal_state']['heading'])
+            worst = max(turns)
+            assert worst <= amax + tol, (
+                f"sh={sh} gh={gh}: turn {worst:.1f} deg exceeds alpha_max {amax} "
+                f"(turns={[round(t,1) for t in turns]})")
