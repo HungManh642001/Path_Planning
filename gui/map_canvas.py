@@ -79,6 +79,22 @@ class MapCanvas:
         self._draw_empty()
         overlay = overlay or {}
 
+        # Inflated obstacle boundaries (raw + R*(1/cos(a/2)-1) + safe margin),
+        # drawn as a dashed safety zone behind the raw obstacle. Available only
+        # after a run (preprocessed holds the inflated geometry).
+        if preprocessed:
+            inflated = False
+            for center, radius in preprocessed.get('circle_obstacles', []):
+                self.ax.add_patch(MplCircle(center, radius, facecolor='none',
+                                            edgecolor='red', linestyle='--', linewidth=1.0,
+                                            alpha=0.6, label='Inflated (safe margin)' if not inflated else None))
+                inflated = True
+            for coords in preprocessed.get('polygon_obstacles', []):
+                self.ax.add_patch(MplPolygon(coords, closed=True, facecolor='none',
+                                             edgecolor='red', linestyle='--', linewidth=1.0,
+                                             alpha=0.6, label='Inflated (safe margin)' if not inflated else None))
+                inflated = True
+
         for o in state['obstacles']:
             if o['type'] == 'circle':
                 self.ax.add_patch(MplCircle(o['center'], o['radius'], color='salmon', alpha=0.5))
@@ -125,9 +141,9 @@ class MapCanvas:
             if render_mode == 'dubins':
                 turns = tr.turn_markers(full, R)
                 for j, t in enumerate(turns):
-                    self.ax.plot(*t['start'], '^', color='darkgreen', markersize=8,
+                    self.ax.plot(*t['start'], 'o', color='lime', markersize=4,
                                  label='Turn start' if j == 0 else None)
-                    self.ax.plot(*t['end'], 'v', color='purple', markersize=8,
+                    self.ax.plot(*t['end'], 'o', color='magenta', markersize=4,
                                  label='Turn end' if j == 0 else None)
 
         handles, labels = self.ax.get_legend_handles_labels()

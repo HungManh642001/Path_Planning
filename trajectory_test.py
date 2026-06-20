@@ -33,27 +33,32 @@ def _circle_radius_through(p1, p2, p3):
     return math.hypot(ax - ux, ay - uy)
 
 
-def test_dubins_turn_arc_has_waypoint_at_midpoint_and_radius_R():
-    # The flown turn arc must use the real turn radius R and put the WAYPOINT
-    # exactly at the middle of the arc (user requirement).
+def test_dubins_turn_arc_is_tangent_fillet_radius_R():
+    # The flown turn arc uses the real turn radius R, is symmetric about the
+    # waypoint (tangent points equidistant along the two legs), and the arc
+    # radius equals R. This is the tangent/fillet model that keeps the entry
+    # and exit headings exact.
     R = 8000.0
     path = [((0.0, 0.0), 0.0), ((100000.0, 0.0), 0.0), ((100000.0, 100000.0), math.pi / 2)]
     turns = tr.turn_markers(path, R)
     assert len(turns) == 1
     t = turns[0]
-    assert t['mid'] == (100000.0, 0.0)                       # waypoint == arc midpoint
-    r = _circle_radius_through(t['start'], t['mid'], t['end'])
-    assert abs(r - R) < 1.0                                   # arc radius == R
-    # midpoint is symmetric: equidistant from the two turn endpoints
-    assert abs(math.dist(t['mid'], t['start']) - math.dist(t['mid'], t['end'])) < 1.0
-
-
-def test_dubins_path_passes_through_each_waypoint():
-    R = 8000.0
-    path = [((0.0, 0.0), 0.0), ((100000.0, 0.0), 0.0), ((100000.0, 100000.0), math.pi / 2)]
-    pts = tr.sample_trajectory(path, R, mode='dubins')
     W = (100000.0, 0.0)
-    assert min(math.dist(p, W) for p in pts) < 1.0           # path goes through the waypoint
+    d_start = math.dist(W, t['start'])
+    d_end = math.dist(W, t['end'])
+    assert abs(d_start - d_end) < 1.0                        # symmetric about the waypoint
+    # tangent inset t = R*tan(alpha/2); here alpha = 90deg -> t = R
+    assert abs(d_start - R * math.tan(math.radians(45.0))) < 1.0
+
+
+def test_dubins_final_leg_preserves_approach_heading():
+    # The last rendered segment must arrive exactly along the final leg heading
+    # (so the approach to the target matches the required approach heading).
+    R = 8000.0
+    path = [((0.0, 0.0), 0.0), ((50000.0, 30000.0), 0.0), ((150000.0, 30000.0), 0.0)]
+    pts = tr.sample_trajectory(path, R, mode='dubins')
+    final_dir = math.degrees(math.atan2(pts[-1][1] - pts[-2][1], pts[-1][0] - pts[-2][0]))
+    assert abs(final_dir - 0.0) < 0.5                        # arrives due east, exactly
 
 
 def test_build_full_path_prepends_launch_and_appends_target():

@@ -147,13 +147,13 @@ def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
                     if i % max(1, len(waypoints)//5) == 0:  # Label every 5th or fewer
                         ax.text(wp[0]+300, wp[1]+300, f'W{i}', fontsize=9, alpha=0.6)
 
-                # Mark where each turn arc begins and ends.
+                # Mark where each turn arc begins and ends (small dots).
                 if trajectory_mode == 'dubins':
                     turns = tr.turn_markers(full, R)
                     for j, t in enumerate(turns):
-                        ax.plot(*t['start'], '^', color='darkgreen', markersize=9, zorder=5,
+                        ax.plot(*t['start'], 'o', color='lime', markersize=4, zorder=5,
                                 label='Turn start' if j == 0 else None)
-                        ax.plot(*t['end'], 'v', color='purple', markersize=9, zorder=5,
+                        ax.plot(*t['end'], 'o', color='magenta', markersize=4, zorder=5,
                                 label='Turn end' if j == 0 else None)
             else:
                 # Fallback: draw straight lines if trajectory sampling fails

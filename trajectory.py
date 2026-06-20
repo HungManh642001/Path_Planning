@@ -5,12 +5,19 @@ Turns the planner's [(waypoint, heading), ...] output into a flat list of (x, y)
 points for drawing. Two modes:
   - 'straight': the waypoint positions joined by straight lines.
   - 'dubins'  : the real flight path -- straight legs joined by radius-R turn
-                arcs. Each interior WAYPOINT sits at the MIDDLE of its turn arc,
-                and the arc subtends the heading change (turn angle) at radius R.
-                The path therefore passes through every waypoint.
+                arcs. At each interior WAYPOINT the arc is tangent to both legs
+                (the fillet model): symmetric about the waypoint, radius R, and
+                subtending the heading change (turn angle). Because the arc is
+                tangent, the entry and exit headings are preserved exactly -- so
+                the launch leaves O along the launch heading and the approach
+                reaches T along the required approach heading. (A circular arc of
+                radius R cannot both pass through the corner waypoint AND keep
+                those headings, so the arc rounds the corner rather than passing
+                through it; this matches the planner's validated kinodynamic
+                model: straight đoản trình + R*tan(alpha/2) tangents.)
 
-`turn_markers()` returns, per turn, the start-of-turn and end-of-turn points so
-the caller can mark where each arc begins and ends.
+`turn_markers()` returns, per turn, the start-of-turn and end-of-turn points
+(the two tangent points) so the caller can mark where each arc begins and ends.
 
 `build_full_path()` prepends the launch point O and appends the target T (taken
 from the preprocessed scenario) so the drawn flight path spans O..T -- the
@@ -86,38 +93,49 @@ def _extend_straight(pts, target, step):
         pts.append((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t))
 
 
+def _unit(a, b):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    d = math.hypot(dx, dy)
+    return (dx / d, dy / d) if d > 0 else (0.0, 0.0)
+
+
 def _dubins_arc_path(waypoints, R, step, arc_samples=_ARC_SAMPLES):
-    """Straight legs + radius-R arcs, each interior waypoint at its arc midpoint.
+    """Straight legs + radius-R fillet arcs tangent to both legs at each interior
+    waypoint (symmetric about the waypoint; entry/exit headings preserved).
 
     Returns (points, turns) where points is a dense continuous polyline and
-    turns is a list of {'start', 'mid', 'end'}.
+    turns is a list of {'start', 'mid', 'end'} (start/end are the tangent points).
     """
     pts = [tuple(waypoints[0])]
     turns = []
     n = len(waypoints)
     for i in range(1, n - 1):
         wp_prev, wp, wp_next = waypoints[i - 1], waypoints[i], waypoints[i + 1]
-        h_in = math.atan2(wp[1] - wp_prev[1], wp[0] - wp_prev[0])
-        h_out = math.atan2(wp_next[1] - wp[1], wp_next[0] - wp[0])
+        u = _unit(wp_prev, wp)        # incoming leg direction
+        v = _unit(wp, wp_next)        # outgoing leg direction
+        h_in = math.atan2(u[1], u[0])
+        h_out = math.atan2(v[1], v[0])
         alpha = math.atan2(math.sin(h_out - h_in), math.cos(h_out - h_in))
-        if abs(alpha) < 1e-9:
+        a_abs = abs(alpha)
+        if a_abs < 1e-9:
             _extend_straight(pts, tuple(wp), step)       # no turn: straight to wp
             continue
+        # Tangent inset t = R*tan(alpha/2), clamped so adjacent arcs fit the legs.
+        t = R * math.tan(a_abs / 2.0)
+        leg_in = math.hypot(wp[0] - wp_prev[0], wp[1] - wp_prev[1])
+        leg_out = math.hypot(wp_next[0] - wp[0], wp_next[1] - wp[1])
+        t = min(t, leg_in * 0.5, leg_out * 0.5)
+        r = t / math.tan(a_abs / 2.0)                    # effective radius after clamp
         s = 1.0 if alpha > 0 else -1.0
-        bisector = h_in + alpha / 2.0
-        # Turning-circle centre: perpendicular to the bisector, on the turn side,
-        # at distance R. The waypoint lies on this circle (it is the arc midpoint).
-        cx = wp[0] + R * math.cos(bisector + s * math.pi / 2.0)
-        cy = wp[1] + R * math.sin(bisector + s * math.pi / 2.0)
-        phi_w = math.atan2(wp[1] - cy, wp[0] - cx)
-        phi_s = phi_w - alpha / 2.0
-        phi_e = phi_w + alpha / 2.0
-        start = (cx + R * math.cos(phi_s), cy + R * math.sin(phi_s))
-        end = (cx + R * math.cos(phi_e), cy + R * math.sin(phi_e))
+        start = (wp[0] - u[0] * t, wp[1] - u[1] * t)     # entry tangent point
+        end = (wp[0] + v[0] * t, wp[1] + v[1] * t)       # exit tangent point
+        n_in = (-u[1] * s, u[0] * s)                     # inward normal
+        cx, cy = start[0] + r * n_in[0], start[1] + r * n_in[1]   # arc centre
+        ang0 = math.atan2(start[1] - cy, start[0] - cx)
         _extend_straight(pts, start, step)               # straight leg into the turn
         for k in range(1, arc_samples + 1):
-            a = phi_s + (phi_e - phi_s) * (k / arc_samples)
-            pts.append((cx + R * math.cos(a), cy + R * math.sin(a)))
+            a = ang0 + s * a_abs * (k / arc_samples)
+            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
         turns.append({'start': start, 'mid': tuple(wp), 'end': end})
     _extend_straight(pts, tuple(waypoints[-1]), step)     # final straight leg
     return pts, turns
