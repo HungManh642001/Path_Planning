@@ -1,5 +1,5 @@
 import math
-import preprocessing as prep
+import core.preprocessing as prep
 import config
 
 

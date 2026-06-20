@@ -13,9 +13,9 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.patches import Circle as MplCircle, Polygon as MplPolygon
 
 import config
-import trajectory as tr
-import preprocessing as prep
-import spatial_utils as su
+import render.trajectory as tr
+import core.preprocessing as prep
+import core.spatial_utils as su
 
 
 class MapCanvas:

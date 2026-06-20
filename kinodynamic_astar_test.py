@@ -1,10 +1,10 @@
 import math
 import pytest
-import preprocessing as prep
-import kinodynamic_astar as astar
-import path_validation as pv
+import core.preprocessing as prep
+import core.kinodynamic_astar as astar
+import core.path_validation as pv
 import config
-import spatial_utils as su
+import core.spatial_utils as su
 
 
 def _simple_pre(circles=(), polys=(), start=(2000, 2000), goal=(100000, 0)):
@@ -142,7 +142,7 @@ from shapely.geometry import Polygon as _Poly, LineString as _Line
 
 
 def _brute_force_clear(p1, p2, circles, polys):
-    import spatial_utils as su
+    import core.spatial_utils as su
     for c, r in circles:
         if su.point_to_line_distance(c, p1, p2) < r - 1e-6:
             return False
@@ -167,7 +167,7 @@ def test_check_collision_matches_bruteforce_with_spatial_index():
     assert hasattr(planner, '_poly_tree')
 
 
-import spatial_utils as su2  # alias to avoid clashing if su already imported
+import core.spatial_utils as su2  # alias to avoid clashing if su already imported
 
 
 def test_dynamic_successors_include_circle_tangents():

@@ -1,5 +1,5 @@
 import math
-import spatial_utils as su
+import core.spatial_utils as su
 
 
 def test_circle_tangent_points_external():

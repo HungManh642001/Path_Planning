@@ -1,5 +1,5 @@
 import math
-import path_validation as pv
+import core.path_validation as pv
 
 
 def test_segment_clear_returns_true_when_no_obstacle():
@@ -102,9 +102,9 @@ def test_path_is_valid_checks_arcs_against_raw_obstacles():
     # designed to bulge into the inflation band (it must only clear the RAW
     # obstacle). path_is_valid must therefore validate arcs against the RAW
     # obstacles when they are supplied, not the inflated ones.
-    import map_generator as mg
-    import preprocessing as prep
-    import kinodynamic_astar as astar
+    import core.map_generator as mg
+    import core.preprocessing as prep
+    import core.kinodynamic_astar as astar
     import config
 
     scenario = mg.scenario9_island_archipelago()

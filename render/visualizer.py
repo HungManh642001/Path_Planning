@@ -10,8 +10,8 @@ from matplotlib.patches import Polygon as MplPolygon, Circle as MplCircle, Recta
 import numpy as np
 
 import config
-import spatial_utils as su
-import trajectory as tr
+import core.spatial_utils as su
+import render.trajectory as tr
 
 
 def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",

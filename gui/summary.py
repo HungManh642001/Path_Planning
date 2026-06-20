@@ -3,8 +3,8 @@
 import math
 
 import config
-import trajectory as tr
-import path_validation as pv
+import render.trajectory as tr
+import core.path_validation as pv
 
 
 def _angle_diff(a, b):

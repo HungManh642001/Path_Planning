@@ -7,13 +7,13 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 
 import config
-import preprocessing as prep
-import kinodynamic_astar as astar
+import core.preprocessing as prep
+import core.kinodynamic_astar as astar
 import gui.params as gp
 import gui.summary as gsummary
 import gui.scenario_io as sio
 import gui.interaction as gi
-import trajectory as tr
+import render.trajectory as tr
 from gui.config_panel import ConfigPanel
 from gui.map_canvas import MapCanvas
 from gui.results_panel import ResultsPanel

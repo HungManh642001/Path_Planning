@@ -5,7 +5,7 @@ Handles obstacle inflation, start/goal state calculation
 
 import math
 import config
-import spatial_utils as su
+import core.spatial_utils as su
 
 
 def inflation_offsets(R=config.R, alpha_max_rad=config.ALPHA_MAX_RAD, safe_margin=config.SAFE_MARGIN):

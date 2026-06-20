@@ -11,8 +11,8 @@ from shapely.geometry import Polygon, LineString
 from shapely import STRtree
 
 import config
-import spatial_utils as su
-import preprocessing as prep
+import core.spatial_utils as su
+import core.preprocessing as prep
 
 
 def _angle_diff(a, b):

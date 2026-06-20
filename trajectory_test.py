@@ -1,5 +1,5 @@
 import math
-import trajectory as tr
+import render.trajectory as tr
 
 
 def test_straight_mode_returns_waypoint_polyline():

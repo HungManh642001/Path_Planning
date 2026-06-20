@@ -10,10 +10,10 @@ import math
 import matplotlib.pyplot as plt
 
 import config
-import map_generator as mg
-import preprocessing as prep
-import kinodynamic_astar as astar
-import visualizer as viz
+import core.map_generator as mg
+import core.preprocessing as prep
+import core.kinodynamic_astar as astar
+import render.visualizer as viz
 import performance_eval as perf
 
 

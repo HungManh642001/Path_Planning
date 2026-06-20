@@ -1,8 +1,8 @@
 import time
 import math
-import map_generator as mg
-import preprocessing as prep
-import kinodynamic_astar as astar
+import core.map_generator as mg
+import core.preprocessing as prep
+import core.kinodynamic_astar as astar
 
 # Representative spread across difficulty (uses the predefined scenarios directly,
 # independent of map_generator.get_all_scenarios which the user may have trimmed).

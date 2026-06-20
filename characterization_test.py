@@ -28,8 +28,8 @@ import math
 import time
 
 import config
-import preprocessing as prep
-import kinodynamic_astar as astar
+import core.preprocessing as prep
+import core.kinodynamic_astar as astar
 
 
 # A heading change larger than this (radians) counts as a "turn".
