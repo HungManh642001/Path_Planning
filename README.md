@@ -1,8 +1,8 @@
 # VCM Path Planning
 
-Trajectory planner for sea-skimming cruise missiles. It searches a flyable route
+Trajectory planner for autonomous aircraft. It searches a flyable route
 from a launch point **O** to a target **T** through circular SAM threats and
-polygonal islands, honouring the missile's turn radius and maximum turn angle,
+polygonal islands, honouring the aircraft's turn radius and maximum turn angle,
 then renders the real flight path (straight legs + radius-`R` turn arcs).
 
 Everything runs locally — a single Python process, no server or external service.
@@ -14,7 +14,7 @@ Everything runs locally — a single Python process, no server or external servi
   plus a radial fan fallback); there is no precomputed roadmap.
 - **Obstacle inflation** that guarantees a max-angle turn still clears the
   obstacle, so a collision-free search path stays collision-free when flown.
-- **Approach-heading feasibility**: the path is accepted only if the missile can
+- **Approach-heading feasibility**: the path is accepted only if the aircraft can
   turn onto the required approach heading at the target within the turn limit.
 - **True flight rendering**: each corner is rounded by a radius-`R` arc tangent
   to both legs, so launch and approach headings are exact. The full path is drawn
