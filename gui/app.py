@@ -32,11 +32,11 @@ def _build_scenario_dict(state):
         else:
             obstacles.append({'type': 'polygon', 'polygon': o['polygon']})
     islands = [o['polygon'] for o in state['obstacles'] if o['type'] == 'polygon']
-    sams = [(o['center'], o['radius']) for o in state['obstacles'] if o['type'] == 'circle']
+    dynamic_obstacles = [(o['center'], o['radius']) for o in state['obstacles'] if o['type'] == 'circle']
     return {
         'start': state['start'], 'start_heading': state['start_heading'],
         'goal': state['goal'], 'goal_heading': state['goal_heading'],
-        'obstacles': obstacles, 'islands': islands, 'sam_sites': sams,
+        'obstacles': obstacles, 'islands': islands, 'dynamic_obstacles': dynamic_obstacles,
     }
 
 
@@ -57,7 +57,7 @@ def run_pipeline(state, values):
 class PlannerApp:
     def __init__(self, root):
         self.root = root
-        root.title('Missile Path Planner')
+        root.title('Autonomous Aircraft Path Planner')
         self.state = {'start': None, 'start_heading': 0.0,
                       'goal': None, 'goal_heading': 0.0, 'obstacles': []}
         self.result = None
@@ -95,9 +95,9 @@ class PlannerApp:
         self._aim_anchor = None
         self._drag_xy = None
         hints = {
-            'start': 'Launch: click to place, drag to aim heading',
-            'goal': 'Target: click to place, drag to aim heading',
-            'circle': 'SAM: press centre, drag out to the radius, release',
+            'start': 'Takeoff: click to place, drag to aim heading',
+            'goal': 'Goal: click to place, drag to aim heading',
+            'circle': 'Dynamic Obstacle: press centre, drag out to the radius, release',
             'polygon': 'Island: click each vertex, click near the first to close',
         }
         self.results.log(hints.get(mode, f'Mode: {mode}'))
@@ -165,7 +165,7 @@ class PlannerApp:
             if r >= _RADIUS_MIN_M:
                 self.state['obstacles'].append(
                     {'type': 'circle', 'center': self._aim_anchor, 'radius': r})
-                self.results.log(f'SAM added (r={r/1000:.1f} km)')
+                self.results.log(f'Dynamic obstacle added (r={r/1000:.1f} km)')
             self._aim_anchor = None
             self._drag_xy = None
             self.mode = 'idle'
@@ -209,7 +209,7 @@ class PlannerApp:
     def on_run(self):
         self._apply_numeric_entries()
         if self.state['start'] is None or self.state['goal'] is None:
-            self.results.log('ERROR: set launch and target first')
+            self.results.log('ERROR: set takeoff and goal first')
             return
         self.results.log('Planning...')
         try:

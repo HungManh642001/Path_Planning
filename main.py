@@ -95,7 +95,7 @@ def run_scenario(scenario_func, scenario_name, output_dir="results"):
         scenario = scenario_func()
         metrics.end_timer('generation')
         print(f"    Islands: {len(scenario.get('islands', []))}")
-        print(f"    SAM Sites: {len(scenario.get('sam_sites', []))}")
+        print(f"    Dynamic Obstacles: {len(scenario.get('dynamic_obstacles', []))}")
         
         # Preprocess
         print("  Preprocessing...")
@@ -128,7 +128,7 @@ def run_scenario(scenario_func, scenario_name, output_dir="results"):
         
         # Main trajectory plot
         main_fig = viz.plot_scenario(scenario, preprocessed, result, 
-                                    title=f"{scenario_name} - Missile Trajectory",
+                                    title=f"{scenario_name} - Autonomous Aircraft Trajectory",
                                     save_path=os.path.join(output_dir, f"01_scenario_{scenario_name.lower().replace(' ', '_')}.png"))
         
         # Detailed trajectory analysis
@@ -174,7 +174,7 @@ def run_all_scenarios(output_dir="results"):
         List of scenario results
     """
     
-    print_header("MISSILE PATH PLANNING SYSTEM - COMPREHENSIVE TEST SUITE (16 SCENARIOS)")
+    print_header("AUTONOMOUS AIRCRAFT PATH PLANNING SYSTEM - COMPREHENSIVE TEST SUITE (16 SCENARIOS)")
     
     print("\nConfiguration:")
     print(f"  R (turn radius): {config.R} m")
@@ -250,8 +250,8 @@ def run_all_scenarios(output_dir="results"):
         
         if result.get('scenario'):
             num_islands = len(result['scenario'].get('islands', []))
-            num_sam = len(result['scenario'].get('sam_sites', []))
-            obstacles = f"{num_islands}I+{num_sam}S"
+            num_dynamic_obstacles = len(result['scenario'].get('dynamic_obstacles', []))
+            obstacles = f"{num_islands}I+{num_dynamic_obstacles}D"
         else:
             obstacles = "N/A"
         
@@ -272,8 +272,8 @@ def run_all_scenarios(output_dir="results"):
             path_length = len(result['result']['path'])
             scenario = result['scenario']
             islands = len(scenario.get('islands', []))
-            sams = len(scenario.get('sam_sites', []))
-            print(f"  {result['scenario_name']:<30} | Islands: {islands:2} | SAM: {sams:2} | Waypoints: {path_length:2}")
+            dynamic_obstacles = len(scenario.get('dynamic_obstacles', []))
+            print(f"  {result['scenario_name']:<30} | Islands: {islands:2} | Dynamic Obstacles: {dynamic_obstacles:2} | Waypoints: {path_length:2}")
     
     # Easy statistics
     print("\n🟢 EASY SCENARIOS (5-8):")
@@ -282,8 +282,8 @@ def run_all_scenarios(output_dir="results"):
             path_length = len(result['result']['path'])
             scenario = result['scenario']
             islands = len(scenario.get('islands', []))
-            sams = len(scenario.get('sam_sites', []))
-            print(f"  {result['scenario_name']:<30} | Islands: {islands:2} | SAM: {sams:2} | Waypoints: {path_length:2}")
+            dynamic_obstacles = len(scenario.get('dynamic_obstacles', []))
+            print(f"  {result['scenario_name']:<30} | Islands: {islands:2} | Dynamic Obstacles: {dynamic_obstacles:2} | Waypoints: {path_length:2}")
     
     # Medium statistics
     print("\n🟡 MEDIUM SCENARIOS (9-12):")
@@ -292,8 +292,8 @@ def run_all_scenarios(output_dir="results"):
             path_length = len(result['result']['path'])
             scenario = result['scenario']
             islands = len(scenario.get('islands', []))
-            sams = len(scenario.get('sam_sites', []))
-            print(f"  {result['scenario_name']:<30} | Islands: {islands:2} | SAM: {sams:2} | Waypoints: {path_length:2}")
+            dynamic_obstacles = len(scenario.get('dynamic_obstacles', []))
+            print(f"  {result['scenario_name']:<30} | Islands: {islands:2} | Dynamic Obstacles: {dynamic_obstacles:2} | Waypoints: {path_length:2}")
     
     # Hard statistics
     print("\n🔴 HARD SCENARIOS (13-16):")
@@ -302,8 +302,8 @@ def run_all_scenarios(output_dir="results"):
             path_length = len(result['result']['path'])
             scenario = result['scenario']
             islands = len(scenario.get('islands', []))
-            sams = len(scenario.get('sam_sites', []))
-            print(f"  {result['scenario_name']:<30} | Islands: {islands:2} | SAM: {sams:2} | Waypoints: {path_length:2}")
+            dynamic_obstacles = len(scenario.get('dynamic_obstacles', []))
+            print(f"  {result['scenario_name']:<30} | Islands: {islands:2} | Dynamic Obstacles: {dynamic_obstacles:2} | Waypoints: {path_length:2}")
     
     # ===== PERFORMANCE METRICS =====
     print_header("PERFORMANCE EVALUATION")

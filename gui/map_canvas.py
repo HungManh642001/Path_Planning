@@ -124,11 +124,11 @@ class MapCanvas:
                 self.ax.add_patch(MplPolygon(o['polygon'], color='saddlebrown', alpha=0.6))
 
         if state['start'] is not None:
-            self.ax.plot(*state['start'], 'go', markersize=10, label='Launch O')
+            self.ax.plot(*state['start'], 'go', markersize=10, label='Takeoff O')
             # Departure arrow: points away from O (direction of travel leaving O).
             self._draw_heading_arrow(state['start'], state.get('start_heading', 0.0), 'green')
         if state['goal'] is not None:
-            self.ax.plot(*state['goal'], 'r*', markersize=16, label='Target T')
+            self.ax.plot(*state['goal'], 'r*', markersize=16, label='Goal T')
             # Approach arrow: points INTO T, so the arriving flight path overlaps it.
             self._draw_heading_arrow(state['goal'], state.get('goal_heading', 0.0), 'red', toward=True)
 

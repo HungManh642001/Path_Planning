@@ -1,7 +1,7 @@
-# VCM Path Planning
+# Path Planning
 
 Trajectory planner for autonomous aircraft. It searches a flyable route
-from a launch point **O** to a target **T** through circular SAM threats and
+from a takeoff point **O** to a goal **T** through circular dynamic obstacles and
 polygonal islands, honouring the aircraft's turn radius and maximum turn angle,
 then renders the real flight path (straight legs + radius-`R` turn arcs).
 
@@ -15,9 +15,9 @@ Everything runs locally — a single Python process, no server or external servi
 - **Obstacle inflation** that guarantees a max-angle turn still clears the
   obstacle, so a collision-free search path stays collision-free when flown.
 - **Approach-heading feasibility**: the path is accepted only if the aircraft can
-  turn onto the required approach heading at the target within the turn limit.
+  turn onto the required approach heading at the goal within the turn limit.
 - **True flight rendering**: each corner is rounded by a radius-`R` arc tangent
-  to both legs, so launch and approach headings are exact. The full path is drawn
+  to both legs, so start and approach headings are exact. The full path is drawn
   O → … → T with the turn-start / turn-end points marked.
 - An **interactive Tk GUI** to build scenarios (click to place, drag to aim),
   run the planner, and read a results summary.
@@ -84,7 +84,7 @@ nothing imports `main.py` / `launch_gui.py`.
 ### Data shapes
 
 - **scenario** (from `map_generator`): `start`, `start_heading`, `goal`,
-  `goal_heading`, `islands` (polygons), `sam_sites` (`(center, radius)`), and a
+  `goal_heading`, `islands` (polygons), `dynamic_obstacles` (`(center, radius)`), and a
   unified `obstacles` list of `{'type':'polygon','polygon':[...]}` /
   `{'type':'circle','center','radius'}`.
 - **preprocessed** (from `prepare_scenario`): adds `start_state` / `goal_state`
@@ -110,8 +110,8 @@ tolerance); polygons use a DE-9IM interior test that allows touching / boundary
 
 **Obstacle inflation (`core/preprocessing.py`).** Each obstacle is grown by
 `R·(1/cos(α_max/2) − 1) + SAFE_MARGIN`, so a turn at the maximum angle still
-clears it. Start/goal waypoints `W₁` / `W_{n-1}` are offset from the raw launch /
-target points by `L0` / `DSS` plus a turn-radius term — the search never targets
+clears it. Start/goal waypoints `W₁` / `W_{n-1}` are offset from the raw start /
+goal points by `L0` / `DSS` plus a turn-radius term — the search never goals
 the literal `O` / `T`.
 
 **Rendering (`render/trajectory.py`).** `sample_trajectory(path, R, mode)` turns
@@ -123,7 +123,7 @@ start/end and signed turn angle.
 
 > Note: a circular arc of radius `R` cannot both pass *through* the corner
 > waypoint and preserve the leg headings, so the arc rounds the corner. Keeping
-> the headings exact is what makes the approach to the target correct.
+> the headings exact is what makes the approach to the goal correct.
 
 ## Key parameters (`config.py`)
 
@@ -134,8 +134,8 @@ stored in **degrees** and converted (`ALPHA_MAX_RAD`, `deg_to_rad`).
 |---|---|---|
 | `R` | 8000 m | turn radius (fixed) |
 | `ALPHA_MAX` | 90° | maximum turn angle per waypoint |
-| `L0` | 4000 m | post-launch stabilisation distance |
-| `DSS` | 23000 m | seeker lock / terminal guidance distance |
+| `L0` | 4000 m | post-start stabilisation distance |
+| `DSS` | 23000 m | terminal camera sensor lock distance |
 | `SAFE_MARGIN` | 10000 m | safety buffer added to every obstacle |
 | `MAP_WIDTH` / `MAP_HEIGHT` | 500000 m | map is 500 km × 500 km |
 | `MAX_ITERATIONS` | 50000 | A* iteration cap |

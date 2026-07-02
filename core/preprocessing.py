@@ -58,7 +58,7 @@ def inflate_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MARGIN, alp
 
 def calculate_start_state(origin, init_heading, L0=config.L0, R=config.R, alpha_max_rad=config.ALPHA_MAX_RAD):
     """
-    Calculate the first waypoint W_1 and its heading after launch.
+    Calculate the first waypoint W_1 and its heading after takeoff.
     
     From dynamics: d_1 = l_1 + R * tan(α_1 / 2)
     With constraint: l_1 ≥ L_0
@@ -66,7 +66,7 @@ def calculate_start_state(origin, init_heading, L0=config.L0, R=config.R, alpha_
     For simplicity, we place W_1 at distance d_1 in direction init_heading.
     
     Args:
-        origin: (x, y) launch point O
+        origin: (x, y) takeoff point O
         init_heading: Initial heading angle (radians)
         L0: Minimum distance for level flight stabilization
         R: Turn radius
@@ -104,10 +104,10 @@ def calculate_end_state(target, target_heading, dss=config.DSS, R=config.R, alph
     Calculate the final waypoint W_{n-1} before seeker engagement.
     
     From dynamics: d_n = l_n + d_ss + R * tan(α_{n-1} / 2)
-    With l_n = 0 (we reach W_{n-1} directly at target)
+    With l_n = 0 (we reach W_{n-1} directly at goal), so d_n = d_ss + R * tan(α_{n-1} / 2)
     
     Args:
-        target: (x, y) target position T
+        target: (x, y) goal position T
         target_heading: Final approach heading (radians)
         dss: Distance for seeker lock-on and guidance
         R: Turn radius
@@ -266,5 +266,5 @@ def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS, safe_ma
         'circle_obstacles': inflated_data['circle_obstacles'],
         'polygon_obstacles': inflated_data['polygon_obstacles'],
         'islands': scenario.get('islands', []),
-        'sam_sites': scenario.get('sam_sites', []),
+        'dynamic_obstacles': scenario.get('dynamic_obstacles', []),
     }

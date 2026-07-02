@@ -17,8 +17,8 @@ PARAM_SPECS = [
     {'key': 'l0',           'label': 'L0 stabilize (m)',    'group': 'tactical', 'min': 1000.0,  'max': 20000.0, 'default': config.L0},
     {'key': 'dss',          'label': 'Seeker DSS (m)',      'group': 'tactical', 'min': 5000.0,  'max': 60000.0, 'default': config.DSS},
     {'key': 'safe_margin',  'label': 'Safe Margin (m)',     'group': 'tactical', 'min': 0.0,     'max': 30000.0, 'default': config.SAFE_MARGIN},
-    {'key': 'launch_angle', 'label': 'Launch Angle (deg)',  'group': 'tactical', 'min': config.LAUNCH_ANGLE_MIN,   'max': config.LAUNCH_ANGLE_MAX,   'default': config.LAUNCH_ANGLE_DEFAULT},
-    {'key': 'approach_angle','label': 'Approach Angle (deg)','group': 'tactical','min': config.APPROACH_ANGLE_MIN, 'max': config.APPROACH_ANGLE_MAX, 'default': config.APPROACH_ANGLE_DEFAULT},
+    {'key': 'start_angle', 'label': 'Takeoff Angle (deg)',  'group': 'tactical', 'min': config.START_ANGLE_MIN,   'max': config.START_ANGLE_MAX,   'default': config.START_ANGLE_DEFAULT},
+    {'key': 'approach_angle','label': 'Goal Approach Angle (deg)','group': 'tactical','min': config.APPROACH_ANGLE_MIN, 'max': config.APPROACH_ANGLE_MAX, 'default': config.APPROACH_ANGLE_DEFAULT},
     # --- run ---
     {'key': 'time_budget_s','label': 'Time Budget (s)',     'group': 'run',      'min': 0.1,     'max': 10.0,    'default': config.TIME_BUDGET_S},
     {'key': 'max_iterations','label': 'Max Iterations',     'group': 'run',      'min': 1000.0,  'max': 200000.0,'default': float(config.MAX_ITERATIONS)},

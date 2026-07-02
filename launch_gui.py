@@ -11,8 +11,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def main():
-    """Launch the interactive GUI"""
-    print("Missile Path Planning - Interactive Planner")
+    """Takeoff the interactive GUI"""
+    print("Autonomous Aircraft Path Planning - Interactive Planner")
     try:
         import tkinter as tk
         from gui.app import PlannerApp

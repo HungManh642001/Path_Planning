@@ -1,6 +1,6 @@
 """
 Mock Map Generator Module
-Generates synthetic mission scenarios with islands and SAM sites
+Generates synthetic mission scenarios with islands and dynamic obstacles for testing path planning algorithms.
 """
 
 import random
@@ -58,36 +58,36 @@ def generate_random_islands(num_islands, map_bounds, seed=None):
     return islands
 
 
-def generate_sam_sites(num_sites, map_bounds, radius_range=None, seed=None):
+def generate_dynamic_obstacles(num_sites, map_bounds, radius_range=None, seed=None):
     """
-    Generate SAM (Surface-to-Air Missile) defense sites as circles.
+    Generate dynamic obstacles as circles.
     
     Args:
-        num_sites: Number of SAM sites
+        num_sites: Number of dynamic obstacles
         map_bounds: (width, height) of map
-        radius_range: (min_radius, max_radius) for SAM coverage
+        radius_range: (min_radius, max_radius) for dynamic obstacle coverage
         seed: Random seed for reproducibility
     
     Returns:
-        List of SAM sites, each as (center, radius) tuple
+        List of dynamic obstacles, each as (center, radius) tuple
     """
     if seed is not None:
         random.seed(seed)
         np.random.seed(seed)
     
     if radius_range is None:
-        radius_range = (config.SAM_RADIUS_MIN, config.SAM_RADIUS_MAX)
+        radius_range = (config.OBSTACLE_RADIUS_MIN, config.OBSTACLE_RADIUS_MAX)
     
     min_radius, max_radius = radius_range
-    sam_sites = []
+    dynamic_obstacles = []
     width, height = map_bounds
     
-    min_separation = max_radius * 2 + 500  # Minimum distance between SAM sites
+    min_separation = max_radius * 2 + 500  # Minimum distance between dynamic obstacles
     
     attempts = 0
     max_attempts = 100
     
-    while len(sam_sites) < num_sites and attempts < max_attempts:
+    while len(dynamic_obstacles) < num_sites and attempts < max_attempts:
         # Random center
         center_x = random.uniform(width * 0.1, width * 0.9)
         center_y = random.uniform(height * 0.1, height * 0.9)
@@ -98,7 +98,7 @@ def generate_sam_sites(num_sites, map_bounds, radius_range=None, seed=None):
         
         # Check minimum separation from existing sites
         valid = True
-        for existing_center, existing_radius in sam_sites:
+        for existing_center, existing_radius in dynamic_obstacles:
             dist = math.sqrt((center[0] - existing_center[0])**2 + 
                             (center[1] - existing_center[1])**2)
             if dist < min_separation:
@@ -106,12 +106,12 @@ def generate_sam_sites(num_sites, map_bounds, radius_range=None, seed=None):
                 break
         
         if valid:
-            sam_sites.append((center, radius))
+            dynamic_obstacles.append((center, radius))
             attempts = 0
         else:
             attempts += 1
     
-    return sam_sites
+    return dynamic_obstacles
 
 
 def create_scenario(scenario_config):
@@ -125,7 +125,7 @@ def create_scenario(scenario_config):
             - 'goal': (x, y) goal position
             - 'goal_heading': heading angle in radians
             - 'num_islands': number of islands
-            - 'num_sam': number of SAM sites
+            - 'num_dynamic_obstacles': number of dynamic obstacles
             - 'map_bounds': (width, height)
     
     Returns:
@@ -142,11 +142,11 @@ def create_scenario(scenario_config):
     
     # Generate obstacles
     num_islands = scenario_config.get('num_islands', 0)
-    num_sam = scenario_config.get('num_sam', 0)
+    num_dynamic_obstacles = scenario_config.get('num_dynamic_obstacles', 0)
     seed = scenario_config.get('seed', None)
     
     scenario['islands'] = generate_random_islands(num_islands, scenario['map_bounds'], seed=seed)
-    scenario['sam_sites'] = generate_sam_sites(num_sam, scenario['map_bounds'], seed=seed)
+    scenario['dynamic_obstacles'] = generate_dynamic_obstacles(num_dynamic_obstacles, scenario['map_bounds'], seed=seed)
     
     # Convert to obstacle format
     scenario['obstacles'] = []
@@ -157,7 +157,7 @@ def create_scenario(scenario_config):
             'polygon': island
         })
     
-    for center, radius in scenario['sam_sites']:
+    for center, radius in scenario['dynamic_obstacles']:
         scenario['obstacles'].append({
             'type': 'circle',
             'center': center,
@@ -177,7 +177,7 @@ def scenario1_open_ocean():
         'goal': (450000, 450000),
         'goal_heading': math.pi / 4,
         'num_islands': 0,
-        'num_sam': 0,
+        'num_dynamic_obstacles': 0,
         'seed': 42
     })
 
@@ -190,7 +190,7 @@ def scenario2_single_obstacle():
         'goal': (450000, 450000),
         'goal_heading': math.pi / 4,
         'num_islands': 1,
-        'num_sam': 1,
+        'num_dynamic_obstacles': 1,
         'seed': 42
     })
 
@@ -203,7 +203,7 @@ def scenario3_narrow_gap():
         'goal': (450000, 450000),
         'goal_heading': math.pi / 4,
         'num_islands': 0,
-        'num_sam': 0,
+        'num_dynamic_obstacles': 0,
         'seed': 99
     })
     
@@ -238,7 +238,7 @@ def scenario4_complex_maze():
         'goal': (480000, 480000),
         'goal_heading': 0,
         'num_islands': 12,  # Reduced from 20 for better traversability
-        'num_sam': 6,       # Reduced from 10
+        'num_dynamic_obstacles': 6,       # Reduced from 10
         'seed': 12345
     })
 
@@ -253,7 +253,7 @@ def scenario5_sparse_islands():
         'goal': (450000, 450000),
         'goal_heading': math.pi / 4,
         'num_islands': 3,
-        'num_sam': 1,
+        'num_dynamic_obstacles': 1,
         'seed': 111
     })
 
@@ -266,7 +266,7 @@ def scenario6_coastal_path():
         'goal': (480000, 480000),
         'goal_heading': 0,
         'num_islands': 2,
-        'num_sam': 2,
+        'num_dynamic_obstacles': 2,
         'seed': 222
     })
 
@@ -279,20 +279,20 @@ def scenario7_diagonal_crossing():
         'goal': (470000, 470000),
         'goal_heading': math.pi / 4,
         'num_islands': 4,
-        'num_sam': 0,
+        'num_dynamic_obstacles': 0,
         'seed': 333
     })
 
 
-def scenario8_open_with_sam():
-    """Scenario 8: Easy - Open terrain with scattered SAM sites"""
+def scenario8_open_with_dynamic_obstacles():
+    """Scenario 8: Easy - Open terrain with scattered dynamic obstacles"""
     return create_scenario({
         'start': (10000, 250000),
         'start_heading': 0,
         'goal': (480000, 250000),
         'goal_heading': 0,
         'num_islands': 1,
-        'num_sam': 3,
+        'num_dynamic_obstacles': 3,
         'seed': 444
     })
 
@@ -307,20 +307,20 @@ def scenario9_island_archipelago():
         'goal': (490000, 250000),
         'goal_heading': 0,
         'num_islands': 8,
-        'num_sam': 2,
+        'num_dynamic_obstacles': 2,
         'seed': 555
     })
 
 
 def scenario10_dense_defense():
-    """Scenario 10: Medium - Dense SAM defense network"""
+    """Scenario 10: Medium - Dense dynamic obstacle field with some islands"""
     return create_scenario({
         'start': (50000, 50000),
         'start_heading': math.pi / 4,
         'goal': (450000, 450000),
         'goal_heading': math.pi / 4,
         'num_islands': 3,
-        'num_sam': 8,
+        'num_dynamic_obstacles': 8,
         'seed': 666
     })
 
@@ -333,20 +333,20 @@ def scenario11_serpentine_route():
         'goal': (450000, 400000),
         'goal_heading': 0,
         'num_islands': 7,
-        'num_sam': 4,
+        'num_dynamic_obstacles': 4,
         'seed': 777
     })
 
 
 def scenario12_perimeter_defense():
-    """Scenario 12: Medium - Target protected by perimeter defenses"""
+    """Scenario 12: Medium - Goal protected by perimeter defenses"""
     return create_scenario({
         'start': (10000, 250000),
         'start_heading': 0,
         'goal': (480000, 250000),
         'goal_heading': 0,
         'num_islands': 6,
-        'num_sam': 5,
+        'num_dynamic_obstacles': 5,
         'seed': 888
     })
 
@@ -361,20 +361,20 @@ def scenario13_dense_island_field():
         'goal': (475000, 475000),
         'goal_heading': math.pi / 3,
         'num_islands': 18,
-        'num_sam': 3,
+        'num_dynamic_obstacles': 3,
         'seed': 999
     })
 
 
 def scenario14_combined_threat():
-    """Scenario 14: Hard - Combined island and SAM threat"""
+    """Scenario 14: Hard - Combined island and dynamic obstacle """
     return create_scenario({
         'start': (30000, 30000),
         'start_heading': 0,
         'goal': (470000, 470000),
         'goal_heading': 0,
         'num_islands': 12,
-        'num_sam': 10,
+        'num_dynamic_obstacles': 10,
         'seed': 1111
     })
 
@@ -387,7 +387,7 @@ def scenario15_narrow_channel():
         'goal': (450000, 250000),
         'goal_heading': 0,
         'num_islands': 15,
-        'num_sam': 4,
+        'num_dynamic_obstacles': 4,
         'seed': 2222
     })
 
@@ -400,7 +400,7 @@ def scenario16_extreme_complexity():
         'goal': (490000, 490000),
         'goal_heading': math.pi / 6,
         'num_islands': 20,
-        'num_sam': 12,
+        'num_dynamic_obstacles': 12,
         'seed': 3333
     })
 
@@ -418,7 +418,7 @@ def get_all_scenarios():
         'scenario_05_sparse_islands': scenario5_sparse_islands,
         'scenario_06_coastal_path': scenario6_coastal_path,
         'scenario_07_diagonal_crossing': scenario7_diagonal_crossing,
-        'scenario_08_open_with_sam': scenario8_open_with_sam,
+        'scenario_08_open_with_dynamic_obstacles': scenario8_open_with_dynamic_obstacles,
         
         # Medium scenarios
         'scenario_09_island_archipelago': scenario9_island_archipelago,

@@ -53,14 +53,14 @@ gui/                      interactive Tk app (config | map | results)
 
 ### The two dict shapes that flow through the pipeline
 
-- **scenario** (from `map_generator`): `start`, `start_heading`, `goal`, `goal_heading`, `islands` (list of polygons), `sam_sites` (list of `(center, radius)`), and a unified `obstacles` list where each item is `{'type': 'polygon', 'polygon': [...]}` or `{'type': 'circle', 'center', 'radius'}`.
+- **scenario** (from `map_generator`): `start`, `start_heading`, `goal`, `goal_heading`, `islands` (list of polygons), `dynamic_obstacles` (list of `(center, radius)`), and a unified `obstacles` list where each item is `{'type': 'polygon', 'polygon': [...]}` or `{'type': 'circle', 'center', 'radius'}`.
 - **preprocessed** (from `preprocessing.prepare_scenario`): adds `start_state`/`goal_state` (each a dict with `waypoint` + `heading`), `turn_radius`, `alpha_max_rad`, and the *inflated* obstacles split into `circle_obstacles` (list of `(center, radius)`) and `polygon_obstacles` (list of coord lists). The A\* planner consumes only the preprocessed dict.
 
 ### Conventions (important — easy to get wrong)
 
-- **Units are meters; angles are radians** throughout the algorithm code. `config.ALPHA_MAX`/`LAUNCH_ANGLE_*` are stored in **degrees** and converted (`config.ALPHA_MAX_RAD`, `config.deg_to_rad`). The map is 500 km × 500 km, `R = 8000 m`.
+- **Units are meters; angles are radians** throughout the algorithm code. `config.ALPHA_MAX`/`START_ANGLE_*` are stored in **degrees** and converted (`config.ALPHA_MAX_RAD`, `config.deg_to_rad`). The map is 500 km × 500 km, `R = 8000 m`.
 - A planner **state** is the tuple `(waypoint, heading)` where `waypoint = (x, y)`. Paths are lists of these tuples. `spatial_utils.state_to_tuple` is used for hashing/dedup.
-- **Obstacle inflation** is not just `R + margin`. `preprocessing.inflate_obstacles` uses `R * (1/cos(α_max/2) - 1) + SAFE_MARGIN` so a turn at max angle still clears the obstacle. Start/goal waypoints (`W₁`, `W_{n-1}`) are offset from the raw launch/target points by `L0`/`DSS` plus a turn-radius term — the planner never searches to the literal target.
+- **Obstacle inflation** is not just `R + margin`. `preprocessing.inflate_obstacles` uses `R * (1/cos(α_max/2) - 1) + SAFE_MARGIN` so a turn at max angle still clears the obstacle. Start/goal waypoints (`W₁`, `W_{n-1}`) are offset from the raw start/goal points by `L0`/`DSS` plus a turn-radius term — the planner never searches to the literal goal.
 
 ### How the A\* search actually works (core/kinodynamic_astar.py)
 
@@ -84,17 +84,6 @@ boundary-following and endpoint-touch but blocks interior penetration.
 `sample_trajectory(path, R, mode)` turns the planner waypoints into a drawable
 polyline. `mode='straight'` joins waypoints directly; `mode='dubins'` rounds each
 interior corner with a radius-`R` **fillet arc** tangent to both legs (symmetric
-about the waypoint), which keeps the launch/approach headings exact.
-`build_full_path` prepends launch `O` and appends target `T` so the drawn path
+about the waypoint), which keeps the start/approach headings exact.
+`build_full_path` prepends start `O` and appends goal `T` so the drawn path
 spans the whole mission; `turn_markers` returns each arc's start/end/angle.
-
-## Gotchas
-
-- `README.md` is stale: it says R=500 m, α_max=30°, 4 scenarios, and describes a
-  "Lazy Convex Hull fallback" and a tangent-graph stage. Reality: **R=8000 m**,
-  **α_max=90°**, **16 scenarios** (`core.map_generator.get_all_scenarios`), no
-  convex-hull fallback (search returns `None` on failure), and the tangent graph
-  has been removed (the planner uses dynamic successors). Trust the code.
-- The old `graph_builder.py` (tangent graph) and `dubins_curves.py` (6-word Dubins
-  solver) were **removed** — they were unused. Rendering uses the fillet model in
-  `render/trajectory.py`, not a Dubins solver.

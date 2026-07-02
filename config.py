@@ -1,6 +1,6 @@
 """
-Configuration Module for Missile Path Planning System
-Defines tactical constants and parameters
+Configuration Module for Autonomous Aircraft Path Planning System
+Defines operational parameters and parameters
 """
 
 # ====== DYNAMIC CONSTRAINTS ======
@@ -11,18 +11,18 @@ R = 8000.0
 ALPHA_MAX = 90.0  # in degrees, will be converted to radians
 
 # Minimum distance for level flight and stabilization (m)
-# After launch, distance to descend and stabilize for sea-skimming
+# After takeoff, distance to descend and stabilize for sea-skimming
 L0 = 4000.0
 
-# Distance for seeker to lock and guide to target (m)
+# Distance for terminal camera sensor lock(m)
 DSS = 23000.0
 
-# Launch angle (degrees) - angle from horizontal at launch
-LAUNCH_ANGLE_MIN = -180.0
-LAUNCH_ANGLE_MAX = 180.0
-LAUNCH_ANGLE_DEFAULT = 15.0
+# Takeoff angle (degrees) - angle from horizontal at start of trajectory
+START_ANGLE_MIN = -180.0
+START_ANGLE_MAX = 180.0
+START_ANGLE_DEFAULT = 15.0
 
-# Approach angle (degrees) - angle from horizontal at target approach
+# Approach angle (degrees) - angle from horizontal at goal approach
 APPROACH_ANGLE_MIN = -180.0
 APPROACH_ANGLE_MAX = 180.0
 APPROACH_ANGLE_DEFAULT = 30.0
@@ -88,9 +88,9 @@ PLOT_START_END_MARKERS = True
 FIGURE_DPI = 150
 
 # ====== SCENARIO GENERATION (map_generator) ======
-# SAM detection radius (m)
-SAM_RADIUS_MIN = 10000.0
-SAM_RADIUS_MAX = 50000.0
+# Obstacle detection radius (m)
+OBSTACLE_RADIUS_MIN = 10000.0
+OBSTACLE_RADIUS_MAX = 50000.0
 
 # Island polygon size
 ISLAND_SIZE_MIN = 5000.0

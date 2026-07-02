@@ -53,10 +53,10 @@ class ConfigPanel:
         ttk.Label(inner, text='(click to place; drag to aim heading)',
                   font=('Arial', 8), foreground='#555').pack(anchor=tk.W)
         sc = ttk.Frame(inner); sc.pack(fill=tk.X)
-        ttk.Button(sc, text='Set Launch', command=on_set_start).grid(row=0, column=0, sticky='ew', padx=2, pady=2)
-        ttk.Button(sc, text='Set Target', command=on_set_goal).grid(row=0, column=1, sticky='ew', padx=2, pady=2)
+        ttk.Button(sc, text='Set Takeoff', command=on_set_start).grid(row=0, column=0, sticky='ew', padx=2, pady=2)
+        ttk.Button(sc, text='Set Goal', command=on_set_goal).grid(row=0, column=1, sticky='ew', padx=2, pady=2)
         ttk.Button(sc, text='Draw Island', command=on_draw_polygon).grid(row=1, column=0, sticky='ew', padx=2, pady=2)
-        ttk.Button(sc, text='Draw SAM', command=on_draw_circle).grid(row=1, column=1, sticky='ew', padx=2, pady=2)
+        ttk.Button(sc, text='Draw Dynamic Obstacle', command=on_draw_circle).grid(row=1, column=1, sticky='ew', padx=2, pady=2)
         ttk.Button(sc, text='Clear All', command=on_clear).grid(row=2, column=0, columnspan=2, sticky='ew', padx=2, pady=2)
         sc.columnconfigure(0, weight=1); sc.columnconfigure(1, weight=1)
 
@@ -66,10 +66,10 @@ class ConfigPanel:
         for name in ('start_x', 'start_y', 'start_h', 'goal_x', 'goal_y', 'goal_h'):
             self._sg[name] = tk.StringVar(value='')
         grid = ttk.Frame(inner); grid.pack(fill=tk.X)
-        ttk.Label(grid, text='Launch').grid(row=0, column=0)
+        ttk.Label(grid, text='Takeoff').grid(row=0, column=0)
         for c, n in enumerate(('start_x', 'start_y', 'start_h')):
             ttk.Entry(grid, textvariable=self._sg[n], width=8).grid(row=0, column=c + 1, padx=1)
-        ttk.Label(grid, text='Target').grid(row=1, column=0)
+        ttk.Label(grid, text='Goal').grid(row=1, column=0)
         for c, n in enumerate(('goal_x', 'goal_y', 'goal_h')):
             ttk.Entry(grid, textvariable=self._sg[n], width=8).grid(row=1, column=c + 1, padx=1)
 

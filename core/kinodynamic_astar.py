@@ -1,6 +1,6 @@
 """
 Kinodynamic A* Path Planning Module
-Core algorithm for missile trajectory planning with dynamic constraints
+Core algorithm for autonomous aircraft trajectory planning with dynamic constraints
 """
 
 import heapq
@@ -21,7 +21,7 @@ def _angle_diff(a, b):
 
 
 class State:
-    """Represents a missile state: (waypoint, heading)"""
+    """Represents an autonomous aircraft state: (waypoint, heading)"""
     
     def __init__(self, waypoint, heading):
         self.waypoint = waypoint  # (x, y)
@@ -47,7 +47,7 @@ class State:
 
 
 class KinodynamicAstar:
-    """Kinodynamic A* path planner for missile trajectory"""
+    """Kinodynamic A* path planner for autonomous aircraft trajectory"""
     
     def __init__(self, preprocessed_scenario):
         """
@@ -137,7 +137,7 @@ class KinodynamicAstar:
             turn = abs(_angle_diff(heading_to_node, h))
             if turn > self.alpha_max_rad:
                 continue
-            # At the final waypoint W_{n-1} the missile must turn from the approach
+            # At the final waypoint W_{n-1} the autonomous aircraft must turn from the approach
             # heading onto goal_heading; that terminal turn must also be feasible.
             if node is goal_wp:
                 final_turn = abs(_angle_diff(self.goal_state.heading, heading_to_node))
@@ -196,7 +196,7 @@ class KinodynamicAstar:
         # Check against polygon obstacles via spatial index. A segment is blocked
         # ONLY when it enters a polygon's INTERIOR (DE-9IM interior/interior
         # overlap). Merely touching the boundary is allowed: this lets a waypoint
-        # sit on a polygon corner (the corners ARE navigation targets) and lets a
+        # sit on a polygon corner (the corners ARE navigation goals) and lets a
         # segment run ALONG an edge to hug the obstacle boundary. The STRtree gives
         # a bounding-box prefilter; the exact predicate runs only on candidates.
         if self._poly_tree is not None:
@@ -264,7 +264,7 @@ class KinodynamicAstar:
             )
             
             if dist_to_goal < config.GOAL_THRESHOLD:
-                # Reaching the goal region is not enough: the missile must arrive
+                # Reaching the goal region is not enough: the autonomous aircraft must arrive
                 # able to turn onto the approach heading within alpha_max. A state
                 # that wrap-stepped / flew straight into the region can be close but
                 # badly misaligned; accepting it would force a > alpha_max terminal
@@ -382,7 +382,7 @@ class KinodynamicAstar:
 
 def plan_trajectory(preprocessed_scenario, verbose=False):
     """
-    High-level function to plan a missile trajectory.
+    High-level function to plan a autonomous aircraft trajectory.
     
     Args:
         preprocessed_scenario: Output from preprocessing.prepare_scenario()

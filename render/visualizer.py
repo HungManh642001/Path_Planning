@@ -79,9 +79,9 @@ def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
 
     # ====== DRAW START & GOAL ======
     if config.PLOT_START_END_MARKERS:
-        # Original launch point O
+        # Original takeoff point O
         O = preprocessed['start_pos']
-        ax.plot(O[0], O[1], 'go', markersize=12, label='Launch Point O', zorder=5)
+        ax.plot(O[0], O[1], 'go', markersize=12, label='Takeoff Point O', zorder=5)
         
         # W1 (first waypoint after stabilization)
         W1 = preprocessed['start_state']['waypoint']
@@ -89,9 +89,9 @@ def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
         ax.arrow(O[0], O[1], W1[0]-O[0], W1[1]-O[1], 
                 head_width=500, head_length=500, fc='green', ec='green', alpha=0.3)
         
-        # Original target T
+        # Original goal T
         T = preprocessed['goal_pos']
-        ax.plot(T[0], T[1], 'r*', markersize=20, label='Target T', zorder=5)
+        ax.plot(T[0], T[1], 'r*', markersize=20, label='Goal T', zorder=5)
         
         # W_{n-1} (final waypoint before engagement)
         W_n_minus_1 = preprocessed['goal_state']['waypoint']
@@ -180,9 +180,9 @@ def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
     ax.legend(by_label.values(), by_label.keys(), loc='upper left', fontsize=10)
     
     # Add info box
-    info_text = f"""Missile Path Planning System
+    info_text = f"""Autonomous Aircraft Path Planning System
 R = {config.R}m | α_max = {config.ALPHA_MAX}° | L₀ = {config.L0}m
-SAM Sites: {len(scenario.get('sam_sites', []))} | Islands: {len(scenario.get('islands', []))}"""
+Dynamic Obstacles: {len(scenario.get('dynamic_obstacles', []))} | Islands: {len(scenario.get('islands', []))}"""
     
     if result:
         stats = result.get('stats', {})
@@ -328,7 +328,7 @@ def plot_obstacles_comparison(scenario, preprocessed, title="Obstacle Inflation"
                           edgecolor='darkred', linewidth=1.5, alpha=0.7)
         ax1.add_patch(patch)
     
-    for center, radius in scenario.get('sam_sites', []):
+    for center, radius in scenario.get('dynamic_obstacles', []):
         patch = MplCircle(center, radius, fill=True, facecolor='red', 
                          edgecolor='darkred', linewidth=1.5, alpha=0.5)
         ax1.add_patch(patch)

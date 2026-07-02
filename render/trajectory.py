@@ -9,17 +9,17 @@ points for drawing. Two modes:
                 (the fillet model): symmetric about the waypoint, radius R, and
                 subtending the heading change (turn angle). Because the arc is
                 tangent, the entry and exit headings are preserved exactly -- so
-                the launch leaves O along the launch heading and the approach
+                the takeoff leaves O along the takeoff heading and the approach
                 reaches T along the required approach heading. (A circular arc of
                 radius R cannot both pass through the corner waypoint AND keep
                 those headings, so the arc rounds the corner rather than passing
                 through it; this matches the planner's validated kinodynamic
-                model: straight đoản trình + R*tan(alpha/2) tangents.)
+                model: straight trajectory + R*tan(alpha/2) tangents.)
 
 `turn_markers()` returns, per turn, the start-of-turn and end-of-turn points
 (the two tangent points) so the caller can mark where each arc begins and ends.
 
-`build_full_path()` prepends the launch point O and appends the target T (taken
+`build_full_path()` prepends the takeoff point O and appends the goal T (taken
 from the preprocessed scenario) so the drawn flight path spans O..T -- the
 planner's path only covers the interior waypoints W_1..W_{n-1}.
 """
@@ -57,11 +57,11 @@ def turn_markers(path, R):
 
 
 def build_full_path(result_path, preprocessed):
-    """Prepend launch O and append target T (from `preprocessed`) so the drawn
+    """Prepend takeoff O and append goal T (from `preprocessed`) so the drawn
     path spans the whole mission, not just the interior waypoints.
 
     The planner searches between W_1 (offset from O) and W_{n-1} (offset from T);
-    the missile still flies O -> W_1 ... W_{n-1} -> T.
+    the autonomous aircraft still flies O -> W_1 ... W_{n-1} -> T.
     """
     wps = list(result_path)
     O = preprocessed.get('start_pos') if preprocessed else None

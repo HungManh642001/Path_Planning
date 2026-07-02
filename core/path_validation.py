@@ -32,7 +32,7 @@ def _segment_clear(a, b, circle_obstacles, polygon_obstacles, tol=1e-6):
     # A segment is blocked ONLY when it enters a polygon's INTERIOR (DE-9IM
     # interior/interior overlap, pattern 'T********'). Touching the boundary is
     # allowed: a waypoint may sit on a polygon corner (corners are valid navigation
-    # targets, like circle tangent points), and a segment may run ALONG an edge to
+    # goals, like circle tangent points), and a segment may run ALONG an edge to
     # hug the obstacle boundary. Interior penetration still fails.
     line = LineString([a, b])
     for coords in polygon_obstacles:

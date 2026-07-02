@@ -230,7 +230,7 @@ def format_time_breakdown(timings):
 
 def estimate_flight_time(path_distance, cruise_speed=600):
     """
-    Estimate actual flight time for missile.
+    Estimate actual flight time for autonomous aircraft.
     
     Args:
         path_distance: Total path distance in meters
