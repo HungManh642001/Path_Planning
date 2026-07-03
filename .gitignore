@@ -1,4 +1,5 @@
-results/
+results*/
+cases/*
 __pycache__/
 *.pyc
 *.pyo   

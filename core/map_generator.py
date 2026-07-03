@@ -5,18 +5,22 @@ Generates synthetic mission scenarios with islands and dynamic obstacles for tes
 
 import random
 import math
+from shapely import Point, Polygon
 import numpy as np
 from scipy.spatial import distance
 import config
 
 
-def generate_random_islands(num_islands, map_bounds, seed=None):
+def generate_random_islands(num_islands, map_bounds, start=None, goal=None, topology=None, seed=None):
     """
     Generate random island polygons with irregular shapes.
     
     Args:
         num_islands: Number of islands to generate
         map_bounds: (width, height) of map
+        start: (x, y) start position
+        goal: (x, y) goal position
+        topology: Topology information
         seed: Random seed for reproducibility
     
     Returns:
@@ -28,11 +32,34 @@ def generate_random_islands(num_islands, map_bounds, seed=None):
     
     islands = []
     width, height = map_bounds
+
+    attempts = 0
+    max_attempts = 1000  # Prevent infinite loops in case of tight spacing
+
+    # Calculate the geometric parameters between start and goal 
+    mx, my = (start[0] + goal[0]) / 2, (start[1] + goal[1]) / 2             # midpoint
+    angle_start_goal = math.atan2(goal[1] - start[1], goal[0] - start[0])   # angle from start to goal
+    angle_perp = angle_start_goal + math.pi / 2                             # perpendicular angle
+    dist_sg = math.hypot(goal[0] - start[0], goal[1] - start[1])
     
-    for _ in range(num_islands):
-        # Random center for island
-        center_x = random.uniform(width * 0.1, width * 0.9)
-        center_y = random.uniform(height * 0.1, height * 0.9)
+    while len(islands) < num_islands and attempts < max_attempts:
+        if topology == 'random':
+            # Random center for island
+            center_x = random.uniform(width * 0.1, width * 0.9)
+            center_y = random.uniform(height * 0.1, height * 0.9)
+        elif topology == 'center_cluster':
+            # Place islands around the midpoint between start and goal
+            center_x = random.gauss(mx, dist_sg / 3)  # Gaussian around midpoint
+            center_y = random.gauss(my, dist_sg / 3)  # Gaussian around midpoint
+        elif topology == 'wall_block':
+            # Place islands along a line perpendicular to the start-goal line
+            t = random.uniform(-150000, 150000)  # offset along the perpendicular
+            noise = random.uniform(-dist_sg / 3, dist_sg / 3)
+            center_x = mx + t * math.cos(angle_perp) + noise * math.cos(angle_start_goal)
+            center_y = my + t * math.sin(angle_perp) + noise * math.sin(angle_start_goal)
+        
+        center_x = max(width * 0.1, min(center_x, width * 0.9))
+        center_y = max(height * 0.1, min(center_y, height * 0.9))
         
         # Random size
         size = random.uniform(config.ISLAND_SIZE_MIN, config.ISLAND_SIZE_MAX)
@@ -53,19 +80,32 @@ def generate_random_islands(num_islands, map_bounds, seed=None):
             
             island.append((x, y))
         
+        # Check start, goal located within obstacle-free zone (buffer zone)
+        buffer_zone = config.EPS  # meters
+        if start and goal:
+            start_pt = Point(start)
+            goal_pt = Point(goal)
+            island_polygon = Polygon(island)
+
+            if island_polygon.distance(start_pt) < buffer_zone or island_polygon.distance(goal_pt) < buffer_zone:
+                attempts += 1
+                continue
+        
         islands.append(island)
     
     return islands
 
 
-def generate_dynamic_obstacles(num_sites, map_bounds, radius_range=None, seed=None):
+def generate_dynamic_obstacles(num_sites, map_bounds, start=None, goal=None, topology=None, seed=None):
     """
     Generate dynamic obstacles as circles.
     
     Args:
         num_sites: Number of dynamic obstacles
         map_bounds: (width, height) of map
-        radius_range: (min_radius, max_radius) for dynamic obstacle coverage
+        start: (x, y) start position
+        goal: (x, y) goal position
+        topology: Topology information
         seed: Random seed for reproducibility
     
     Returns:
@@ -75,10 +115,8 @@ def generate_dynamic_obstacles(num_sites, map_bounds, radius_range=None, seed=No
         random.seed(seed)
         np.random.seed(seed)
     
-    if radius_range is None:
-        radius_range = (config.OBSTACLE_RADIUS_MIN, config.OBSTACLE_RADIUS_MAX)
     
-    min_radius, max_radius = radius_range
+    min_radius, max_radius = config.OBSTACLE_RADIUS_MIN, config.OBSTACLE_RADIUS_MAX
     dynamic_obstacles = []
     width, height = map_bounds
     
@@ -86,11 +124,31 @@ def generate_dynamic_obstacles(num_sites, map_bounds, radius_range=None, seed=No
     
     attempts = 0
     max_attempts = 100
+
+    # Calculate the geometric parameters between start and goal 
+    mx, my = (start[0] + goal[0]) / 2, (start[1] + goal[1]) / 2             # midpoint
+    angle_start_goal = math.atan2(goal[1] - start[1], goal[0] - start[0])   # angle from start to goal
+    angle_perp = angle_start_goal + math.pi / 2                             # perpendicular angle
+    dist_sg = math.hypot(goal[0] - start[0], goal[1] - start[1])
     
     while len(dynamic_obstacles) < num_sites and attempts < max_attempts:
-        # Random center
-        center_x = random.uniform(width * 0.1, width * 0.9)
-        center_y = random.uniform(height * 0.1, height * 0.9)
+        if topology == 'random':
+            # Random center for dynamic obstacle
+            center_x = random.uniform(width * 0.1, width * 0.9)
+            center_y = random.uniform(height * 0.1, height * 0.9)
+        elif topology == 'center_cluster':
+            # Place dynamic obstacles around the midpoint between start and goal
+            center_x = random.gauss(mx, dist_sg / 3)  # Gaussian around midpoint
+            center_y = random.gauss(my, dist_sg / 3)  # Gaussian around midpoint
+        elif topology == 'wall_block':
+            # Place dynamic obstacles along a line perpendicular to the start-goal line
+            t = random.uniform(-150000, 150000)  # offset along the perpendicular
+            noise = random.uniform(-dist_sg / 3, dist_sg / 3)
+            center_x = mx + t * math.cos(angle_perp) + noise * math.cos(angle_start_goal)
+            center_y = my + t * math.sin(angle_perp) + noise * math.sin(angle_start_goal)
+        
+        center_x = max(width * 0.1, min(center_x, width * 0.9))
+        center_y = max(height * 0.1, min(center_y, height * 0.9))
         center = (center_x, center_y)
         
         # Random radius
@@ -104,6 +162,16 @@ def generate_dynamic_obstacles(num_sites, map_bounds, radius_range=None, seed=No
             if dist < min_separation:
                 valid = False
                 break
+        
+        # Check start, goal located within obstacle-free zone (buffer zone)
+        buffer_zone = config.EPS  # meters
+        if valid and start and goal:
+            start_pt = Point(start)
+            goal_pt = Point(goal)
+            obstacle_circle = Point(center).buffer(radius)
+
+            if obstacle_circle.distance(start_pt) < buffer_zone or obstacle_circle.distance(goal_pt) < buffer_zone:
+                valid = False
         
         if valid:
             dynamic_obstacles.append((center, radius))
@@ -143,10 +211,11 @@ def create_scenario(scenario_config):
     # Generate obstacles
     num_islands = scenario_config.get('num_islands', 0)
     num_dynamic_obstacles = scenario_config.get('num_dynamic_obstacles', 0)
+    topology = scenario_config.get('topology', 'random')
     seed = scenario_config.get('seed', None)
     
-    scenario['islands'] = generate_random_islands(num_islands, scenario['map_bounds'], seed=seed)
-    scenario['dynamic_obstacles'] = generate_dynamic_obstacles(num_dynamic_obstacles, scenario['map_bounds'], seed=seed)
+    scenario['islands'] = generate_random_islands(num_islands, scenario['map_bounds'], scenario['start'], scenario['goal'], topology, seed=seed)
+    scenario['dynamic_obstacles'] = generate_dynamic_obstacles(num_dynamic_obstacles, scenario['map_bounds'], scenario['start'], scenario['goal'], topology, seed=seed)
     
     # Convert to obstacle format
     scenario['obstacles'] = []

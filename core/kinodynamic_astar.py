@@ -156,8 +156,18 @@ class KinodynamicAstar:
             return successors
 
         # --- Strategy B: radial fan fallback (no graph candidate was valid) ---
-        num_directions = 11
-        distance = 2 * self.R * math.tan(self.alpha_max_rad / 2)
+        strategy_b = False
+        if not successors or self._check_collision(P, goal_wp):
+            strategy_b = True
+        elif not self._check_collision(P, goal_wp) and self.num_strategy_b > 0:
+            self.num_strategy_b -= 1
+            strategy_b = True
+
+        if not strategy_b:
+            return successors
+            
+        num_directions = config.RADIAL_FAN_DIRECTIONS
+        distance = 2 * self.R * math.tan(self.alpha_max_rad / 2) + config.RADIAL_FAN_STEP_M
         for i in range(num_directions):
             heading_offset = -self.alpha_max_rad + 2 * self.alpha_max_rad * i / (num_directions - 1)
             next_heading = h + heading_offset
@@ -243,6 +253,7 @@ class KinodynamicAstar:
             self.start_state
         ))
         self.g_scores[self.start_state] = 0
+        self.num_strategy_b = config.NUM_STRATEGY_B  # Allow a few radial fan expansions even if goal is reachable
 
         while self.open_set and self.iteration_count < self.max_iterations:
             if _budget is not None and (time.perf_counter() - _start) > _budget:
@@ -353,11 +364,16 @@ class KinodynamicAstar:
             # the terminal turn onto goal_heading. Without this check, smoothing can
             # bend the approach past alpha_max even when the search path was valid.
             if i + 1 == len(path) - 1:
-                onward_heading = self.goal_state.heading
+                onward_wp, onward_heading = self.goal_state.waypoint, self.goal_state.heading
             else:
-                onward_heading = su.angle_to_heading(next_wp, path[i + 2][0])
-            downstream_turn = abs(_angle_diff(onward_heading, heading_to_next))
-            if (is_valid and downstream_turn <= self.alpha_max_rad
+                onward_wp, onward_heading = path[i + 2]
+
+            is_next_valid, _ = prep.validate_kinodynamics(
+                next_wp, heading_to_next,
+                onward_wp, onward_heading,
+                R=self.R, alpha_max=self.alpha_max_rad
+            )
+            if (is_valid and is_next_valid
                     and self._check_collision(prev_wp, next_wp)):
                 # Can skip current point
                 i += 1
