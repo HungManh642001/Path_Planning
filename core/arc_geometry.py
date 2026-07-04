@@ -83,3 +83,32 @@ def bitangent_departures(c1, r1, c2, r2, s):
             if (-s * ny) * tx + (s * nx) * ty > 0:  # sense-consistent at dep
                 out.append((dep, arr))
     return out
+
+
+def arc_waypoints(center, r, start_pt, dphi, s, theta_max_rad):
+    """Expand a boundary arc into circumscribed-polygon vertices.
+
+    The arc starts at start_pt (on the circle) and sweeps dphi (rad) in
+    direction s. It is replaced by n = ceil(dphi / theta_max_rad) equal turns
+    of theta = dphi/n each; vertex k is the intersection of consecutive
+    tangent lines, at radius r / cos(theta/2) on the bisector. Headings are
+    the outgoing tangent directions, so the turn angle at every vertex is
+    exactly theta <= theta_max_rad, and every chord of the resulting chain is
+    tangent to the circle (never inside it).
+
+    Returns [(vertex, heading_out), ...] excluding the arc endpoints.
+    """
+    if dphi <= 1e-9:
+        return []
+    n = max(1, int(math.ceil(dphi / theta_max_rad)))
+    step = dphi / n
+    rv = r / math.cos(step / 2.0)
+    phi0 = math.atan2(start_pt[1] - center[1], start_pt[0] - center[0])
+    out = []
+    for k in range(n):
+        mid = phi0 + s * step * (k + 0.5)
+        vertex = (center[0] + rv * math.cos(mid), center[1] + rv * math.sin(mid))
+        nxt = phi0 + s * step * (k + 1)
+        tangent_pt = (center[0] + r * math.cos(nxt), center[1] + r * math.sin(nxt))
+        out.append((vertex, tangent_heading(tangent_pt, center, s)))
+    return out

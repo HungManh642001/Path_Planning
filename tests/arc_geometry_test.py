@@ -2,6 +2,7 @@
 import math
 
 import core.arc_geometry as ag
+import core.path_validation as pv
 import core.spatial_utils as su
 
 C = (100000.0, 100000.0)
@@ -96,3 +97,43 @@ def test_bitangent_departures_overlapping_circles_outer_only():
 
 def test_bitangent_departures_concentric_returns_empty():
     assert ag.bitangent_departures((0.0, 0.0), 10000.0, (0.0, 0.0), 5000.0, +1) == []
+
+
+def test_arc_waypoints_quarter_wrap_vertex_geometry():
+    start = (C[0] + R_C, C[1])  # polar angle 0
+    dphi = math.pi / 2
+    theta = math.radians(30.0)
+    wps = ag.arc_waypoints(C, R_C, start, dphi, +1, theta)
+    assert len(wps) == 3  # ceil(90/30) = 3 vertices
+    rv = R_C / math.cos((dphi / 3) / 2)
+    for v, _h in wps:
+        assert math.isclose(math.hypot(v[0] - C[0], v[1] - C[1]), rv, rel_tol=1e-9)
+
+
+def test_arc_waypoint_chain_turns_and_clearance():
+    """The full chain start -> vertices -> end must satisfy exactly what the
+    oracle checks: every turn <= theta and no chord entering the circle."""
+    start = (C[0] + R_C, C[1])
+    dphi = 1.75 * math.pi  # long wrap
+    theta = math.radians(30.0)
+    wps = ag.arc_waypoints(C, R_C, start, dphi, +1, theta)
+    end = (C[0] + R_C * math.cos(dphi), C[1] + R_C * math.sin(dphi))
+    chain = [(start, 0.0)] + wps + [(end, 0.0)]
+    for a in pv.turn_angles(chain):
+        assert a <= theta + 1e-9
+    for i in range(len(chain) - 1):
+        d = su.point_to_line_distance(C, chain[i][0], chain[i + 1][0])
+        assert d >= R_C - 1e-6  # chords are tangent, never inside
+
+
+def test_arc_waypoints_cw_sense():
+    start = (C[0] + R_C, C[1])
+    theta = math.radians(30.0)
+    wps = ag.arc_waypoints(C, R_C, start, math.pi / 2, -1, theta)
+    assert len(wps) == 3
+    assert all(v[1] < C[1] for v, _h in wps)  # CW from angle 0 goes below
+
+
+def test_arc_waypoints_zero_angle_empty():
+    start = (C[0] + R_C, C[1])
+    assert ag.arc_waypoints(C, R_C, start, 0.0, +1, math.radians(30.0)) == []
