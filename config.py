@@ -11,7 +11,7 @@ R = 8000.0
 ALPHA_MAX = 90.0  # in degrees, will be converted to radians
 
 # Minimum distance for level flight and stabilization (m)
-# After takeoff, distance to descend and stabilize for sea-skimming
+# After takeoff, distance to stabilize
 L0 = 4000.0
 
 # Distance for terminal camera sensor lock(m)
@@ -36,7 +36,7 @@ SAFE_MARGIN = 10000.0
 # ~70 rounded arc points. mitre_limit caps the corner-spike length; it is large
 # enough that the mitre polygon always CONTAINS the exact round Minkowski buffer
 # (preserving the arc-clearance guarantee) for the convex-ish islands here.
-POLYGON_MITRE_LIMIT = 2.0
+POLYGON_MITRE_LIMIT = 5.0
 
 # Circle-wrap straight step (m). When a waypoint sits ON a circle boundary (a
 # tangent point), the planner can no longer tangent further around that circle
@@ -46,7 +46,7 @@ POLYGON_MITRE_LIMIT = 2.0
 # so the next expansion can tangent further around it — wrapping the circle with
 # a chain of short tangent segments (a circumscribed polygon) without an explicit
 # arc model. Smaller = finer wrap.
-WRAP_STEP_M = 2000.0  # 10000
+WRAP_STEP_M = 10000.0  # 2000
 
 # Tolerance (m) by which a segment may graze inside a circle's INFLATED boundary.
 # Tangent / wrap segments ride that boundary, so discretisation dips them a few
@@ -65,7 +65,7 @@ MAP_ORIGIN = (0.0, 0.0)
 MAX_ITERATIONS = 50000
 
 # Wall-clock budget for a single search (seconds). None = no time limit.
-TIME_BUDGET_S = 0.9  # 2
+TIME_BUDGET_S = 5  # 0.9
 
 # State-lattice quantisation for A* de-duplication
 STATE_POS_QUANTUM = 1000.0          # meters
@@ -78,7 +78,7 @@ HEURISTIC_WEIGHT = 1.0
 GOAL_THRESHOLD = 1000.0  # meters; reachable given STATE_POS_QUANTUM
 
 # Cost added per radian of heading change at a transition (meters per radian)
-TURN_PENALTY_WEIGHT = 4000.0  # 0
+TURN_PENALTY_WEIGHT = 0  # 4000.0
 
 # Fallback strategy for A* when no valid successors are found: radial fan of directions
 RADIAL_FAN_DIRECTIONS = 3  # number of directions in the fan   

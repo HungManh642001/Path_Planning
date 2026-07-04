@@ -1,5 +1,6 @@
 results*/
 cases/*
+logs/*
 __pycache__/
 *.pyc
 *.pyo   

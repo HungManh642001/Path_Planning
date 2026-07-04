@@ -152,10 +152,7 @@ class KinodynamicAstar:
             cost = math.hypot(dx, dy) + config.TURN_PENALTY_WEIGHT * turn
             successors.append((State(node, heading_to_node), cost))
 
-        if successors:
-            return successors
-
-        # --- Strategy B: radial fan fallback (no graph candidate was valid) ---
+        # --- Strategy B: radial fan fallback  ---
         strategy_b = False
         if not successors or self._check_collision(P, goal_wp):
             strategy_b = True
@@ -433,8 +430,8 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
             print("No path found")
     
     # Smooth path if found
-    if path:
-        path = planner.smooth_path(path)
+    # if path:
+    #     path = planner.smooth_path(path)
     
     return {
         'path': path,

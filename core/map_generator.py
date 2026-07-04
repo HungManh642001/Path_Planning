@@ -328,7 +328,7 @@ def scenario5_sparse_islands():
 
 
 def scenario6_coastal_path():
-    """Scenario 6: Easy - Light coastal defense, open corridor"""
+    """Scenario 6: Easy - Light coastal dynamic obstacles, open corridor"""
     return create_scenario({
         'start': (10000, 10000),
         'start_heading': 0,
@@ -381,7 +381,7 @@ def scenario9_island_archipelago():
     })
 
 
-def scenario10_dense_defense():
+def scenario10_dense_dynamic_obstacles():
     """Scenario 10: Medium - Dense dynamic obstacle field with some islands"""
     return create_scenario({
         'start': (50000, 50000),
@@ -407,8 +407,8 @@ def scenario11_serpentine_route():
     })
 
 
-def scenario12_perimeter_defense():
-    """Scenario 12: Medium - Goal protected by perimeter defenses"""
+def scenario12_perimeter_dynamic_obstacles():
+    """Scenario 12: Medium - Goal protected by perimeter dynamic obstacles"""
     return create_scenario({
         'start': (10000, 250000),
         'start_heading': 0,
@@ -435,7 +435,7 @@ def scenario13_dense_island_field():
     })
 
 
-def scenario14_combined_threat():
+def scenario14_combined_obstacles():
     """Scenario 14: Hard - Combined island and dynamic obstacle """
     return create_scenario({
         'start': (30000, 30000),
@@ -491,13 +491,13 @@ def get_all_scenarios():
         
         # Medium scenarios
         'scenario_09_island_archipelago': scenario9_island_archipelago,
-        'scenario_10_dense_defense': scenario10_dense_defense,
+        'scenario_10_dense_dynamic_obstacles': scenario10_dense_dynamic_obstacles,
         'scenario_11_serpentine_route': scenario11_serpentine_route,
-        'scenario_12_perimeter_defense': scenario12_perimeter_defense,
+        'scenario_12_perimeter_dynamic_obstacles': scenario12_perimeter_dynamic_obstacles,
         
         # Hard scenarios
         'scenario_13_dense_island_field': scenario13_dense_island_field,
-        'scenario_14_combined_threat': scenario14_combined_threat,
+        'scenario_14_combined_obstacles': scenario14_combined_obstacles,
         'scenario_15_narrow_channel': scenario15_narrow_channel,
         'scenario_16_extreme_complexity': scenario16_extreme_complexity,
     }
