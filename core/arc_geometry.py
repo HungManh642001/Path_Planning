@@ -37,3 +37,49 @@ def arc_angle(P, Q, center, s):
     a0 = math.atan2(P[1] - center[1], P[0] - center[0])
     a1 = math.atan2(Q[1] - center[1], Q[0] - center[0])
     return (s * (a1 - a0)) % (2.0 * math.pi)
+
+
+def departure_point(X, center, r, s):
+    """Tangent point on circle (center, r) from which leaving toward the
+    external point X is tangent-continuous for wrap sense s. None if X is
+    inside or on the circle."""
+    for dep in su.circle_tangent_points(X, center, r):
+        nx = (dep[0] - center[0]) / r
+        ny = (dep[1] - center[1]) / r
+        # velocity at dep for sense s is s * perp_ccw(n) = (-s*ny, s*nx)
+        if (-s * ny) * (X[0] - dep[0]) + (s * nx) * (X[1] - dep[1]) > 0:
+            return dep
+    return None
+
+
+def bitangent_departures(c1, r1, c2, r2, s):
+    """Bitangent lines of circles (c1, r1) and (c2, r2), filtered to those
+    departing circle 1 consistently with wrap sense s.
+
+    Construction: a bitangent touches circle 1 at c1 + r1*n and circle 2 at
+    c2 + sigma*r2*n for a unit normal n with n·D̂ = (r1 - sigma*r2)/d, where
+    sigma=+1 gives the outer pair and sigma=-1 the inner (crossing) pair.
+    Returns [(dep_on_c1, arr_on_c2), ...] (0..2 entries after filtering).
+    """
+    dx, dy = c2[0] - c1[0], c2[1] - c1[1]
+    d = math.hypot(dx, dy)
+    if d < 1e-9:
+        return []
+    ux, uy = dx / d, dy / d
+    out = []
+    for sigma in (1.0, -1.0):
+        k = (r1 - sigma * r2) / d
+        if abs(k) > 1.0:
+            continue
+        root = math.sqrt(max(0.0, 1.0 - k * k))
+        for pm in (1.0, -1.0):
+            nx = k * ux - pm * root * uy
+            ny = k * uy + pm * root * ux
+            dep = (c1[0] + r1 * nx, c1[1] + r1 * ny)
+            arr = (c2[0] + sigma * r2 * nx, c2[1] + sigma * r2 * ny)
+            tx, ty = arr[0] - dep[0], arr[1] - dep[1]
+            if math.hypot(tx, ty) < 1e-6:
+                continue  # circles touch: degenerate tangent
+            if (-s * ny) * tx + (s * nx) * ty > 0:  # sense-consistent at dep
+                out.append((dep, arr))
+    return out
