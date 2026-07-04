@@ -48,6 +48,15 @@ POLYGON_MITRE_LIMIT = 5.0
 # arc model. Smaller = finer wrap.
 WRAP_STEP_M = 10000.0  # 2000
 
+# Angular step (deg) for expanding a circle-boundary arc into waypoint
+# vertices (circumscribed polygon) at OUTPUT time. Max supported 45. Search
+# connectivity does NOT depend on it: arc clearance is checked at the fixed
+# 45-deg bulge radius r/cos(pi/8), which covers any expansion step <= 45 deg.
+ARC_WAYPOINT_STEP_DEG = 30.0
+
+# Angular step (deg) for sampling arc clearance during search.
+ARC_SAMPLE_STEP_DEG = 5.0
+
 # Tolerance (m) by which a segment may graze inside a circle's INFLATED boundary.
 # Tangent / wrap segments ride that boundary, so discretisation dips them a few
 # metres inside the inflation band; this never approaches the RAW obstacle (the

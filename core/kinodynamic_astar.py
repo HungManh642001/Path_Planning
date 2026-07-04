@@ -13,11 +13,17 @@ from shapely import STRtree
 import config
 import core.spatial_utils as su
 import core.preprocessing as prep
+import core.arc_geometry as ag
 
 
 def _angle_diff(a, b):
     """Smallest signed difference a-b normalised to [-pi, pi]."""
     return math.atan2(math.sin(a - b), math.cos(a - b))
+
+
+# Fixed clearance bulge for riding arcs: circumscribed-polygon vertices for
+# any expansion step <= 45 deg stay within r / cos(pi/8) of the center.
+_ARC_CLEAR_BULGE = 1.0 / math.cos(math.pi / 8.0)
 
 
 class State:
@@ -29,6 +35,7 @@ class State:
         self.parent = None
         self.g_cost = float('inf')  # Cost from start
         self.h_cost = 0  # Heuristic to goal
+        self.arc_from = None  # (center, radius, arc_start_pt, s) if reached via arc hop
     
     def __hash__(self):
         return hash(su.state_to_tuple(self.waypoint, self.heading))
@@ -89,6 +96,10 @@ class KinodynamicAstar:
         
         # Track if search failed
         self.search_failed = False
+
+        # Search route before arc expansion/smoothing (set on success);
+        # used to verify discretisation invariance.
+        self.raw_route = None
     
     def heuristic(self, state, goal_state):
         """
@@ -109,16 +120,8 @@ class KinodynamicAstar:
         P = current_state.waypoint
         h = current_state.heading
 
-        # --- Wrap step: straight continuation off a circle boundary ---
-        # A point ON a circle has no tangent to that circle, so the planner cannot
-        # tangent further around it. Flying STRAIGHT (same heading) for WRAP_STEP_M
-        # steps just off the circle so the next expansion can tangent further along
-        # it. This step is zero-turn, so it carries no đoản trình arc reservation.
-        if self._on_circle_boundary(P):
-            nx = (P[0] + config.WRAP_STEP_M * math.cos(h),
-                  P[1] + config.WRAP_STEP_M * math.sin(h))
-            if self._in_bounds(nx) and self._check_collision(P, nx):
-                successors.append((State(nx, h), config.WRAP_STEP_M))
+        # --- Arc-hop: ride any circle boundary this state is tangent to ---
+        successors.extend(self._arc_hop_successors(current_state))
 
         # --- Strategy A: dynamic tangent / vertex / goal candidates ---
         goal_wp = self.goal_state.waypoint
@@ -185,21 +188,90 @@ class KinodynamicAstar:
 
         return successors
 
-    
-    def _check_collision(self, p1, p2):
+    def _arc_hop_successors(self, current_state):
+        """Successors that ride an inflated circle's boundary.
+
+        For each target (bitangent departure toward another circle, tangent
+        from a polygon hull vertex or the goal), hop along the boundary arc to
+        the departure point where leaving is tangent-continuous. The emitted
+        state is the departure point itself; the straight leg to the target is
+        found by Strategy A on the next expansion (zero turn there). Cost is
+        the true arc length. Replaces the old WRAP_STEP_M straight step; the
+        search graph no longer depends on any wrap discretisation.
+        """
+        P = current_state.waypoint
+        h = current_state.heading
+        goal_wp = self.goal_state.waypoint
+        successors = []
+        for center, radius in self.scenario['circle_obstacles']:
+            s = ag.riding_sense(P, h, center, radius)
+            if s == 0:
+                continue
+            phi0 = math.atan2(P[1] - center[1], P[0] - center[0])
+            max_wrap = self._max_clear_wrap(center, radius, phi0, s)
+            if max_wrap <= 1e-6:
+                continue
+            deps = []
+            for c2, r2 in self.scenario['circle_obstacles']:
+                if c2 == center and r2 == radius:
+                    continue
+                deps.extend(dep for dep, _arr in
+                            ag.bitangent_departures(center, radius, c2, r2, s))
+            for vertex in self._poly_vertices:
+                dep = ag.departure_point(vertex, center, radius, s)
+                if dep is not None:
+                    deps.append(dep)
+            dep = ag.departure_point(goal_wp, center, radius, s)
+            if dep is not None:
+                deps.append(dep)
+            for dep in deps:
+                dphi = ag.arc_angle(P, dep, center, s)
+                if dphi < 1e-3 or dphi > max_wrap:
+                    continue
+                nxt = State(dep, ag.tangent_heading(dep, center, s))
+                nxt.arc_from = (center, radius, P, s)
+                successors.append((nxt, radius * dphi))
+        return successors
+
+    def _max_clear_wrap(self, center, radius, phi0, s):
+        """Maximal angle (rad) the aircraft can ride this boundary from phi0 in
+        direction s before the bulged arc (circumscribed-vertex radius) hits
+        another obstacle or leaves the map. One sweep bounds every arc-hop
+        candidate on this circle, instead of checking each arc separately.
+        Conservative: quantised down to ARC_SAMPLE_STEP_DEG."""
+        r_check = radius * _ARC_CLEAR_BULGE
+        step = math.radians(config.ARC_SAMPLE_STEP_DEG)
+        n = int(round(2.0 * math.pi / step))
+        prev = (center[0] + r_check * math.cos(phi0),
+                center[1] + r_check * math.sin(phi0))
+        for k in range(1, n + 1):
+            a = phi0 + s * k * step
+            p = (center[0] + r_check * math.cos(a),
+                 center[1] + r_check * math.sin(a))
+            if (not self._in_bounds(p)
+                    or not self._check_collision(prev, p, skip_circle=(center, radius))):
+                return (k - 1) * step
+            prev = p
+        return 2.0 * math.pi
+
+    def _check_collision(self, p1, p2, skip_circle=None):
         """
         Check if line segment from p1 to p2 collides with any obstacle.
         Returns True if collision-free, False otherwise.
+        skip_circle=(center, radius) exempts the circle being ridden by an
+        arc-clearance sweep (its own boundary is not an obstacle to itself).
         """
-        
+
         # Check against circle obstacles. A small grazing tolerance lets tangent /
         # wrap segments ride the inflated boundary (they dip a few metres inside the
         # ~13 km inflation band by discretisation but never approach the raw obstacle).
         for center, radius in self.scenario['circle_obstacles']:
+            if skip_circle is not None and center == skip_circle[0] and radius == skip_circle[1]:
+                continue
             dist = su.point_to_line_distance(center, p1, p2)
             if dist < radius - config.CIRCLE_GRAZE_TOL_M:
                 return False
-        
+
         # Check against polygon obstacles via spatial index. A segment is blocked
         # ONLY when it enters a polygon's INTERIOR (DE-9IM interior/interior
         # overlap). Merely touching the boundary is allowed: this lets a waypoint
@@ -212,13 +284,6 @@ class KinodynamicAstar:
                 if self._polygons[idx].relate_pattern(line, 'T********'):
                     return False
         return True
-    
-    def _on_circle_boundary(self, point, tol=1.0):
-        """True if `point` lies on (within tol of) any inflated circle boundary."""
-        for center, radius in self.scenario['circle_obstacles']:
-            if abs(math.hypot(point[0] - center[0], point[1] - center[1]) - radius) < tol:
-                return True
-        return False
 
     def _in_bounds(self, point):
         """Check if point is within map bounds"""
@@ -309,17 +374,26 @@ class KinodynamicAstar:
         return None
     
     def _reconstruct_path(self, state):
-        """Reconstruct path from start to state"""
-        path = []
+        """Reconstruct start->state, expanding arc-hop transitions into
+        circumscribed-polygon waypoints (output-time discretisation only;
+        the searched route itself is stored in self.raw_route)."""
+        states = [state]
         current = state
-        
         while current in self.came_from:
-            path.append((current.waypoint, current.heading))
             current = self.came_from[current]
-        
-        path.append((self.start_state.waypoint, self.start_state.heading))
-        path.reverse()
-        
+            states.append(current)
+        states.reverse()
+
+        self.raw_route = [(st.waypoint, st.heading) for st in states]
+
+        theta_out = math.radians(config.ARC_WAYPOINT_STEP_DEG)
+        path = []
+        for st in states:
+            if st.arc_from is not None and path:
+                center, radius, arc_start, s = st.arc_from
+                dphi = ag.arc_angle(arc_start, st.waypoint, center, s)
+                path.extend(ag.arc_waypoints(center, radius, arc_start, dphi, s, theta_out))
+            path.append((st.waypoint, st.heading))
         return path
     
     def smooth_path(self, path):
