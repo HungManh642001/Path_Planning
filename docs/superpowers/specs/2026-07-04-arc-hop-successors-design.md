@@ -97,16 +97,22 @@ the chosen route are independent of it (verified by testing item 3 below).
 
 ### 4. Accompanying fixes
 
-- **Strategy B:** `strategy_b = not successors` — pure fallback, as the
-  original architecture intended. Delete the goal-visibility trigger and the
-  `NUM_STRATEGY_B` budget.
+- **Strategy B:** the radial fan fires when (a) no other successor exists
+  (pure fallback), or (b) the state is riding a circle boundary — following
+  the boundary to a tangent departure point is not always optimal, so the fan
+  provides leave-the-boundary options between departure points. In open water
+  with valid candidates the fan does NOT fire (that was the source of the
+  zig-zag noise). Delete the goal-visibility trigger and the `NUM_STRATEGY_B`
+  budget.
 - **Smoothing:** re-enable `planner.smooth_path(path)` in `plan_trajectory`.
   Safety: a shortcut across an arc's waypoint chain penetrates the inflated
   circle deeper than `CIRCLE_GRAZE_TOL_M`, so `_check_collision` rejects it —
   smoothing cannot destroy arc chains.
-- **Config:** delete `WRAP_STEP_M`, `NUM_STRATEGY_B`; add
-  `ARC_WAYPOINT_STEP_DEG = 30.0`. Keep `CIRCLE_GRAZE_TOL_M` (tangent segments
-  still graze the boundary numerically).
+- **Config:** delete `NUM_STRATEGY_B`; add `ARC_WAYPOINT_STEP_DEG = 30.0` and
+  `ARC_SAMPLE_STEP_DEG = 5.0`. `WRAP_STEP_M` becomes a deprecated, planner-unused
+  constant kept only because `gui/params.py` still exposes a slider for it —
+  it is removed together with the (deferred) GUI update. Keep
+  `CIRCLE_GRAZE_TOL_M` (tangent segments still graze the boundary numerically).
 - Delete the wrap-step successor block; keep boundary detection (now feeds
   arc-hop).
 
@@ -131,4 +137,7 @@ the chosen route are independent of it (verified by testing item 3 below).
   may fail today and still may).
 - Polygon-hugging (already handled by hull vertices + boundary-touch
   predicate).
-- GUI and rendering code besides what `_reconstruct_path` emits.
+- GUI and rendering code besides what `_reconstruct_path` emits. In
+  particular the GUI wrap-step slider swap is deferred at the user's request;
+  the slider keeps writing the deprecated `config.WRAP_STEP_M` (harmless: the
+  planner no longer reads it).

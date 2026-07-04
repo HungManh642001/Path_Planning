@@ -4,7 +4,7 @@
 
 **Goal:** Replace the `WRAP_STEP_M` straight-step circle-wrapping mechanism in the kinodynamic A\* planner with exact-geometry "arc-hop" successors, so path quality no longer depends on a wrap discretisation parameter.
 
-**Architecture:** A new pure-geometry module `core/arc_geometry.py` provides bitangent/departure-point/arc-expansion math. `core/kinodynamic_astar.py` gains an `_arc_hop_successors` generator (riding states hop along a circle's boundary to tangent-continuous departure points, cost = arc length) and expands arcs into circumscribed-polygon waypoints only at path-reconstruction time. Strategy B returns to a pure fallback, smoothing is re-enabled, and the GUI swaps its wrap-step slider for the new arc-step parameter.
+**Architecture:** A new pure-geometry module `core/arc_geometry.py` provides bitangent/departure-point/arc-expansion math. `core/kinodynamic_astar.py` gains an `_arc_hop_successors` generator (riding states hop along a circle's boundary to tangent-continuous departure points, cost = arc length) and expands arcs into circumscribed-polygon waypoints only at path-reconstruction time. Strategy B becomes: pure fallback when no candidate exists, plus leave-the-boundary fan options at riding states. Smoothing is re-enabled. GUI is untouched in this plan (its wrap slider keeps writing the now-deprecated `config.WRAP_STEP_M`; a follow-up GUI task will swap it).
 
 **Tech Stack:** Python 3, math/shapely (STRtree, LineString, Polygon), pytest. No new dependencies.
 
@@ -705,17 +705,18 @@ git commit -m "feat: arc-hop successors replace WRAP_STEP_M wrap step"
 
 ---
 
-### Task 5: Strategy B as pure fallback + re-enable smoothing
+### Task 5: Strategy B = fallback + leave-the-boundary fan; re-enable smoothing; drop dead budget config
 
 **Files:**
 - Modify: `core/kinodynamic_astar.py`
+- Modify: `config.py`
 - Modify: `tests/kinodynamic_arc_hop_test.py`
 
 **Interfaces:**
-- Consumes: Task 4 planner.
-- Produces: `get_next_states` returns **only** Strategy A + arc-hop successors when any exist; the radial fan fires solely when there are none. `plan_trajectory` smooths again.
+- Consumes: Task 4 planner (`_arc_hop_successors`, `ag.riding_sense`).
+- Produces: `get_next_states` returns Strategy A + arc-hop successors, **plus** radial-fan successors whenever the state rides a circle boundary (following the boundary to a tangent departure is not always optimal — the fan lets the search leave the boundary between departure points); the fan alone when nothing else exists. In open water with valid candidates there is NO fan. `plan_trajectory` smooths again. `config.NUM_STRATEGY_B` is gone; `config.WRAP_STEP_M` stays (deprecated — `gui/params.py` still reads it; the GUI update is deferred).
 
-- [ ] **Step 1: Write the failing test** (append to `tests/kinodynamic_arc_hop_test.py`)
+- [ ] **Step 1: Write the failing tests** (append to `tests/kinodynamic_arc_hop_test.py`)
 
 ```python
 def open_water_scenario():
@@ -726,15 +727,32 @@ def open_water_scenario():
     }
 
 
-def test_no_radial_fan_when_strategy_a_succeeds():
-    """The fan is a last-resort fallback; with the goal visible and valid,
-    the only successor is the goal candidate."""
+def test_no_radial_fan_in_open_water():
+    """Not riding any boundary and the goal candidate is valid: the fan must
+    NOT fire (it only adds branching noise there)."""
     pre = prep.prepare_scenario(open_water_scenario())
     planner = astar.KinodynamicAstar(pre)
     st = astar.State(pre['start_state']['waypoint'], pre['start_state']['heading'])
     succ = planner.get_next_states(st)
     assert len(succ) == 1
     assert math.dist(succ[0][0].waypoint, pre['goal_state']['waypoint']) < 1.0
+
+
+def test_fan_added_while_riding_boundary():
+    """Riding a circle boundary: fan successors appear IN ADDITION to
+    arc-hops, so the search can leave the boundary between tangent
+    departure points."""
+    pre = prep.prepare_scenario(synthetic_circle_scenario())
+    planner = astar.KinodynamicAstar(pre)
+    (_, r_inf), = pre['circle_obstacles']
+    P = (CENTER[0], CENTER[1] - r_inf)  # due south, heading east => riding CCW
+    st = astar.State(P, 0.0)
+    succ = planner.get_next_states(st)
+    assert any(s_.arc_from is not None for s_, _ in succ)  # arc-hops present
+    fan_dist = 2 * config.R * math.tan(config.ALPHA_MAX_RAD / 2) + config.RADIAL_FAN_STEP_M
+    assert any(s_.arc_from is None
+               and math.isclose(math.dist(s_.waypoint, P), fan_dist, rel_tol=1e-9)
+               for s_, _ in succ), "fan successors missing at a riding state"
 
 
 def test_plan_trajectory_smooths_output():
@@ -745,14 +763,30 @@ def test_plan_trajectory_smooths_output():
     assert len(result['path']) <= 3
 ```
 
-- [ ] **Step 2: Run tests to verify the first fails**
+- [ ] **Step 2: Run tests to verify the new ones fail**
 
 Run: `python -m pytest tests/kinodynamic_arc_hop_test.py -v`
-Expected: `test_no_radial_fan_when_strategy_a_succeeds` FAILS (fan states are added because the goal is visible: current gating is inverted); the smoothing test may pass already — keep it as a regression guard.
+Expected: `test_no_radial_fan_in_open_water` FAILS (the current inverted gating adds fan states whenever the goal is visible, so `len(succ)` is 4). `test_fan_added_while_riding_boundary` PASSES under the current gating (the goal happens to be visible there) — it exists to pin the riding-fan behavior so a naive "return when successors exist" fix cannot silently drop it. The smoothing test may pass already — keep it as a regression guard.
 
-- [ ] **Step 3: Fix the Strategy B gating**
+- [ ] **Step 3: Rework the Strategy B gating**
 
-In `get_next_states`, replace this block:
+In `get_next_states`, replace the arc-hop insertion added in Task 4:
+
+```python
+        # --- Arc-hop: ride any circle boundary this state is tangent to ---
+        successors.extend(self._arc_hop_successors(current_state))
+```
+
+with:
+
+```python
+        # --- Arc-hop: ride any circle boundary this state is tangent to ---
+        successors.extend(self._arc_hop_successors(current_state))
+        riding = any(ag.riding_sense(P, h, center, radius) != 0
+                     for center, radius in self.scenario['circle_obstacles'])
+```
+
+and replace this block:
 
 ```python
         # --- Strategy B: radial fan fallback (no graph candidate was valid) ---
@@ -770,10 +804,14 @@ In `get_next_states`, replace this block:
 with:
 
 ```python
-        if successors:
+        if successors and not riding:
             return successors
 
-        # --- Strategy B: radial fan fallback (no graph candidate was valid) ---
+        # --- Strategy B: radial fan — pure fallback when no candidate is
+        # valid, PLUS extra leave-the-boundary options while riding a circle:
+        # following the boundary to a tangent departure point is not always
+        # optimal, so the fan lets the search leave the boundary between
+        # departure points. ---
 ```
 
 In `search()`, delete the line:
@@ -800,128 +838,43 @@ with:
         path = planner.smooth_path(path)
 ```
 
-- [ ] **Step 5: Run the whole suite**
+- [ ] **Step 5: Config cleanup (GUI-safe subset)**
 
-Run: `python -m pytest -q`
-Expected: 21 passed
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add core/kinodynamic_astar.py tests/kinodynamic_arc_hop_test.py
-git commit -m "fix: radial fan is a pure fallback again; re-enable path smoothing"
-```
-
----
-
-### Task 6: Delete dead config; swap the GUI wrap slider
-
-**Files:**
-- Modify: `config.py`
-- Modify: `gui/params.py`
-- Create: `tests/gui_params_test.py`
-
-**Interfaces:**
-- Consumes: `config.ARC_WAYPOINT_STEP_DEG` (Task 4).
-- Produces: `config` no longer defines `WRAP_STEP_M` or `NUM_STRATEGY_B`; GUI spec key `arc_waypoint_step_deg` writes `config.ARC_WAYPOINT_STEP_DEG`.
-
-- [ ] **Step 1: Write the failing test**
-
-Create `tests/gui_params_test.py`:
-
-```python
-"""GUI param specs must track the planner's real tunables (headless-safe:
-gui/params.py imports only config)."""
-import config
-import gui.params as params
-
-
-def test_wrap_param_replaced_by_arc_step():
-    keys = [s['key'] for s in params.PARAM_SPECS]
-    assert 'wrap_step_m' not in keys
-    assert 'arc_waypoint_step_deg' in keys
-
-
-def test_apply_overrides_writes_arc_step_and_returns_kwargs():
-    vals = params.default_values()
-    vals['arc_waypoint_step_deg'] = 20.0
-    kwargs = params.apply_overrides(vals)
-    assert config.ARC_WAYPOINT_STEP_DEG == 20.0
-    assert set(kwargs) == {'R', 'L0', 'DSS', 'safe_margin', 'alpha_max_rad'}
-    # restore the module-level default for other tests
-    config.ARC_WAYPOINT_STEP_DEG = 30.0
-
-
-def test_config_dead_constants_removed():
-    assert not hasattr(config, 'WRAP_STEP_M')
-    assert not hasattr(config, 'NUM_STRATEGY_B')
-```
-
-- [ ] **Step 2: Run tests to verify they fail**
-
-Run: `python -m pytest tests/gui_params_test.py -v`
-Expected: 3 FAIL (`wrap_step_m` still present, constants still defined)
-
-- [ ] **Step 3: Update `config.py`**
-
-Delete the whole `WRAP_STEP_M` block (the comment paragraph starting
-`# Circle-wrap straight step (m).` and the `WRAP_STEP_M = 10000.0  # 2000`
-line — the `ARC_WAYPOINT_STEP_DEG`/`ARC_SAMPLE_STEP_DEG` block added in Task 4
-stays). Delete the line:
+In `config.py`, delete the line:
 
 ```python
 NUM_STRATEGY_B = 3  # number of radial fan attempts before giving up
 ```
 
-(keep `RADIAL_FAN_DIRECTIONS` and `RADIAL_FAN_STEP_M`; the fan itself remains
-as fallback).
-
-- [ ] **Step 4: Update `gui/params.py`**
-
-Replace the spec line:
+(keep `RADIAL_FAN_DIRECTIONS` and `RADIAL_FAN_STEP_M`). Replace the
+`WRAP_STEP_M` comment paragraph (starting `# Circle-wrap straight step (m).`)
+and its assignment with:
 
 ```python
-    {'key': 'wrap_step_m',           'label': 'Wrap Step (m)',       'group': 'advanced', 'min': 500.0,  'max': 20000.0, 'default': config.WRAP_STEP_M},
+# DEPRECATED: the planner no longer reads this (arc-hop successors replaced
+# the wrap step). Kept only because gui/params.py still exposes a slider that
+# writes it; delete together with the GUI panel update.
+WRAP_STEP_M = 10000.0
 ```
 
-with:
-
-```python
-    {'key': 'arc_waypoint_step_deg', 'label': 'Arc Step (deg)',      'group': 'advanced', 'min': 10.0,   'max': 45.0,    'default': config.ARC_WAYPOINT_STEP_DEG},
-```
-
-and in `apply_overrides` replace:
-
-```python
-    config.WRAP_STEP_M = float(values['wrap_step_m'])
-```
-
-with:
-
-```python
-    config.ARC_WAYPOINT_STEP_DEG = float(values['arc_waypoint_step_deg'])
-```
-
-- [ ] **Step 5: Verify nothing else references the deleted names**
-
-Run: `grep -rn "WRAP_STEP_M\|NUM_STRATEGY_B\|_on_circle_boundary\|num_strategy_b" --include="*.py" . | grep -v __pycache__`
-Expected: no output.
+Verify: `grep -rn "NUM_STRATEGY_B\|num_strategy_b" --include="*.py" . | grep -v __pycache__` → no output.
+Verify: `grep -rln "WRAP_STEP_M" --include="*.py" . | grep -v __pycache__` → exactly `./config.py` and `./gui/params.py`.
 
 - [ ] **Step 6: Run the whole suite**
 
 Run: `python -m pytest -q`
-Expected: 24 passed
+Expected: 22 passed
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add config.py gui/params.py tests/gui_params_test.py
-git commit -m "refactor: drop WRAP_STEP_M/NUM_STRATEGY_B; GUI exposes arc step"
+git add core/kinodynamic_astar.py config.py tests/kinodynamic_arc_hop_test.py
+git commit -m "feat: fan augments boundary-riding states; re-enable smoothing"
 ```
 
 ---
 
-### Task 7: Hard-seed integration + discretisation-invariance tests
+### Task 6: Hard-seed integration + discretisation-invariance tests
 
 **Files:**
 - Create: `tests/hard_seeds_test.py`
@@ -1030,7 +983,7 @@ a corridor (check `_max_clear_wrap` conservatism first: try
 - [ ] **Step 3: Run the whole suite**
 
 Run: `python -m pytest -q`
-Expected: 29 passed
+Expected: 27 passed
 
 - [ ] **Step 4: Commit**
 
@@ -1041,7 +994,7 @@ git commit -m "test: hard-seed regression gates + arc-step invariance"
 
 ---
 
-### Task 8: Docs + 15-seed batch verification
+### Task 7: Docs + 15-seed batch verification
 
 **Files:**
 - Modify: `CLAUDE.md`
@@ -1167,7 +1120,8 @@ git commit -m "docs: describe arc-hop successors (WRAP_STEP_M removed)"
 
 ## Verification checklist (after all tasks)
 
-- `python -m pytest -q` → 29 passed
-- `grep -rn "WRAP_STEP_M" --include="*.py" .` → empty
+- `python -m pytest -q` → 27 passed
+- `grep -rn "NUM_STRATEGY_B\|num_strategy_b\|_on_circle_boundary" --include="*.py" . | grep -v __pycache__` → empty
+- `grep -rln "WRAP_STEP_M" --include="*.py" . | grep -v __pycache__` → only `./config.py` (deprecated constant) and `./gui/params.py` (GUI update deferred)
 - `python main.py` still runs the 16-scenario harness without errors
-- Batch table from Task 8 Step 4 shows no seed >5% worse than best-of-two baselines
+- Batch table from Task 7 Step 4 shows no seed >5% worse than best-of-two baselines
