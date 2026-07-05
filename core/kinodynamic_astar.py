@@ -100,6 +100,8 @@ class KinodynamicAstar:
         # Search route before arc expansion/smoothing (set on success);
         # used to verify discretisation invariance.
         self.raw_route = None
+
+        self.num_strategy_b = config.NUM_STRATEGY_B
     
     def heuristic(self, state, goal_state):
         """
@@ -158,7 +160,14 @@ class KinodynamicAstar:
             successors.append((State(node, heading_to_node), cost))
 
         if successors and not riding:
-            return successors
+            # Escape valve: while the goal is occluded, a few budgeted fan
+            # expansions provide cheap reorientation moves (e.g. an adverse
+            # initial heading) that tangent/vertex candidates cannot express;
+            # without this the search can commit to a long detour (seed 319:
+            # 978.8 km vs 728.9 km with the valve).
+            if self._check_collision(P, goal_wp) or self.num_strategy_b <= 0:
+                return successors
+            self.num_strategy_b -= 1
 
         # --- Strategy B: radial fan — pure fallback when no candidate is
         # valid, PLUS extra leave-the-boundary options while riding a circle:

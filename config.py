@@ -52,11 +52,12 @@ ARC_WAYPOINT_STEP_DEG = 30.0
 # Angular step (deg) for sampling arc clearance during search.
 ARC_SAMPLE_STEP_DEG = 5.0
 
-# Tolerance (m) by which a segment may graze inside a circle's INFLATED boundary.
-# Tangent / wrap segments ride that boundary, so discretisation dips them a few
-# metres inside the inflation band; this never approaches the RAW obstacle (the
-# band is ~13 km thick). Only deeper penetration is treated as a collision.
-CIRCLE_GRAZE_TOL_M = 50.0
+# Tolerance (m) by which a segment may graze inside a circle's INFLATED
+# boundary. Arc-hop tangent chords touch the boundary EXACTLY (float error is
+# millimetres), so this only absorbs numeric noise; it must stay far below
+# any real intrusion. The old wrap-step mechanism needed 50 m because its
+# chords dipped metres inside; arc-hop removed that need.
+CIRCLE_GRAZE_TOL_M = 1.0
 
 # ====== COORDINATE SYSTEM ======
 # Map bounds (meters) for simulation
@@ -87,6 +88,12 @@ TURN_PENALTY_WEIGHT = 0  # 4000.0
 # Fallback strategy for A* when no valid successors are found: radial fan of directions
 RADIAL_FAN_DIRECTIONS = 3  # number of directions in the fan
 RADIAL_FAN_STEP_M = 1000.0  # step size for the radial fan
+
+# Escape-valve budget: number of expansions that may ALSO get the radial fan
+# while the goal is line-of-sight blocked (cheap reorientation moves, e.g.
+# recovering from an adverse initial heading). Fallback/riding fans are not
+# budgeted.
+NUM_STRATEGY_B = 3
 
 # ====== VISUALIZATION ======
 PLOT_BUFFER_ZONES = True

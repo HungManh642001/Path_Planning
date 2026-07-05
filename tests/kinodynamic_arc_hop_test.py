@@ -144,3 +144,24 @@ def test_departure_state_does_not_refire_same_ride():
     # but the same point reached WITHOUT arc_from is a fresh ride-start
     fresh = astar.State(dep_state.waypoint, dep_state.heading)
     assert planner._arc_hop_successors(fresh) != []
+
+
+def test_escape_valve_fan_when_goal_occluded():
+    """With the goal LOS-blocked and budget remaining, the fan augments
+    Strategy A successors; once the budget is exhausted it does not."""
+    pre = prep.prepare_scenario(synthetic_circle_scenario())
+    planner = astar.KinodynamicAstar(pre)
+    st = astar.State(pre['start_state']['waypoint'], pre['start_state']['heading'])
+    fan_dist = 2 * config.R * math.tan(config.ALPHA_MAX_RAD / 2) + config.RADIAL_FAN_STEP_M
+
+    succ = planner.get_next_states(st)
+    assert any(s_.arc_from is None
+               and math.isclose(math.dist(s_.waypoint, st.waypoint), fan_dist, rel_tol=1e-9)
+               for s_, _ in succ), "budgeted fan missing at goal-occluded state"
+    assert planner.num_strategy_b == config.NUM_STRATEGY_B - 1
+
+    planner.num_strategy_b = 0
+    succ2 = planner.get_next_states(st)
+    assert not any(s_.arc_from is None
+                   and math.isclose(math.dist(s_.waypoint, st.waypoint), fan_dist, rel_tol=1e-9)
+                   for s_, _ in succ2), "fan fired with exhausted budget"
