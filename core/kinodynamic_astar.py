@@ -102,7 +102,18 @@ class KinodynamicAstar:
         self.raw_route = None
 
         self.num_strategy_b = config.NUM_STRATEGY_B
-    
+
+        # Lazy memo of arc-hop departure candidates, keyed by
+        # (circle_index, sense). The candidate list (bitangent departures to
+        # every other circle + departure points to every polygon vertex and
+        # the goal) depends only on which circle/sense is being ridden, not
+        # on the current position P, so it is computed once per (circle, s)
+        # and reused on every later ride of that same circle+sense. Keyed by
+        # index into self.scenario['circle_obstacles'] (hashable and stable;
+        # the (center, radius) tuples themselves are also hashable but the
+        # index avoids float-tuple hashing on every ride).
+        self._dep_cache = {}
+
     def heuristic(self, state, goal_state):
         """
         Admissible Euclidean lower-bound heuristic.
@@ -212,7 +223,7 @@ class KinodynamicAstar:
         h = current_state.heading
         goal_wp = self.goal_state.waypoint
         successors = []
-        for center, radius in self.scenario['circle_obstacles']:
+        for idx, (center, radius) in enumerate(self.scenario['circle_obstacles']):
             s = ag.riding_sense(P, h, center, radius)
             if s == 0:
                 continue
@@ -229,19 +240,23 @@ class KinodynamicAstar:
             max_wrap = self._max_clear_wrap(center, radius, phi0, s)
             if max_wrap <= 1e-6:
                 continue
-            deps = []
-            for c2, r2 in self.scenario['circle_obstacles']:
-                if c2 == center and r2 == radius:
-                    continue
-                deps.extend(dep for dep, _arr in
-                            ag.bitangent_departures(center, radius, c2, r2, s))
-            for vertex in self._poly_vertices:
-                dep = ag.departure_point(vertex, center, radius, s)
+            cache_key = (idx, s)
+            deps = self._dep_cache.get(cache_key)
+            if deps is None:
+                deps = []
+                for c2, r2 in self.scenario['circle_obstacles']:
+                    if c2 == center and r2 == radius:
+                        continue
+                    deps.extend(dep for dep, _arr in
+                                ag.bitangent_departures(center, radius, c2, r2, s))
+                for vertex in self._poly_vertices:
+                    dep = ag.departure_point(vertex, center, radius, s)
+                    if dep is not None:
+                        deps.append(dep)
+                dep = ag.departure_point(goal_wp, center, radius, s)
                 if dep is not None:
                     deps.append(dep)
-            dep = ag.departure_point(goal_wp, center, radius, s)
-            if dep is not None:
-                deps.append(dep)
+                self._dep_cache[cache_key] = deps
             for dep in deps:
                 dphi = ag.arc_angle(P, dep, center, s)
                 if dphi < 1e-3 or dphi > max_wrap:
@@ -260,12 +275,16 @@ class KinodynamicAstar:
         r_check = radius * _ARC_CLEAR_BULGE
         step = math.radians(config.ARC_SAMPLE_STEP_DEG)
         n = int(round(2.0 * math.pi / step))
-        prev = (center[0] + r_check * math.cos(phi0),
-                center[1] + r_check * math.sin(phi0))
+        # Advance the sample point by rotating a unit vector with the fixed
+        # per-step rotation matrix instead of recomputing cos/sin of the full
+        # swept angle (phi0 + s*k*step) at every sample; same angles, same
+        # bulge, same step, just fewer trig calls (2 total instead of 2*n).
+        cs, sn = math.cos(s * step), math.sin(s * step)
+        ux, uy = math.cos(phi0), math.sin(phi0)
+        prev = (center[0] + r_check * ux, center[1] + r_check * uy)
         for k in range(1, n + 1):
-            a = phi0 + s * k * step
-            p = (center[0] + r_check * math.cos(a),
-                 center[1] + r_check * math.sin(a))
+            ux, uy = ux * cs - uy * sn, ux * sn + uy * cs
+            p = (center[0] + r_check * ux, center[1] + r_check * uy)
             if (not self._in_bounds(p)
                     or not self._check_collision(prev, p, skip_circle=(center, radius))):
                 return (k - 1) * step
@@ -346,6 +365,18 @@ class KinodynamicAstar:
                 continue
             
             self.closed_set.add(current)
+
+            # Escape-valve re-arm: the fan's budget (NUM_STRATEGY_B) is
+            # global and never replenished, so a map that needs reorientation
+            # moves in more than one region can spend the whole budget early
+            # and then starve (seed 963: open set exhausts to 0 under budget
+            # 3, but succeeds if the budget is unlimited). Re-arm only when
+            # the frontier is nearly dead (<=1 state left right after a pop)
+            # AND the budget is exhausted, so the per-phase cap of 3 still
+            # suppresses fan noise everywhere the search is healthy; it only
+            # gets a fresh budget as a last resort against outright failure.
+            if len(self.open_set) <= 1 and self.num_strategy_b <= 0:
+                self.num_strategy_b = config.NUM_STRATEGY_B
 
             # Check if reached goal
             dist_to_goal = math.sqrt(

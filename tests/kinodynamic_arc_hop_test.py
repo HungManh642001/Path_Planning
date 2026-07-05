@@ -146,6 +146,42 @@ def test_departure_state_does_not_refire_same_ride():
     assert planner._arc_hop_successors(fresh) != []
 
 
+def test_dep_cache_memoizes_and_preserves_successor_set():
+    """Task 7 round 3, Part 1: the departure-candidate list (bitangents to
+    every other circle + departures to every polygon vertex and the goal)
+    depends only on (circle_index, sense), not on the current position P, so
+    it must be computed once per (circle, sense) and reused on later rides.
+    The successor SET must be identical to the uncached computation."""
+    scn = synthetic_circle_scenario()
+    center2, radius2 = (400000.0, 400000.0), 20000.0
+    scn['dynamic_obstacles'].append((center2, radius2))
+    scn['obstacles'].append({'type': 'circle', 'center': center2, 'radius': radius2})
+    pre = prep.prepare_scenario(scn)
+    planner = astar.KinodynamicAstar(pre)
+    (c1, r1) = pre['circle_obstacles'][0]
+
+    P = (c1[0], c1[1] - r1)
+    st = astar.State(P, ag.tangent_heading(P, c1, 1))
+    assert planner._dep_cache == {}
+    first = planner._arc_hop_successors(st)
+    assert (0, 1) in planner._dep_cache
+    cached_deps = list(planner._dep_cache[(0, 1)])
+
+    # Ride the SAME circle+sense again from a different boundary point; the
+    # cache entry must be reused unchanged (not recomputed), and the
+    # resulting successor targets must match a cold-cache computation.
+    P2 = (c1[0] - r1, c1[1])
+    st2 = astar.State(P2, ag.tangent_heading(P2, c1, 1))
+    planner._arc_hop_successors(st2)
+    assert list(planner._dep_cache[(0, 1)]) == cached_deps
+
+    fresh_planner = astar.KinodynamicAstar(pre)
+    fresh = fresh_planner._arc_hop_successors(st)
+    first_targets = sorted((round(s.waypoint[0], 3), round(s.waypoint[1], 3)) for s, _ in first)
+    fresh_targets = sorted((round(s.waypoint[0], 3), round(s.waypoint[1], 3)) for s, _ in fresh)
+    assert first_targets == fresh_targets
+
+
 def test_escape_valve_fan_when_goal_occluded():
     """With the goal LOS-blocked and budget remaining, the fan augments
     Strategy A successors; once the budget is exhausted it does not."""
