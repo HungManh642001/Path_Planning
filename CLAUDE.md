@@ -65,12 +65,21 @@ gui/                      interactive Tk app (config | map | results)
 ### How the A\* search actually works (core/kinodynamic_astar.py)
 
 `get_next_states` generates successors dynamically (no precomputed graph):
-(1) **wrap-step** — a straight, heading-preserving step off a circle boundary so
-the search can keep tangenting around it; (2) **Strategy A** — tangent points to
-each circle (`spatial_utils.circle_tangent_points`) + polygon hull vertices + the
-goal, each accepted only with a valid turn and a clear segment; (3) **Strategy B**
-— an `±α_max` radial fan fallback when no Strategy-A candidate is valid.
-`validate_kinodynamics` enforces the max-turn-angle and minimum-straight-segment
+(1) **arc-hop** — from a state riding an inflated circle's boundary (tangent
+arrival), hop along the boundary arc to each tangent-continuous departure
+point (bitangents to other circles, tangents from polygon vertices / the
+goal) at true arc-length cost; the arc is expanded into circumscribed-polygon
+waypoints (`config.ARC_WAYPOINT_STEP_DEG`) only at path reconstruction, so
+search connectivity has no wrap discretisation parameter; (2) **Strategy A**
+— tangent points to each circle (`spatial_utils.circle_tangent_points`) +
+polygon hull vertices + the goal, each accepted only with a valid turn and a
+clear segment; (3) **Strategy B** — an `±α_max` radial fan that fires when
+(a) no successor exists (pure fallback), (b) the state is riding a circle
+boundary (leave-the-boundary options between departure points), or (c) the
+goal is line-of-sight blocked, budgeted globally by `config.NUM_STRATEGY_B`
+(an escape valve against long detours from an adverse initial heading). In
+open water with valid Strategy-A candidates and no boundary-riding, the fan
+does not fire. `validate_kinodynamics` enforces the max-turn-angle and minimum-straight-segment
 (đoản trình) constraints. `search()` accepts the goal only when both within
 `GOAL_THRESHOLD` **and** the arrival heading is within `α_max` of `goal_heading`
 (so the terminal turn onto the approach is feasible). `smooth_path` re-validates

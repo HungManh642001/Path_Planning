@@ -95,14 +95,22 @@ nothing imports `main.py` / `launch_gui.py`.
 ## How it works
 
 **Search (`core/kinodynamic_astar.py`).** A state is `(waypoint, heading)`.
-`get_next_states` proposes, in order: a straight *wrap-step* off a circle
-boundary; tangent points to each circle + polygon corners + the goal (each
-accepted only with a valid turn and a clear segment); and an `±α_max` radial fan
-as a fallback. `validate_kinodynamics` enforces the max-turn-angle and the
-minimum straight-segment (đoản trình) length. The goal is accepted only when the
-state is within `GOAL_THRESHOLD` **and** its heading is within `α_max` of the
-approach heading. `smooth_path` removes redundant waypoints, re-checking the turn
-at the following waypoint so it never bends a turn past the limit.
+`get_next_states` proposes, in order: **arc-hop** successors that ride an
+inflated circle's boundary from a tangent arrival to each tangent-continuous
+departure point (bitangents to other circles, tangents from polygon corners
+or the goal), at true arc-length cost — the arc is only expanded into
+circumscribed-polygon waypoints (`ARC_WAYPOINT_STEP_DEG`) when the path is
+reconstructed, so search connectivity has no wrap discretisation parameter;
+tangent points to each circle + polygon corners + the goal (each accepted
+only with a valid turn and a clear segment); and an `±α_max` radial fan that
+fires as a pure fallback, while riding a circle boundary (leave-the-boundary
+options), or — budgeted by `NUM_STRATEGY_B` — as an escape valve when the goal
+is line-of-sight blocked. `validate_kinodynamics` enforces the max-turn-angle
+and the minimum straight-segment (đoản trình) length. The goal is accepted
+only when the state is within `GOAL_THRESHOLD` **and** its heading is within
+`α_max` of the approach heading. `smooth_path` removes redundant waypoints,
+re-checking the turn at the following waypoint so it never bends a turn past
+the limit.
 
 **Collision checks.** Circles use point-to-segment distance (with a small graze
 tolerance); polygons use a DE-9IM interior test that allows touching / boundary
