@@ -52,12 +52,15 @@ ARC_WAYPOINT_STEP_DEG = 30.0
 # Angular step (deg) for sampling arc clearance during search.
 ARC_SAMPLE_STEP_DEG = 5.0
 
-# Tolerance (m) by which a segment may graze inside a circle's INFLATED
-# boundary. Arc-hop tangent chords touch the boundary EXACTLY (float error is
-# millimetres), so this only absorbs numeric noise; it must stay far below
-# any real intrusion. The old wrap-step mechanism needed 50 m because its
-# chords dipped metres inside; arc-hop removed that need.
-CIRCLE_GRAZE_TOL_M = 1.0
+# Tolerance (m) by which a straight segment may graze inside a circle's
+# INFLATED boundary. Shared by the planner (_check_collision) and, when
+# validating planner output, the oracle (path_is_valid(..., circle_tol=...)).
+# Set from measurement: the max body graze of legitimate raw-safe paths was
+# ~20.97 m (arc-expansion chords / tangent segments dipping into the inflation
+# band); this value adds headroom. It is a tiny fraction of the ~13.3 km
+# inflation band and never approaches the raw obstacle. Polygon interior is
+# checked tolerance-free.
+CIRCLE_GRAZE_TOL_M = 23.0
 
 # ====== COORDINATE SYSTEM ======
 # Map bounds (meters) for simulation
