@@ -67,3 +67,47 @@ def test_synthetic_circle_end_to_end_valid():
     assert dist < 430000.0
     # raw_route captured for the discretisation-invariance test (Task 7)
     assert result['planner'].raw_route is not None
+
+
+def open_water_scenario():
+    return {
+        'start': (100000.0, 250000.0), 'start_heading': 0.0,
+        'goal': (400000.0, 250000.0), 'goal_heading': 0.0,
+        'islands': [], 'dynamic_obstacles': [], 'obstacles': [],
+    }
+
+
+def test_no_radial_fan_in_open_water():
+    """Not riding any boundary and the goal candidate is valid: the fan must
+    NOT fire (it only adds branching noise there)."""
+    pre = prep.prepare_scenario(open_water_scenario())
+    planner = astar.KinodynamicAstar(pre)
+    st = astar.State(pre['start_state']['waypoint'], pre['start_state']['heading'])
+    succ = planner.get_next_states(st)
+    assert len(succ) == 1
+    assert math.dist(succ[0][0].waypoint, pre['goal_state']['waypoint']) < 1.0
+
+
+def test_fan_added_while_riding_boundary():
+    """Riding a circle boundary: fan successors appear IN ADDITION to
+    arc-hops, so the search can leave the boundary between tangent
+    departure points."""
+    pre = prep.prepare_scenario(synthetic_circle_scenario())
+    planner = astar.KinodynamicAstar(pre)
+    (_, r_inf), = pre['circle_obstacles']
+    P = (CENTER[0], CENTER[1] - r_inf)  # due south, heading east => riding CCW
+    st = astar.State(P, 0.0)
+    succ = planner.get_next_states(st)
+    assert any(s_.arc_from is not None for s_, _ in succ)  # arc-hops present
+    fan_dist = 2 * config.R * math.tan(config.ALPHA_MAX_RAD / 2) + config.RADIAL_FAN_STEP_M
+    assert any(s_.arc_from is None
+               and math.isclose(math.dist(s_.waypoint, P), fan_dist, rel_tol=1e-9)
+               for s_, _ in succ), "fan successors missing at a riding state"
+
+
+def test_plan_trajectory_smooths_output():
+    """Open water: the smoothed path is the minimal W1->goal route."""
+    pre = prep.prepare_scenario(open_water_scenario())
+    result = astar.plan_trajectory(pre)
+    assert result['success']
+    assert len(result['path']) <= 3

@@ -122,6 +122,8 @@ class KinodynamicAstar:
 
         # --- Arc-hop: ride any circle boundary this state is tangent to ---
         successors.extend(self._arc_hop_successors(current_state))
+        riding = any(ag.riding_sense(P, h, center, radius) != 0
+                     for center, radius in self.scenario['circle_obstacles'])
 
         # --- Strategy A: dynamic tangent / vertex / goal candidates ---
         goal_wp = self.goal_state.waypoint
@@ -155,16 +157,14 @@ class KinodynamicAstar:
             cost = math.hypot(dx, dy) + config.TURN_PENALTY_WEIGHT * turn
             successors.append((State(node, heading_to_node), cost))
 
-        # --- Strategy B: radial fan fallback  ---
-        strategy_b = False
-        if not successors or self._check_collision(P, goal_wp):
-            strategy_b = True
-        elif not self._check_collision(P, goal_wp) and self.num_strategy_b > 0:
-            self.num_strategy_b -= 1
-            strategy_b = True
-
-        if not strategy_b:
+        if successors and not riding:
             return successors
+
+        # --- Strategy B: radial fan — pure fallback when no candidate is
+        # valid, PLUS extra leave-the-boundary options while riding a circle:
+        # following the boundary to a tangent departure point is not always
+        # optimal, so the fan lets the search leave the boundary between
+        # departure points. ---
             
         num_directions = config.RADIAL_FAN_DIRECTIONS
         distance = 2 * self.R * math.tan(self.alpha_max_rad / 2) + config.RADIAL_FAN_STEP_M
@@ -196,8 +196,8 @@ class KinodynamicAstar:
         the departure point where leaving is tangent-continuous. The emitted
         state is the departure point itself; the straight leg to the target is
         found by Strategy A on the next expansion (zero turn there). Cost is
-        the true arc length. Replaces the old WRAP_STEP_M straight step; the
-        search graph no longer depends on any wrap discretisation.
+        the true arc length. Replaces the old discretized wrap-step model;
+        the search graph no longer depends on any wrap discretisation.
         """
         P = current_state.waypoint
         h = current_state.heading
@@ -315,7 +315,6 @@ class KinodynamicAstar:
             self.start_state
         ))
         self.g_scores[self.start_state] = 0
-        self.num_strategy_b = config.NUM_STRATEGY_B  # Allow a few radial fan expansions even if goal is reachable
 
         while self.open_set and self.iteration_count < self.max_iterations:
             if _budget is not None and (time.perf_counter() - _start) > _budget:
@@ -504,8 +503,8 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
             print("No path found")
     
     # Smooth path if found
-    # if path:
-    #     path = planner.smooth_path(path)
+    if path:
+        path = planner.smooth_path(path)
     
     return {
         'path': path,

@@ -38,15 +38,10 @@ SAFE_MARGIN = 10000.0
 # (preserving the arc-clearance guarantee) for the convex-ish islands here.
 POLYGON_MITRE_LIMIT = 5.0
 
-# Circle-wrap straight step (m). When a waypoint sits ON a circle boundary (a
-# tangent point), the planner can no longer tangent further around that circle
-# (a point on the circle has no tangent). This adds one extra successor: fly
-# STRAIGHT, keeping the current heading, for WRAP_STEP_M. Because it is straight
-# (no turn), it needs no đoản trình arc reservation; it steps just off the circle
-# so the next expansion can tangent further around it — wrapping the circle with
-# a chain of short tangent segments (a circumscribed polygon) without an explicit
-# arc model. Smaller = finer wrap.
-WRAP_STEP_M = 10000.0  # 2000
+# DEPRECATED: the planner no longer reads this (arc-hop successors replaced
+# the wrap step). Kept only because gui/params.py still exposes a slider that
+# writes it; delete together with the GUI panel update.
+WRAP_STEP_M = 10000.0
 
 # Angular step (deg) for expanding a circle-boundary arc into waypoint
 # vertices (circumscribed polygon) at OUTPUT time. Max supported 45. Search
@@ -90,9 +85,8 @@ GOAL_THRESHOLD = 1000.0  # meters; reachable given STATE_POS_QUANTUM
 TURN_PENALTY_WEIGHT = 0  # 4000.0
 
 # Fallback strategy for A* when no valid successors are found: radial fan of directions
-RADIAL_FAN_DIRECTIONS = 3  # number of directions in the fan   
+RADIAL_FAN_DIRECTIONS = 3  # number of directions in the fan
 RADIAL_FAN_STEP_M = 1000.0  # step size for the radial fan
-NUM_STRATEGY_B = 3  # number of radial fan attempts before giving up
 
 # ====== VISUALIZATION ======
 PLOT_BUFFER_ZONES = True
