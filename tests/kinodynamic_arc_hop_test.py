@@ -201,3 +201,32 @@ def test_escape_valve_fan_when_goal_occluded():
     assert not any(s_.arc_from is None
                    and math.isclose(math.dist(s_.waypoint, st.waypoint), fan_dist, rel_tol=1e-9)
                    for s_, _ in succ2), "fan fired with exhausted budget"
+
+
+def test_check_fixed_legs_detects_blocked_start_and_goal():
+    """A circle straddling a fixed leg makes that leg's check fail with the
+    matching reason; clear legs pass."""
+    # Start O at (0,0), goal T at (400k,0); W1..W_{n-1} body sits mid-map.
+    scn = {
+        'start': (0.0, 0.0), 'start_heading': 0.0,
+        'goal': (400000.0, 0.0), 'goal_heading': 0.0,
+        'islands': [], 'dynamic_obstacles': [], 'obstacles': [],
+    }
+    pre = prep.prepare_scenario(scn)
+    planner = astar.KinodynamicAstar(pre)
+    body = [((100000.0, 0.0), 0.0), ((300000.0, 0.0), 0.0)]
+
+    # No obstacles -> both legs clear.
+    assert planner._check_fixed_legs(body) == (True, None)
+
+    # Put an inflated circle on the O->W1 leg (near O, off the body).
+    Ocirc = (pre['start_pos'][0] + 50000.0, 0.0)
+    planner.scenario['circle_obstacles'] = [(Ocirc, 20000.0)]
+    ok, reason = planner._check_fixed_legs(body)
+    assert ok is False and reason == 'start_leg_blocked'
+
+    # Only a circle on the W_{n-1}->T leg (near T).
+    Tcirc = (pre['goal_pos'][0] - 50000.0, 0.0)
+    planner.scenario['circle_obstacles'] = [(Tcirc, 20000.0)]
+    ok, reason = planner._check_fixed_legs(body)
+    assert ok is False and reason == 'goal_leg_blocked'

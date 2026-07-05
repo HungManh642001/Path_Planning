@@ -322,6 +322,27 @@ class KinodynamicAstar:
                     return False
         return True
 
+    def _check_fixed_legs(self, path):
+        """Validate the fixed takeoff/approach legs O->W1 and W_{n-1}->T.
+
+        These legs are flown but lie outside the A* search (which runs
+        W1..W_{n-1}); nothing else collision-checks them. They are determined
+        by the mission spec (start/goal points, headings, L0/DSS) and cannot be
+        rerouted, so a blocked leg means the mission is infeasible as posed.
+        Returns (ok, reason) with reason in {'start_leg_blocked',
+        'goal_leg_blocked', None}. Uses the same _check_collision (and thus the
+        same CIRCLE_GRAZE_TOL_M / polygon-interior semantics) as the body.
+        """
+        if not path:
+            return True, None
+        O = self.scenario['start_pos']
+        T = self.scenario['goal_pos']
+        if not self._check_collision(O, path[0][0]):
+            return False, 'start_leg_blocked'
+        if not self._check_collision(path[-1][0], T):
+            return False, 'goal_leg_blocked'
+        return True, None
+
     def _in_bounds(self, point):
         """Check if point is within map bounds"""
         x, y = point
