@@ -38,21 +38,26 @@ SAFE_MARGIN = 10000.0
 # (preserving the arc-clearance guarantee) for the convex-ish islands here.
 POLYGON_MITRE_LIMIT = 5.0
 
-# Circle-wrap straight step (m). When a waypoint sits ON a circle boundary (a
-# tangent point), the planner can no longer tangent further around that circle
-# (a point on the circle has no tangent). This adds one extra successor: fly
-# STRAIGHT, keeping the current heading, for WRAP_STEP_M. Because it is straight
-# (no turn), it needs no đoản trình arc reservation; it steps just off the circle
-# so the next expansion can tangent further around it — wrapping the circle with
-# a chain of short tangent segments (a circumscribed polygon) without an explicit
-# arc model. Smaller = finer wrap.
-WRAP_STEP_M = 10000.0  # 2000
+# DEPRECATED: the planner no longer reads this (arc-hop successors replaced
+# the wrap step). Kept only because gui/params.py still exposes a slider that
+# writes it; delete together with the GUI panel update.
+WRAP_STEP_M = 10000.0
 
-# Tolerance (m) by which a segment may graze inside a circle's INFLATED boundary.
-# Tangent / wrap segments ride that boundary, so discretisation dips them a few
-# metres inside the inflation band; this never approaches the RAW obstacle (the
-# band is ~13 km thick). Only deeper penetration is treated as a collision.
-CIRCLE_GRAZE_TOL_M = 50.0
+# Angular step (deg) for expanding a circle-boundary arc into waypoint
+# vertices (circumscribed polygon) at OUTPUT time. Max supported 45. Search
+# connectivity does NOT depend on it: arc clearance is checked at the fixed
+# 45-deg bulge radius r/cos(pi/8), which covers any expansion step <= 45 deg.
+ARC_WAYPOINT_STEP_DEG = 30.0
+
+# Angular step (deg) for sampling arc clearance during search.
+ARC_SAMPLE_STEP_DEG = 5.0
+
+# Tolerance (m) by which a segment may graze inside a circle's INFLATED
+# boundary. Arc-hop tangent chords touch the boundary EXACTLY (float error is
+# millimetres), so this only absorbs numeric noise; it must stay far below
+# any real intrusion. The old wrap-step mechanism needed 50 m because its
+# chords dipped metres inside; arc-hop removed that need.
+CIRCLE_GRAZE_TOL_M = 1.0
 
 # ====== COORDINATE SYSTEM ======
 # Map bounds (meters) for simulation
@@ -81,9 +86,14 @@ GOAL_THRESHOLD = 1000.0  # meters; reachable given STATE_POS_QUANTUM
 TURN_PENALTY_WEIGHT = 0  # 4000.0
 
 # Fallback strategy for A* when no valid successors are found: radial fan of directions
-RADIAL_FAN_DIRECTIONS = 3  # number of directions in the fan   
+RADIAL_FAN_DIRECTIONS = 3  # number of directions in the fan
 RADIAL_FAN_STEP_M = 1000.0  # step size for the radial fan
-NUM_STRATEGY_B = 3  # number of radial fan attempts before giving up
+
+# Escape-valve budget: number of expansions that may ALSO get the radial fan
+# while the goal is line-of-sight blocked (cheap reorientation moves, e.g.
+# recovering from an adverse initial heading). Fallback/riding fans are not
+# budgeted.
+NUM_STRATEGY_B = 3
 
 # ====== VISUALIZATION ======
 PLOT_BUFFER_ZONES = True

@@ -13,11 +13,17 @@ from shapely import STRtree
 import config
 import core.spatial_utils as su
 import core.preprocessing as prep
+import core.arc_geometry as ag
 
 
 def _angle_diff(a, b):
     """Smallest signed difference a-b normalised to [-pi, pi]."""
     return math.atan2(math.sin(a - b), math.cos(a - b))
+
+
+# Fixed clearance bulge for riding arcs: circumscribed-polygon vertices for
+# any expansion step <= 45 deg stay within r / cos(pi/8) of the center.
+_ARC_CLEAR_BULGE = 1.0 / math.cos(math.pi / 8.0)
 
 
 class State:
@@ -29,6 +35,7 @@ class State:
         self.parent = None
         self.g_cost = float('inf')  # Cost from start
         self.h_cost = 0  # Heuristic to goal
+        self.arc_from = None  # (center, radius, arc_start_pt, s) if reached via arc hop
     
     def __hash__(self):
         return hash(su.state_to_tuple(self.waypoint, self.heading))
@@ -89,7 +96,24 @@ class KinodynamicAstar:
         
         # Track if search failed
         self.search_failed = False
-    
+
+        # Search route before arc expansion/smoothing (set on success);
+        # used to verify discretisation invariance.
+        self.raw_route = None
+
+        self.num_strategy_b = config.NUM_STRATEGY_B
+
+        # Lazy memo of arc-hop departure candidates, keyed by
+        # (circle_index, sense). The candidate list (bitangent departures to
+        # every other circle + departure points to every polygon vertex and
+        # the goal) depends only on which circle/sense is being ridden, not
+        # on the current position P, so it is computed once per (circle, s)
+        # and reused on every later ride of that same circle+sense. Keyed by
+        # index into self.scenario['circle_obstacles'] (hashable and stable;
+        # the (center, radius) tuples themselves are also hashable but the
+        # index avoids float-tuple hashing on every ride).
+        self._dep_cache = {}
+
     def heuristic(self, state, goal_state):
         """
         Admissible Euclidean lower-bound heuristic.
@@ -109,16 +133,10 @@ class KinodynamicAstar:
         P = current_state.waypoint
         h = current_state.heading
 
-        # --- Wrap step: straight continuation off a circle boundary ---
-        # A point ON a circle has no tangent to that circle, so the planner cannot
-        # tangent further around it. Flying STRAIGHT (same heading) for WRAP_STEP_M
-        # steps just off the circle so the next expansion can tangent further along
-        # it. This step is zero-turn, so it carries no đoản trình arc reservation.
-        if self._on_circle_boundary(P):
-            nx = (P[0] + config.WRAP_STEP_M * math.cos(h),
-                  P[1] + config.WRAP_STEP_M * math.sin(h))
-            if self._in_bounds(nx) and self._check_collision(P, nx):
-                successors.append((State(nx, h), config.WRAP_STEP_M))
+        # --- Arc-hop: ride any circle boundary this state is tangent to ---
+        successors.extend(self._arc_hop_successors(current_state))
+        riding = any(ag.riding_sense(P, h, center, radius) != 0
+                     for center, radius in self.scenario['circle_obstacles'])
 
         # --- Strategy A: dynamic tangent / vertex / goal candidates ---
         goal_wp = self.goal_state.waypoint
@@ -152,16 +170,21 @@ class KinodynamicAstar:
             cost = math.hypot(dx, dy) + config.TURN_PENALTY_WEIGHT * turn
             successors.append((State(node, heading_to_node), cost))
 
-        # --- Strategy B: radial fan fallback  ---
-        strategy_b = False
-        if not successors or self._check_collision(P, goal_wp):
-            strategy_b = True
-        elif not self._check_collision(P, goal_wp) and self.num_strategy_b > 0:
+        if successors and not riding:
+            # Escape valve: while the goal is occluded, a few budgeted fan
+            # expansions provide cheap reorientation moves (e.g. an adverse
+            # initial heading) that tangent/vertex candidates cannot express;
+            # without this the search can commit to a long detour (seed 319:
+            # 978.8 km vs 728.9 km with the valve).
+            if self._check_collision(P, goal_wp) or self.num_strategy_b <= 0:
+                return successors
             self.num_strategy_b -= 1
-            strategy_b = True
 
-        if not strategy_b:
-            return successors
+        # --- Strategy B: radial fan — pure fallback when no candidate is
+        # valid, PLUS extra leave-the-boundary options while riding a circle:
+        # following the boundary to a tangent departure point is not always
+        # optimal, so the fan lets the search leave the boundary between
+        # departure points. ---
             
         num_directions = config.RADIAL_FAN_DIRECTIONS
         distance = 2 * self.R * math.tan(self.alpha_max_rad / 2) + config.RADIAL_FAN_STEP_M
@@ -185,21 +208,107 @@ class KinodynamicAstar:
 
         return successors
 
-    
-    def _check_collision(self, p1, p2):
+    def _arc_hop_successors(self, current_state):
+        """Successors that ride an inflated circle's boundary.
+
+        For each target (bitangent departure toward another circle, tangent
+        from a polygon hull vertex or the goal), hop along the boundary arc to
+        the departure point where leaving is tangent-continuous. The emitted
+        state is the departure point itself; the straight leg to the target is
+        found by Strategy A on the next expansion (zero turn there). Cost is
+        the true arc length. Replaces the old discretized wrap-step model;
+        the search graph no longer depends on any wrap discretisation.
+        """
+        P = current_state.waypoint
+        h = current_state.heading
+        goal_wp = self.goal_state.waypoint
+        successors = []
+        for idx, (center, radius) in enumerate(self.scenario['circle_obstacles']):
+            s = ag.riding_sense(P, h, center, radius)
+            if s == 0:
+                continue
+            # A state that is itself an arc-hop departure point of this same
+            # circle+sense must not regenerate ride candidates: every departure
+            # on this ride was already enumerated from the ride-start state,
+            # and regenerating them with shorter residual arcs creates
+            # near-duplicate states that collide on the dedup lattice (stale
+            # arc_from -> self-crossing reconstruction).
+            af = current_state.arc_from
+            if af is not None and af[0] == center and af[1] == radius and af[3] == s:
+                continue
+            phi0 = math.atan2(P[1] - center[1], P[0] - center[0])
+            max_wrap = self._max_clear_wrap(center, radius, phi0, s)
+            if max_wrap <= 1e-6:
+                continue
+            cache_key = (idx, s)
+            deps = self._dep_cache.get(cache_key)
+            if deps is None:
+                deps = []
+                for c2, r2 in self.scenario['circle_obstacles']:
+                    if c2 == center and r2 == radius:
+                        continue
+                    deps.extend(dep for dep, _arr in
+                                ag.bitangent_departures(center, radius, c2, r2, s))
+                for vertex in self._poly_vertices:
+                    dep = ag.departure_point(vertex, center, radius, s)
+                    if dep is not None:
+                        deps.append(dep)
+                dep = ag.departure_point(goal_wp, center, radius, s)
+                if dep is not None:
+                    deps.append(dep)
+                self._dep_cache[cache_key] = deps
+            for dep in deps:
+                dphi = ag.arc_angle(P, dep, center, s)
+                if dphi < 1e-3 or dphi > max_wrap:
+                    continue
+                nxt = State(dep, ag.tangent_heading(dep, center, s))
+                nxt.arc_from = (center, radius, P, s)
+                successors.append((nxt, radius * dphi))
+        return successors
+
+    def _max_clear_wrap(self, center, radius, phi0, s):
+        """Maximal angle (rad) the aircraft can ride this boundary from phi0 in
+        direction s before the bulged arc (circumscribed-vertex radius) hits
+        another obstacle or leaves the map. One sweep bounds every arc-hop
+        candidate on this circle, instead of checking each arc separately.
+        Conservative: quantised down to ARC_SAMPLE_STEP_DEG."""
+        r_check = radius * _ARC_CLEAR_BULGE
+        step = math.radians(config.ARC_SAMPLE_STEP_DEG)
+        n = int(round(2.0 * math.pi / step))
+        # Advance the sample point by rotating a unit vector with the fixed
+        # per-step rotation matrix instead of recomputing cos/sin of the full
+        # swept angle (phi0 + s*k*step) at every sample; same angles, same
+        # bulge, same step, just fewer trig calls (2 total instead of 2*n).
+        cs, sn = math.cos(s * step), math.sin(s * step)
+        ux, uy = math.cos(phi0), math.sin(phi0)
+        prev = (center[0] + r_check * ux, center[1] + r_check * uy)
+        for k in range(1, n + 1):
+            ux, uy = ux * cs - uy * sn, ux * sn + uy * cs
+            p = (center[0] + r_check * ux, center[1] + r_check * uy)
+            if (not self._in_bounds(p)
+                    or not self._check_collision(prev, p, skip_circle=(center, radius))):
+                return (k - 1) * step
+            prev = p
+        return 2.0 * math.pi
+
+    def _check_collision(self, p1, p2, skip_circle=None):
         """
         Check if line segment from p1 to p2 collides with any obstacle.
         Returns True if collision-free, False otherwise.
+        skip_circle=(center, radius) exempts the circle being ridden by an
+        arc-clearance sweep (its own boundary is not an obstacle to itself).
         """
-        
+
         # Check against circle obstacles. A small grazing tolerance lets tangent /
         # wrap segments ride the inflated boundary (they dip a few metres inside the
         # ~13 km inflation band by discretisation but never approach the raw obstacle).
         for center, radius in self.scenario['circle_obstacles']:
+            if skip_circle is not None and center == skip_circle[0] and radius == skip_circle[1]:
+                continue
             dist = su.point_to_line_distance(center, p1, p2)
             if dist < radius - config.CIRCLE_GRAZE_TOL_M:
                 return False
-        
+
         # Check against polygon obstacles via spatial index. A segment is blocked
         # ONLY when it enters a polygon's INTERIOR (DE-9IM interior/interior
         # overlap). Merely touching the boundary is allowed: this lets a waypoint
@@ -212,13 +321,6 @@ class KinodynamicAstar:
                 if self._polygons[idx].relate_pattern(line, 'T********'):
                     return False
         return True
-    
-    def _on_circle_boundary(self, point, tol=1.0):
-        """True if `point` lies on (within tol of) any inflated circle boundary."""
-        for center, radius in self.scenario['circle_obstacles']:
-            if abs(math.hypot(point[0] - center[0], point[1] - center[1]) - radius) < tol:
-                return True
-        return False
 
     def _in_bounds(self, point):
         """Check if point is within map bounds"""
@@ -250,7 +352,6 @@ class KinodynamicAstar:
             self.start_state
         ))
         self.g_scores[self.start_state] = 0
-        self.num_strategy_b = config.NUM_STRATEGY_B  # Allow a few radial fan expansions even if goal is reachable
 
         while self.open_set and self.iteration_count < self.max_iterations:
             if _budget is not None and (time.perf_counter() - _start) > _budget:
@@ -264,6 +365,18 @@ class KinodynamicAstar:
                 continue
             
             self.closed_set.add(current)
+
+            # Escape-valve re-arm: the fan's budget (NUM_STRATEGY_B) is
+            # global and never replenished, so a map that needs reorientation
+            # moves in more than one region can spend the whole budget early
+            # and then starve (seed 963: open set exhausts to 0 under budget
+            # 3, but succeeds if the budget is unlimited). Re-arm only when
+            # the frontier is nearly dead (<=1 state left right after a pop)
+            # AND the budget is exhausted, so the per-phase cap of 3 still
+            # suppresses fan noise everywhere the search is healthy; it only
+            # gets a fresh budget as a last resort against outright failure.
+            if len(self.open_set) <= 1 and self.num_strategy_b <= 0:
+                self.num_strategy_b = config.NUM_STRATEGY_B
 
             # Check if reached goal
             dist_to_goal = math.sqrt(
@@ -309,17 +422,35 @@ class KinodynamicAstar:
         return None
     
     def _reconstruct_path(self, state):
-        """Reconstruct path from start to state"""
-        path = []
+        """Reconstruct start->state, expanding arc-hop transitions into
+        circumscribed-polygon waypoints (output-time discretisation only;
+        the searched route itself is stored in self.raw_route)."""
+        states = [state]
         current = state
-        
         while current in self.came_from:
-            path.append((current.waypoint, current.heading))
             current = self.came_from[current]
-        
-        path.append((self.start_state.waypoint, self.start_state.heading))
-        path.reverse()
-        
+            states.append(current)
+        states.reverse()
+
+        self.raw_route = [(st.waypoint, st.heading) for st in states]
+
+        theta_out = math.radians(config.ARC_WAYPOINT_STEP_DEG)
+        path = []
+        prev_wp = None
+        for st in states:
+            if st.arc_from is not None and prev_wp is not None:
+                center, radius, arc_start, s = st.arc_from
+                # Quantized dedup can rewire came_from so the frozen arc_start
+                # belongs to a different ancestor than the chain's actual
+                # predecessor; the geometric truth is the previous waypoint,
+                # which lies on the circle for any genuine arc transition.
+                d_prev = math.hypot(prev_wp[0] - center[0], prev_wp[1] - center[1])
+                if abs(d_prev - radius) <= 2.0:
+                    arc_start = prev_wp
+                dphi = ag.arc_angle(arc_start, st.waypoint, center, s)
+                path.extend(ag.arc_waypoints(center, radius, arc_start, dphi, s, theta_out))
+            path.append((st.waypoint, st.heading))
+            prev_wp = st.waypoint
         return path
     
     def smooth_path(self, path):
@@ -430,8 +561,8 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
             print("No path found")
     
     # Smooth path if found
-    # if path:
-    #     path = planner.smooth_path(path)
+    if path:
+        path = planner.smooth_path(path)
     
     return {
         'path': path,

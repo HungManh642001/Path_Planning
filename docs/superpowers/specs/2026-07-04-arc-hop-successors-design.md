@@ -100,19 +100,24 @@ the chosen route are independent of it (verified by testing item 3 below).
 - **Strategy B:** the radial fan fires when (a) no other successor exists
   (pure fallback), or (b) the state is riding a circle boundary — following
   the boundary to a tangent departure point is not always optimal, so the fan
-  provides leave-the-boundary options between departure points. In open water
-  with valid candidates the fan does NOT fire (that was the source of the
-  zig-zag noise). Delete the goal-visibility trigger and the `NUM_STRATEGY_B`
-  budget.
+  provides leave-the-boundary options between departure points, or (c) the
+  goal is line-of-sight blocked, as a budgeted escape valve (`NUM_STRATEGY_B`
+  global budget kept, not deleted) providing cheap reorientation moves that
+  tangent/vertex candidates cannot express (needed for seed 319, an adverse
+  initial heading that otherwise commits to a long detour). In open water
+  with valid candidates and an unblocked goal the fan does NOT fire (that was
+  the source of the zig-zag noise).
 - **Smoothing:** re-enable `planner.smooth_path(path)` in `plan_trajectory`.
   Safety: a shortcut across an arc's waypoint chain penetrates the inflated
   circle deeper than `CIRCLE_GRAZE_TOL_M`, so `_check_collision` rejects it —
   smoothing cannot destroy arc chains.
-- **Config:** delete `NUM_STRATEGY_B`; add `ARC_WAYPOINT_STEP_DEG = 30.0` and
-  `ARC_SAMPLE_STEP_DEG = 5.0`. `WRAP_STEP_M` becomes a deprecated, planner-unused
-  constant kept only because `gui/params.py` still exposes a slider for it —
-  it is removed together with the (deferred) GUI update. Keep
-  `CIRCLE_GRAZE_TOL_M` (tangent segments still graze the boundary numerically).
+- **Config:** `NUM_STRATEGY_B` stays (feeds the escape-valve budget above);
+  add `ARC_WAYPOINT_STEP_DEG = 30.0` and `ARC_SAMPLE_STEP_DEG = 5.0`.
+  `WRAP_STEP_M` becomes a deprecated, planner-unused constant kept only
+  because `gui/params.py` still exposes a slider for it — it is removed
+  together with the (deferred) GUI update. `CIRCLE_GRAZE_TOL_M` is tightened
+  to 1.0 m (tangent/arc-hop chords touch the boundary exactly now; the old
+  50 m tolerance was a wrap-step-era need for its coarser discretisation).
 - Delete the wrap-step successor block; keep boundary detection (now feeds
   arc-hop).
 
