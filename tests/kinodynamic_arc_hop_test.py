@@ -111,3 +111,36 @@ def test_plan_trajectory_smooths_output():
     result = astar.plan_trajectory(pre)
     assert result['success']
     assert len(result['path']) <= 3
+
+
+def test_departure_state_does_not_refire_same_ride():
+    """A state that IS an arc-hop departure point of a circle must not
+    regenerate ride candidates for that same circle+sense (they were all
+    enumerated from the ride-start; duplicates collide on the dedup lattice).
+
+    Needs a second circle: with only ONE circle (synthetic_circle_scenario),
+    the ride's sole candidate is the goal's departure point, and recomputing
+    it from that exact point always yields dphi == 0.0 (departure_point()
+    depends only on the target, not on the current position), so the bug
+    can't be observed there even pre-fix. A second circle gives the ride an
+    additional bitangent-departure candidate distinct from the goal
+    departure, so re-firing from a departure point demonstrably regenerates
+    that other candidate with a shorter residual arc.
+    """
+    scn = synthetic_circle_scenario()
+    center2, radius2 = (400000.0, 400000.0), 20000.0
+    scn['dynamic_obstacles'].append((center2, radius2))
+    scn['obstacles'].append({'type': 'circle', 'center': center2, 'radius': radius2})
+    pre = prep.prepare_scenario(scn)
+    planner = astar.KinodynamicAstar(pre)
+    (c1, r1) = pre['circle_obstacles'][0]
+    P = (c1[0], c1[1] - r1)
+    ride_start = astar.State(P, 0.0)
+    hops = planner._arc_hop_successors(ride_start)
+    assert len(hops) > 1, "ride-start needs >1 distinct departure candidate"
+    dep_state, _cost = hops[0]
+    assert dep_state.arc_from is not None
+    assert planner._arc_hop_successors(dep_state) == []
+    # but the same point reached WITHOUT arc_from is a fresh ride-start
+    fresh = astar.State(dep_state.waypoint, dep_state.heading)
+    assert planner._arc_hop_successors(fresh) != []

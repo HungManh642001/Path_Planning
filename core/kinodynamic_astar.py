@@ -207,6 +207,15 @@ class KinodynamicAstar:
             s = ag.riding_sense(P, h, center, radius)
             if s == 0:
                 continue
+            # A state that is itself an arc-hop departure point of this same
+            # circle+sense must not regenerate ride candidates: every departure
+            # on this ride was already enumerated from the ride-start state,
+            # and regenerating them with shorter residual arcs creates
+            # near-duplicate states that collide on the dedup lattice (stale
+            # arc_from -> self-crossing reconstruction).
+            af = current_state.arc_from
+            if af is not None and af[0] == center and af[1] == radius and af[3] == s:
+                continue
             phi0 = math.atan2(P[1] - center[1], P[0] - center[0])
             max_wrap = self._max_clear_wrap(center, radius, phi0, s)
             if max_wrap <= 1e-6:
@@ -387,12 +396,21 @@ class KinodynamicAstar:
 
         theta_out = math.radians(config.ARC_WAYPOINT_STEP_DEG)
         path = []
+        prev_wp = None
         for st in states:
-            if st.arc_from is not None and path:
+            if st.arc_from is not None and prev_wp is not None:
                 center, radius, arc_start, s = st.arc_from
+                # Quantized dedup can rewire came_from so the frozen arc_start
+                # belongs to a different ancestor than the chain's actual
+                # predecessor; the geometric truth is the previous waypoint,
+                # which lies on the circle for any genuine arc transition.
+                d_prev = math.hypot(prev_wp[0] - center[0], prev_wp[1] - center[1])
+                if abs(d_prev - radius) <= 2.0:
+                    arc_start = prev_wp
                 dphi = ag.arc_angle(arc_start, st.waypoint, center, s)
                 path.extend(ag.arc_waypoints(center, radius, arc_start, dphi, s, theta_out))
             path.append((st.waypoint, st.heading))
+            prev_wp = st.waypoint
         return path
     
     def smooth_path(self, path):
