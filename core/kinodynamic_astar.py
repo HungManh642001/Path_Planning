@@ -556,7 +556,11 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
     Returns:
         Dict with:
             - 'path': List of (waypoint, heading) tuples
-            - 'success': Bool indicating if planning succeeded
+            - 'success': Bool indicating if planning succeeded AND the
+              returned path (fixed legs + body) is collision-free
+            - 'failure_reason': None on success; else one of
+              'no_path', 'start_leg_blocked', 'goal_leg_blocked',
+              'path_self_collision'
             - 'stats': Search statistics
             - 'planner': KinodynamicAstar object
     """
@@ -584,10 +588,29 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
     # Smooth path if found
     if path:
         path = planner.smooth_path(path)
-    
+
+    # Final self-validation: a plan is only a success if the returned path is
+    # actually flyable. Search checks segments as it goes, but arc expansion,
+    # smoothing, and the fixed O->W1 / W_{n-1}->T legs (added outside the
+    # search) can carry collisions that were never verified in final form.
+    if not path:
+        success, failure_reason = False, 'no_path'
+    else:
+        legs_ok, reason = planner._check_fixed_legs(path)
+        body_ok = all(planner._check_collision(path[i][0], path[i + 1][0])
+                      for i in range(len(path) - 1))
+        if legs_ok and body_ok:
+            success, failure_reason = True, None
+        else:
+            success, failure_reason = False, (reason or 'path_self_collision')
+
+    if verbose and failure_reason:
+        print(f"Plan rejected: {failure_reason}")
+
     return {
         'path': path,
-        'success': path is not None,
+        'success': success,
+        'failure_reason': failure_reason,
         'stats': planner.get_search_stats(),
         'planner': planner,
     }

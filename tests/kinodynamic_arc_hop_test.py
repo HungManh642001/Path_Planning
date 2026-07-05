@@ -230,3 +230,59 @@ def test_check_fixed_legs_detects_blocked_start_and_goal():
     planner.scenario['circle_obstacles'] = [(Tcirc, 20000.0)]
     ok, reason = planner._check_fixed_legs(body)
     assert ok is False and reason == 'goal_leg_blocked'
+
+
+def test_plan_maps_blocked_leg_to_failure_reason():
+    """plan_trajectory must translate a blocked-leg verdict from
+    _check_fixed_legs into success=False + the specific reason. Monkeypatched
+    so the wiring is tested deterministically (real leg geometry is covered by
+    test_check_fixed_legs_detects_blocked_start_and_goal and the Task-5 sweep,
+    where the ~13 km inflation makes a hand-built blocking scenario fragile)."""
+    scn = {
+        'start': (100000.0, 250000.0), 'start_heading': 0.0,
+        'goal': (400000.0, 250000.0), 'goal_heading': 0.0,
+        'islands': [], 'dynamic_obstacles': [], 'obstacles': [],
+    }
+    pre = prep.prepare_scenario(scn)
+    import core.kinodynamic_astar as k
+    orig = k.KinodynamicAstar._check_fixed_legs
+    k.KinodynamicAstar._check_fixed_legs = lambda self, path: (False, 'goal_leg_blocked')
+    try:
+        result = astar.plan_trajectory(pre)
+    finally:
+        k.KinodynamicAstar._check_fixed_legs = orig
+    assert result['success'] is False
+    assert result['failure_reason'] == 'goal_leg_blocked'
+
+
+def test_plan_succeeds_open_water_reason_none():
+    scn = {
+        'start': (100000.0, 250000.0), 'start_heading': 0.0,
+        'goal': (400000.0, 250000.0), 'goal_heading': 0.0,
+        'islands': [], 'dynamic_obstacles': [], 'obstacles': [],
+    }
+    result = astar.plan_trajectory(prep.prepare_scenario(scn))
+    assert result['success'] is True
+    assert result['failure_reason'] is None
+
+
+def test_plan_no_path_reason():
+    """When search finds nothing, failure_reason is 'no_path'."""
+    # Goal boxed so tightly the planner cannot reach an aligned arrival is hard
+    # to guarantee; instead assert the key exists and is 'no_path' when path is None
+    # by monkeypatching search to return None.
+    scn = {
+        'start': (100000.0, 250000.0), 'start_heading': 0.0,
+        'goal': (400000.0, 250000.0), 'goal_heading': 0.0,
+        'islands': [], 'dynamic_obstacles': [], 'obstacles': [],
+    }
+    pre = prep.prepare_scenario(scn)
+    import core.kinodynamic_astar as k
+    orig = k.KinodynamicAstar.search
+    k.KinodynamicAstar.search = lambda self: None
+    try:
+        result = astar.plan_trajectory(pre)
+    finally:
+        k.KinodynamicAstar.search = orig
+    assert result['success'] is False
+    assert result['failure_reason'] == 'no_path'
