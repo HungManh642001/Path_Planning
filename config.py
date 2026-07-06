@@ -52,17 +52,23 @@ ARC_WAYPOINT_STEP_DEG = 30.0
 # Angular step (deg) for sampling arc clearance during search.
 ARC_SAMPLE_STEP_DEG = 5.0
 
-# Tolerance (m) by which a straight segment may graze inside a circle's
-# INFLATED boundary. Shared by the planner (_check_collision) and, when
-# validating planner output, the oracle (path_is_valid(..., circle_tol=...)).
-# Set from measurement: a 150-seed calibration found the max body graze of
-# legitimate raw-safe paths was ~20.97 m; a later 1000-seed sweep surfaced a
-# legitimate raw-safe graze of 37.08 m (arc-expansion chords / tangent
-# segments dipping into the inflation band; TIME_BUDGET_S makes grazes vary
-# run-to-run), so the tolerance is raised to 40 m with headroom. It is still
-# a tiny fraction (~0.3%) of the ~13.3 km inflation band and never approaches
-# the raw obstacle. Polygon interior is checked tolerance-free.
-CIRCLE_GRAZE_TOL_M = 40.0
+# Collision checking is EXACT: any penetration of a circle's INFLATED
+# boundary (dist < radius) is a collision — zero tolerance. Feasibility of
+# boundary-riding geometry is achieved on the CONSTRUCTION side instead:
+# all riding geometry (tangent points, bitangent departures, circumscribed
+# arc vertices) is built on radius r + CONSTRUCTION_CLEARANCE_M, so every
+# planner-made chord keeps at least that much true clearance — float noise
+# (~mm) is absorbed by construction, never forgiven by validation.
+# DEPRECATED, kept at 0.0 only because gui/params.py still exposes a slider
+# for it; the planner treats it as exactly zero semantics.
+CIRCLE_GRAZE_TOL_M = 0.0
+
+# Construction clearance (m): the extra radius on which boundary-riding
+# geometry is BUILT (r_ride = inflated radius + this). Keeps constructed
+# tangent chords strictly outside the inflated boundary so the exact
+# (zero-tolerance) collision check accepts them with margin far above float
+# noise. Geometrically negligible: ~1 m against 23-63 km inflated radii.
+CONSTRUCTION_CLEARANCE_M = 1.0
 
 # ====== COORDINATE SYSTEM ======
 # Map bounds (meters) for simulation

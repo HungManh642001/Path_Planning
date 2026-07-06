@@ -139,15 +139,19 @@ class KinodynamicAstar:
         h = current_state.heading
 
         # --- Arc-hop: ride any circle boundary this state is tangent to ---
+        # All riding/tangent geometry is built on r + CONSTRUCTION_CLEARANCE_M
+        # so constructed chords are strictly clear of the exact-checked
+        # inflated boundary (see config.CONSTRUCTION_CLEARANCE_M).
+        delta = config.CONSTRUCTION_CLEARANCE_M
         successors.extend(self._arc_hop_successors(current_state))
-        riding = any(ag.riding_sense(P, h, center, radius) != 0
+        riding = any(ag.riding_sense(P, h, center, radius + delta) != 0
                      for center, radius in self.scenario['circle_obstacles'])
 
         # --- Strategy A: dynamic tangent / vertex / goal candidates ---
         goal_wp = self.goal_state.waypoint
         candidates = []
         for center, radius in self.scenario['circle_obstacles']:
-            candidates.extend(su.circle_tangent_points(P, center, radius))
+            candidates.extend(su.circle_tangent_points(P, center, radius + delta))
         candidates.extend(self._poly_vertices)
         candidates.append(goal_wp)
 
@@ -227,9 +231,14 @@ class KinodynamicAstar:
         P = current_state.waypoint
         h = current_state.heading
         goal_wp = self.goal_state.waypoint
+        delta = config.CONSTRUCTION_CLEARANCE_M
         successors = []
         for idx, (center, radius) in enumerate(self.scenario['circle_obstacles']):
-            s = ag.riding_sense(P, h, center, radius)
+            # All riding geometry is BUILT on the lifted radius r_ride so
+            # every constructed chord/tangent keeps >= delta true clearance
+            # from the exact-checked inflated boundary.
+            r_ride = radius + delta
+            s = ag.riding_sense(P, h, center, r_ride)
             if s == 0:
                 continue
             # A state that is itself an arc-hop departure point of this same
@@ -239,10 +248,10 @@ class KinodynamicAstar:
             # near-duplicate states that collide on the dedup lattice (stale
             # arc_from -> self-crossing reconstruction).
             af = current_state.arc_from
-            if af is not None and af[0] == center and af[1] == radius and af[3] == s:
+            if af is not None and af[0] == center and af[1] == r_ride and af[3] == s:
                 continue
             phi0 = math.atan2(P[1] - center[1], P[0] - center[0])
-            max_wrap = self._max_clear_wrap(center, radius, phi0, s)
+            max_wrap = self._max_clear_wrap(center, r_ride, phi0, s)
             if max_wrap <= 1e-6:
                 continue
             cache_key = (idx, s)
@@ -252,13 +261,15 @@ class KinodynamicAstar:
                 for c2, r2 in self.scenario['circle_obstacles']:
                     if c2 == center and r2 == radius:
                         continue
+                    # Both circles lifted: the bitangent segment keeps delta
+                    # clearance from BOTH inflated boundaries.
                     deps.extend(dep for dep, _arr in
-                                ag.bitangent_departures(center, radius, c2, r2, s))
+                                ag.bitangent_departures(center, r_ride, c2, r2 + delta, s))
                 for vertex in self._poly_vertices:
-                    dep = ag.departure_point(vertex, center, radius, s)
+                    dep = ag.departure_point(vertex, center, r_ride, s)
                     if dep is not None:
                         deps.append(dep)
-                dep = ag.departure_point(goal_wp, center, radius, s)
+                dep = ag.departure_point(goal_wp, center, r_ride, s)
                 if dep is not None:
                     deps.append(dep)
                 self._dep_cache[cache_key] = deps
@@ -267,51 +278,75 @@ class KinodynamicAstar:
                 if dphi < 1e-3 or dphi > max_wrap:
                     continue
                 nxt = State(dep, ag.tangent_heading(dep, center, s))
-                nxt.arc_from = (center, radius, P, s)
-                successors.append((nxt, radius * dphi))
+                nxt.arc_from = (center, r_ride, P, s)
+                successors.append((nxt, r_ride * dphi))
         return successors
 
-    def _max_clear_wrap(self, center, radius, phi0, s):
+    def _max_clear_wrap(self, center, r_ride, phi0, s):
         """Maximal angle (rad) the aircraft can ride this boundary from phi0 in
-        direction s before the bulged arc (circumscribed-vertex radius) hits
-        another obstacle or leaves the map. One sweep bounds every arc-hop
-        candidate on this circle, instead of checking each arc separately.
-        Conservative: quantised down to ARC_SAMPLE_STEP_DEG."""
-        r_check = radius * _ARC_CLEAR_BULGE
+        direction s before the swept corridor hits another obstacle or leaves
+        the map. Per ARC_SAMPLE_STEP_DEG slice, the checked region is the TRUE
+        annular sector [r_ride, r_ride * _ARC_CLEAR_BULGE] — everything an
+        output arc-expansion chord (any step <= 45 deg) can occupy. The old
+        polyline-at-bulge sweep validated only the thin outer ring and missed
+        obstacles intruding the annulus below it (structural gap, seed 155).
+        The ridden circle itself never reaches the annulus (its disk ends at
+        r_ride - CONSTRUCTION_CLEARANCE_M), so no self-exemption is needed.
+        Conservative: quantised down to ARC_SAMPLE_STEP_DEG; the fixed 45-deg
+        bulge keeps the result independent of ARC_WAYPOINT_STEP_DEG."""
+        r_out = r_ride * _ARC_CLEAR_BULGE
         step = math.radians(config.ARC_SAMPLE_STEP_DEG)
         n = int(round(2.0 * math.pi / step))
-        # Advance the sample point by rotating a unit vector with the fixed
-        # per-step rotation matrix instead of recomputing cos/sin of the full
-        # swept angle (phi0 + s*k*step) at every sample; same angles, same
-        # bulge, same step, just fewer trig calls (2 total instead of 2*n).
-        cs, sn = math.cos(s * step), math.sin(s * step)
-        ux, uy = math.cos(phi0), math.sin(phi0)
-        prev = (center[0] + r_check * ux, center[1] + r_check * uy)
+        phi_prev = phi0
         for k in range(1, n + 1):
-            ux, uy = ux * cs - uy * sn, ux * sn + uy * cs
-            p = (center[0] + r_check * ux, center[1] + r_check * uy)
+            phi_next = phi0 + s * k * step
+            p = (center[0] + r_out * math.cos(phi_next),
+                 center[1] + r_out * math.sin(phi_next))
             if (not self._in_bounds(p)
-                    or not self._check_collision(prev, p, skip_circle=(center, radius))):
+                    or not self._sector_clear(center, r_ride, r_out, phi_prev, phi_next)):
                 return (k - 1) * step
-            prev = p
+            phi_prev = phi_next
         return 2.0 * math.pi
 
-    def _check_collision(self, p1, p2, skip_circle=None):
+    def _sector_clear(self, center, r_in, r_out, phi_a, phi_b):
+        """True iff the annular sector [r_in, r_out] x [phi_a, phi_b] around
+        `center` is free of obstacles. Exact (zero tolerance) for circles via
+        closed-form radial/angular interval overlap (conservative: the disk's
+        polar bounding box, a superset of the disk); polygons via a padded
+        sector quadrilateral against the STRtree + interior predicate."""
+        lo, hi = (phi_a, phi_b) if phi_a <= phi_b else (phi_b, phi_a)
+        for c2, r2 in self.scenario['circle_obstacles']:
+            dx, dy = c2[0] - center[0], c2[1] - center[1]
+            d = math.hypot(dx, dy)
+            if d - r2 >= r_out or d + r2 <= r_in:
+                continue                     # no radial overlap with the annulus
+            if d <= r2:
+                return False                 # annulus center inside the obstacle
+            theta = math.atan2(dy, dx)
+            half = math.asin(min(1.0, r2 / d))
+            if ag.angular_overlap(theta - half, theta + half, lo, hi):
+                return False
+        if self._poly_tree is not None:
+            quad = Polygon(ag.sector_polygon(center, r_in, r_out, lo, hi))
+            for idx in self._poly_tree.query(quad):
+                if self._polygons[idx].relate_pattern(quad, 'T********'):
+                    return False
+        return True
+
+    def _check_collision(self, p1, p2):
         """
         Check if line segment from p1 to p2 collides with any obstacle.
         Returns True if collision-free, False otherwise.
-        skip_circle=(center, radius) exempts the circle being ridden by an
-        arc-clearance sweep (its own boundary is not an obstacle to itself).
         """
 
-        # Check against circle obstacles. A small grazing tolerance lets tangent /
-        # wrap segments ride the inflated boundary (they dip a few metres inside the
-        # ~13 km inflation band by discretisation but never approach the raw obstacle).
+        # Check against circle obstacles — EXACT: any penetration of the
+        # inflated boundary is a collision, zero tolerance. Boundary-riding
+        # geometry stays acceptable because it is CONSTRUCTED on radius
+        # r + CONSTRUCTION_CLEARANCE_M, so legitimate tangent chords carry a
+        # true clearance margin instead of a forgiven intrusion.
         for center, radius in self.scenario['circle_obstacles']:
-            if skip_circle is not None and center == skip_circle[0] and radius == skip_circle[1]:
-                continue
             dist = su.point_to_line_distance(center, p1, p2)
-            if dist < radius - config.CIRCLE_GRAZE_TOL_M:
+            if dist < radius:
                 return False
 
         # Check against polygon obstacles via spatial index. A segment is blocked
@@ -335,8 +370,8 @@ class KinodynamicAstar:
         by the mission spec (start/goal points, headings, L0/DSS) and cannot be
         rerouted, so a blocked leg means the mission is infeasible as posed.
         Returns (ok, reason) with reason in {'start_leg_blocked',
-        'goal_leg_blocked', None}. Uses the same _check_collision (and thus the
-        same CIRCLE_GRAZE_TOL_M / polygon-interior semantics) as the body.
+        'goal_leg_blocked', None}. Uses the same _check_collision (exact
+        circle check + polygon-interior semantics) as the body.
         """
         if not path:
             return True, None

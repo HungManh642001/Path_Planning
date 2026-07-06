@@ -112,3 +112,44 @@ def arc_waypoints(center, r, start_pt, dphi, s, theta_max_rad):
         tangent_pt = (center[0] + r * math.cos(nxt), center[1] + r * math.sin(nxt))
         out.append((vertex, tangent_heading(tangent_pt, center, s)))
     return out
+
+
+def angular_overlap(a0, a1, b0, b1):
+    """True iff angular intervals [a0, a1] and [b0, b1] overlap on the circle.
+
+    Each interval is given as (lo, hi) with hi >= lo in radians (any absolute
+    values; widths <= 2*pi assumed meaningful — a width >= 2*pi overlaps
+    everything). Wrap-aware: intervals are compared modulo 2*pi.
+    """
+    two_pi = 2.0 * math.pi
+    wa = a1 - a0
+    wb = b1 - b0
+    if wa >= two_pi or wb >= two_pi:
+        return True
+    a = a0 % two_pi
+    b = b0 % two_pi
+    return ((b - a) % two_pi) < wa or ((a - b) % two_pi) < wb
+
+
+def sector_polygon(center, r_in, r_out, phi_a, phi_b):
+    """Quadrilateral covering the annular sector [r_in, r_out] x [phi_a, phi_b].
+
+    Intended for narrow slices (a few degrees). The outer radius is padded by
+    1/cos(width/2) so the quad's outer edge (a chord) fully covers the true
+    outer ARC — without the pad the chord's sagitta would leave an uncovered
+    sliver of tens of metres at these radii. The inner edge is the chord at
+    r_in, which over-covers slightly INWARD (conservative: may flag obstacles
+    hugging just inside r_in; never misses one inside the sector).
+
+    Returns a 4-point coordinate list (no closing point).
+    """
+    width = abs(phi_b - phi_a)
+    r_out_pad = r_out / math.cos(min(width, math.pi / 2) / 2.0)
+    ca, sa = math.cos(phi_a), math.sin(phi_a)
+    cb, sb = math.cos(phi_b), math.sin(phi_b)
+    return [
+        (center[0] + r_in * ca, center[1] + r_in * sa),
+        (center[0] + r_in * cb, center[1] + r_in * sb),
+        (center[0] + r_out_pad * cb, center[1] + r_out_pad * sb),
+        (center[0] + r_out_pad * ca, center[1] + r_out_pad * sa),
+    ]
