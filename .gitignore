@@ -1,6 +1,10 @@
 results*/
 cases/*
 logs/*
+.superpowers/
+.pytest_cache/
+.codegraph/
+tests/__pycache__/
 __pycache__/
 *.pyc
 *.pyo   

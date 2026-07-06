@@ -7,6 +7,7 @@ import core.kinodynamic_astar as astar
 import core.arc_geometry as ag
 import core.path_validation as pv
 import render.trajectory as tr
+from batch_random_test import generate_random_scenario
 
 CENTER = (250000.0, 250000.0)
 RAW_R = 30000.0
@@ -201,3 +202,110 @@ def test_escape_valve_fan_when_goal_occluded():
     assert not any(s_.arc_from is None
                    and math.isclose(math.dist(s_.waypoint, st.waypoint), fan_dist, rel_tol=1e-9)
                    for s_, _ in succ2), "fan fired with exhausted budget"
+
+
+def test_check_fixed_legs_detects_blocked_start_and_goal():
+    """A circle straddling a fixed leg makes that leg's check fail with the
+    matching reason; clear legs pass."""
+    # Start O at (0,0), goal T at (400k,0); W1..W_{n-1} body sits mid-map.
+    scn = {
+        'start': (0.0, 0.0), 'start_heading': 0.0,
+        'goal': (400000.0, 0.0), 'goal_heading': 0.0,
+        'islands': [], 'dynamic_obstacles': [], 'obstacles': [],
+    }
+    pre = prep.prepare_scenario(scn)
+    planner = astar.KinodynamicAstar(pre)
+    body = [((100000.0, 0.0), 0.0), ((300000.0, 0.0), 0.0)]
+
+    # No obstacles -> both legs clear.
+    assert planner._check_fixed_legs(body) == (True, None)
+
+    # Put an inflated circle on the O->W1 leg (near O, off the body).
+    Ocirc = (pre['start_pos'][0] + 50000.0, 0.0)
+    planner.scenario['circle_obstacles'] = [(Ocirc, 20000.0)]
+    ok, reason = planner._check_fixed_legs(body)
+    assert ok is False and reason == 'start_leg_blocked'
+
+    # Only a circle on the W_{n-1}->T leg (near T).
+    Tcirc = (pre['goal_pos'][0] - 50000.0, 0.0)
+    planner.scenario['circle_obstacles'] = [(Tcirc, 20000.0)]
+    ok, reason = planner._check_fixed_legs(body)
+    assert ok is False and reason == 'goal_leg_blocked'
+
+
+def test_plan_maps_blocked_leg_to_failure_reason():
+    """plan_trajectory must translate a blocked-leg verdict from
+    _check_fixed_legs into success=False + the specific reason. Monkeypatched
+    so the wiring is tested deterministically (real leg geometry is covered by
+    test_check_fixed_legs_detects_blocked_start_and_goal and the Task-5 sweep,
+    where the ~13 km inflation makes a hand-built blocking scenario fragile)."""
+    scn = {
+        'start': (100000.0, 250000.0), 'start_heading': 0.0,
+        'goal': (400000.0, 250000.0), 'goal_heading': 0.0,
+        'islands': [], 'dynamic_obstacles': [], 'obstacles': [],
+    }
+    pre = prep.prepare_scenario(scn)
+    import core.kinodynamic_astar as k
+    orig = k.KinodynamicAstar._check_fixed_legs
+    k.KinodynamicAstar._check_fixed_legs = lambda self, path: (False, 'goal_leg_blocked')
+    try:
+        result = astar.plan_trajectory(pre)
+    finally:
+        k.KinodynamicAstar._check_fixed_legs = orig
+    assert result['success'] is False
+    assert result['failure_reason'] == 'goal_leg_blocked'
+
+
+def test_plan_succeeds_open_water_reason_none():
+    scn = {
+        'start': (100000.0, 250000.0), 'start_heading': 0.0,
+        'goal': (400000.0, 250000.0), 'goal_heading': 0.0,
+        'islands': [], 'dynamic_obstacles': [], 'obstacles': [],
+    }
+    result = astar.plan_trajectory(prep.prepare_scenario(scn))
+    assert result['success'] is True
+    assert result['failure_reason'] is None
+
+
+def test_plan_no_path_reason():
+    """When search finds nothing, failure_reason is 'no_path'."""
+    # Goal boxed so tightly the planner cannot reach an aligned arrival is hard
+    # to guarantee; instead assert the key exists and is 'no_path' when path is None
+    # by monkeypatching search to return None.
+    scn = {
+        'start': (100000.0, 250000.0), 'start_heading': 0.0,
+        'goal': (400000.0, 250000.0), 'goal_heading': 0.0,
+        'islands': [], 'dynamic_obstacles': [], 'obstacles': [],
+    }
+    pre = prep.prepare_scenario(scn)
+    import core.kinodynamic_astar as k
+    orig = k.KinodynamicAstar.search
+    k.KinodynamicAstar.search = lambda self: None
+    try:
+        result = astar.plan_trajectory(pre)
+    finally:
+        k.KinodynamicAstar.search = orig
+    assert result['success'] is False
+    assert result['failure_reason'] == 'no_path'
+
+
+def test_seed_155_polygon_body_collision_is_caught():
+    """Seed 155 plans a body segment through a polygon interior; the final
+    self-validation must reject it as path_self_collision regardless of the
+    circle tolerance (polygon interior is tolerance-free)."""
+    pre = prep.prepare_scenario(generate_random_scenario(seed=155))
+    result = astar.plan_trajectory(pre)
+    assert result['success'] is False
+    assert result['failure_reason'] == 'path_self_collision'
+
+
+def test_seed_223_rawsafe_graze_admitted_at_tolerance():
+    """Seed 223's body path grazes ~37 m into the inflation band but never
+    approaches the raw obstacle; at CIRCLE_GRAZE_TOL_M=40 it is a valid
+    success (raw-safe). Guards the tolerance calibration."""
+    import config
+    assert config.CIRCLE_GRAZE_TOL_M >= 38.0  # calibration guard
+    pre = prep.prepare_scenario(generate_random_scenario(seed=223))
+    result = astar.plan_trajectory(pre)
+    assert result['success'] is True
+    assert result['failure_reason'] is None
