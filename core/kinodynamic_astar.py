@@ -83,10 +83,15 @@ class KinodynamicAstar:
             preprocessed_scenario['goal_state']['heading']
         )
         
-        # Search variables
+        # Search variables. NOTE: there is deliberately NO came_from dict —
+        # State hashing quantises to a coarse lattice (1000 m / 3°), so a
+        # lattice-keyed parent map lets two distinct candidates collide and
+        # splice the reconstruction onto a parent whose transition was never
+        # collision-checked ("phantom edges"). Parents are stored per-object
+        # (State.parent), so every reconstructed edge is exactly a validated
+        # transition.
         self.open_set = []
         self.closed_set = set()
-        self.came_from = {}
         self.g_scores = defaultdict(lambda: float('inf'))
         
         self.iteration_count = 0
@@ -426,8 +431,12 @@ class KinodynamicAstar:
                 tentative_g = self.g_scores[current] + transition_cost
                 
                 if tentative_g < self.g_scores.get(next_state, float('inf')):
-                    # Better path found
-                    self.came_from[next_state] = current
+                    # Better path found. The parent is stored on the successor
+                    # OBJECT (written exactly once per object — each successor
+                    # is freshly constructed), so reconstruction follows the
+                    # exact validated transition even when a later, distinct
+                    # candidate wins this lattice cell's g-score.
+                    next_state.parent = current
                     self.g_scores[next_state] = tentative_g
                     next_state.g_cost = tentative_g
                     next_state.h_cost = self.heuristic(next_state, self.goal_state)
@@ -445,11 +454,16 @@ class KinodynamicAstar:
     def _reconstruct_path(self, state):
         """Reconstruct start->state, expanding arc-hop transitions into
         circumscribed-polygon waypoints (output-time discretisation only;
-        the searched route itself is stored in self.raw_route)."""
+        the searched route itself is stored in self.raw_route).
+
+        Walks per-object parent pointers, so every emitted edge is exactly a
+        transition that passed _check_collision / validate_kinodynamics at
+        creation time. In particular, arc_from's frozen arc_start equals the
+        parent's waypoint by object identity — no healing needed."""
         states = [state]
         current = state
-        while current in self.came_from:
-            current = self.came_from[current]
+        while current.parent is not None:
+            current = current.parent
             states.append(current)
         states.reverse()
 
@@ -461,13 +475,6 @@ class KinodynamicAstar:
         for st in states:
             if st.arc_from is not None and prev_wp is not None:
                 center, radius, arc_start, s = st.arc_from
-                # Quantized dedup can rewire came_from so the frozen arc_start
-                # belongs to a different ancestor than the chain's actual
-                # predecessor; the geometric truth is the previous waypoint,
-                # which lies on the circle for any genuine arc transition.
-                d_prev = math.hypot(prev_wp[0] - center[0], prev_wp[1] - center[1])
-                if abs(d_prev - radius) <= 2.0:
-                    arc_start = prev_wp
                 dphi = ag.arc_angle(arc_start, st.waypoint, center, s)
                 path.extend(ag.arc_waypoints(center, radius, arc_start, dphi, s, theta_out))
             path.append((st.waypoint, st.heading))
