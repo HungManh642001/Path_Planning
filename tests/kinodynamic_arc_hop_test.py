@@ -7,6 +7,7 @@ import core.kinodynamic_astar as astar
 import core.arc_geometry as ag
 import core.path_validation as pv
 import render.trajectory as tr
+from batch_random_test import generate_random_scenario
 
 CENTER = (250000.0, 250000.0)
 RAW_R = 30000.0
@@ -286,3 +287,25 @@ def test_plan_no_path_reason():
         k.KinodynamicAstar.search = orig
     assert result['success'] is False
     assert result['failure_reason'] == 'no_path'
+
+
+def test_seed_155_polygon_body_collision_is_caught():
+    """Seed 155 plans a body segment through a polygon interior; the final
+    self-validation must reject it as path_self_collision regardless of the
+    circle tolerance (polygon interior is tolerance-free)."""
+    pre = prep.prepare_scenario(generate_random_scenario(seed=155))
+    result = astar.plan_trajectory(pre)
+    assert result['success'] is False
+    assert result['failure_reason'] == 'path_self_collision'
+
+
+def test_seed_223_rawsafe_graze_admitted_at_tolerance():
+    """Seed 223's body path grazes ~37 m into the inflation band but never
+    approaches the raw obstacle; at CIRCLE_GRAZE_TOL_M=40 it is a valid
+    success (raw-safe). Guards the tolerance calibration."""
+    import config
+    assert config.CIRCLE_GRAZE_TOL_M >= 38.0  # calibration guard
+    pre = prep.prepare_scenario(generate_random_scenario(seed=223))
+    result = astar.plan_trajectory(pre)
+    assert result['success'] is True
+    assert result['failure_reason'] is None
