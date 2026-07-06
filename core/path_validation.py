@@ -23,11 +23,13 @@ def _point_to_segment_distance(p, a, b):
     return math.hypot(px - cx, py - cy)
 
 
-def _segment_clear(a, b, circle_obstacles, polygon_obstacles, tol=1e-6):
+def _segment_clear(a, b, circle_obstacles, polygon_obstacles, circle_tol=1e-6):
     for center, radius in circle_obstacles:
-        # Leniency: a path grazing the inflated boundary to within `tol` meters
-        # is accepted; tol is subtracted (not added) so only genuine penetration fails.
-        if _point_to_segment_distance(center, a, b) < radius - tol:
+        # Leniency: a segment grazing the inflated boundary to within
+        # `circle_tol` meters is accepted (numerical/discretisation noise
+        # within the ~13 km inflation band; the raw obstacle is far inside).
+        # tol is subtracted, so only genuine penetration fails.
+        if _point_to_segment_distance(center, a, b) < radius - circle_tol:
             return False
     # A segment is blocked ONLY when it enters a polygon's INTERIOR (DE-9IM
     # interior/interior overlap, pattern 'T********'). Touching the boundary is
@@ -41,12 +43,12 @@ def _segment_clear(a, b, circle_obstacles, polygon_obstacles, tol=1e-6):
     return True
 
 
-def segments_clear(path, circle_obstacles, polygon_obstacles):
+def segments_clear(path, circle_obstacles, polygon_obstacles, circle_tol=1e-6):
     """True iff every straight segment between consecutive waypoints is clear."""
     for i in range(len(path) - 1):
         a = path[i][0]
         b = path[i + 1][0]
-        if not _segment_clear(a, b, circle_obstacles, polygon_obstacles):
+        if not _segment_clear(a, b, circle_obstacles, polygon_obstacles, circle_tol):
             return False
     return True
 
@@ -141,7 +143,7 @@ def arcs_clear(path, R, circle_obstacles, polygon_obstacles):
 
 
 def path_is_valid(path, circle_obstacles, polygon_obstacles, R, alpha_max_rad, L0, dss,
-                  raw_circle_obstacles=None, raw_polygon_obstacles=None):
+                  raw_circle_obstacles=None, raw_polygon_obstacles=None, circle_tol=1e-6):
     """One-call full validity gate used by later phases.
 
     Straight segments must clear the INFLATED obstacles (keeping the full safety
@@ -153,7 +155,7 @@ def path_is_valid(path, circle_obstacles, polygon_obstacles, R, alpha_max_rad, L
     """
     if not path or len(path) < 2:
         return False
-    if not segments_clear(path, circle_obstacles, polygon_obstacles):
+    if not segments_clear(path, circle_obstacles, polygon_obstacles, circle_tol):
         return False
     if not turn_angles_ok(path, alpha_max_rad):
         return False

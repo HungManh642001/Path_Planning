@@ -14,6 +14,7 @@ import core.preprocessing as prep
 import core.kinodynamic_astar as astar
 import core.spatial_utils as su
 import render.visualizer as viz
+import render.trajectory as tr
 import performance_eval as perf
 
 
@@ -179,7 +180,9 @@ def run_batch_random_tests(num_tests=1000, output_dir="results1"):
     all_results = []
     perf_metrics = perf.PerformanceComparator()
     
-    for i in range(num_tests):
+    # for i in range(num_tests):
+    # for i in [125, 319, 338, 426, 485, 532, 544, 581, 625, 641, 674, 686, 904, 923, 963, 981, 996, 998]:
+    for i in [125, 319, 338, 426, 532, 544, 581, 641, 674, 686, 904, 923, 963, 981, 998]:    
         seed = i  # Different seed for each test
         scenario_name = f"Random Scenario {i+1}"
 
@@ -197,7 +200,7 @@ def run_batch_random_tests(num_tests=1000, output_dir="results1"):
     print_header("Batch Random Test Summary")
 
     logger.info(f"Total Scenarios Run: {len(all_results)}")
-    logger.info(f"{'Idx':<4} {'Scenario Name':<30} {'Status':<10} {'Total Time (s)':<15} {'Preprocessing (s)':<20} {'Planning (s)':<15} {'Waypoints':<10} {'Iterations':<10} {'Obstacles':<10}")
+    logger.info(f"{'Idx':<4} {'Scenario Name':<30} {'Status':<10} {'Total Time (s)':<15} {'Preprocessing (s)':<15} {'Planning (s)':<15} {'Waypoints':<10} {'Distance (m)':<12} {'Iterations':<10} {'Obstacles':<10}")
     logger.info("-" * 150)
 
     summary_results = []
@@ -209,6 +212,8 @@ def run_batch_random_tests(num_tests=1000, output_dir="results1"):
         planning_time = res['planning_time']
         waypoints = len(res['result']['path']) if res['success'] and res['result'].get('path') else 0
         iterations = res['result']['stats']['iterations'] if res['result'].get('stats') else 0
+        dist = res['metrics'].path_stats.get('total_distance', 0)
+        turns = res['metrics'].path_stats.get('turn_angles', [])
         
         if res.get('scenario'):
             num_islands = len(res['scenario'].get('islands', []))
@@ -217,7 +222,7 @@ def run_batch_random_tests(num_tests=1000, output_dir="results1"):
         else:
             obstacles = "N/A"
 
-        logger.info(f"{i+1:<4} {res['scenario_name']:<30} {status:<10} {res['elapsed_time']:.2f}s | {res['preprocessing_time']:.2f}s | {res['planning_time']:.2f}s | {waypoints:<10} | {iterations:<10} | {obstacles:>10}")
+        logger.info(f"{i+1:<4} {res['scenario_name']:<30} {status:<10} {res['elapsed_time']:<15.2f}s | {res['preprocessing_time']:<15.2f}s | {res['planning_time']:<15.2f}s | {waypoints:<10} | {dist:<10.2f}| {iterations:<10} | {obstacles:>10}")
         summary_results.append({
             'scenario_name': scenario_name,
             'status': status,
@@ -225,6 +230,8 @@ def run_batch_random_tests(num_tests=1000, output_dir="results1"):
             'preprocessing_time': preprocessing_time,
             'planning_time': planning_time,
             'waypoints': waypoints,
+            'distance_m': dist,
+            'turns': turns,
             'iterations': iterations,
             'obstacles': obstacles
         })
@@ -245,14 +252,14 @@ def main():
     plt.switch_backend('Agg')
 
     # Run all scenarios in batch mode
-    output_dir = "results1"
+    output_dir = "results1_fail_v1"  # Directory to save results
     num_tests = 1000  # Number of random scenarios to run
     run_batch_random_tests(num_tests=num_tests, output_dir=output_dir)
 
     # Close all matplotlib figures to free memory
     plt.close('all')
 
-    logger.info("\nAll tests completed. Results saved in the 'results' directory.")
+    logger.info(f"\nAll tests completed. Results saved in the {output_dir} directory.")
 
 
 if __name__ == "__main__":
