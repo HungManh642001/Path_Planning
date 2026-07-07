@@ -518,62 +518,71 @@ class KinodynamicAstar:
     
     def smooth_path(self, path):
         """
-        Smooth the path by removing unnecessary waypoints.
-        
+        Smooth the path by shortcutting to the FARTHEST reachable waypoint.
+
+        The old greedy only tried to skip ONE waypoint at a time (anchor ->
+        path[i+1]) and appended path[i] the moment that single-step shortcut
+        failed — so a clear, feasible long jump anchor -> path[i+k] was never
+        tested once an intermediate onward-turn blocked the one-ahead step,
+        leaving detours in the path. Here, from each kept anchor we scan from
+        the farthest waypoint inward and jump straight to the farthest one whose
+        direct chord is (a) collision-free (exact), (b) kinodynamically valid at
+        the anchor (turn <= alpha_max + đoản trình), and (c) whose onward turn at
+        the target stays feasible (terminal turn onto goal_heading for the last
+        waypoint). Endpoints path[0]/path[-1] are preserved; every kept edge is
+        exact-collision-checked and validated, so the result stays valid.
+
         Args:
             path: List of (waypoint, heading) tuples
-        
+
         Returns:
             Smoothed path
         """
         if len(path) < 3:
             return path
-        
+
+        n = len(path)
         smoothed = [path[0]]
-
-        i = 1
-        while i < len(path) - 1:
-            # Always shortcut FROM the last kept point (smoothed[-1]), not path[i-1].
-            # Using path[i-1] is a bug: after a skip, path[i-1] is a discarded node.
-            prev_wp, prev_h = smoothed[-1]
-            # Geometric inbound heading at prev_wp (the arc there is governed by the
-            # bearing from the previous KEPT waypoint, not the stored A* heading).
+        i = 0
+        while i < n - 1:
+            anchor_wp = smoothed[-1][0]
+            # Geometric inbound heading at the anchor (bearing from the previous
+            # KEPT waypoint); the first anchor uses the start heading.
             if len(smoothed) >= 2:
-                prev_h = su.angle_to_heading(smoothed[-2][0], prev_wp)
-            next_wp, next_h = path[i + 1]
-
-            # Try to shortcut from last-kept to next: skip path[i]
-            heading_to_next = su.angle_to_heading(prev_wp, next_wp)
-            is_valid, _ = prep.validate_kinodynamics(
-                prev_wp, prev_h,
-                next_wp, heading_to_next,
-                R=self.R, alpha_max=self.alpha_max_rad
-            )
-            # Skipping path[i] changes the ARRIVAL direction at the next waypoint,
-            # so its onward turn must be re-checked (the old code only validated the
-            # turn at prev_wp). If next_wp is the last waypoint, its onward turn is
-            # the terminal turn onto goal_heading. Without this check, smoothing can
-            # bend the approach past alpha_max even when the search path was valid.
-            if i + 1 == len(path) - 1:
-                onward_wp, onward_heading = self.goal_state.waypoint, self.goal_state.heading
+                anchor_h = su.angle_to_heading(smoothed[-2][0], anchor_wp)
             else:
-                onward_wp, onward_heading = path[i + 2]
+                anchor_h = path[0][1]
 
-            is_next_valid, _ = prep.validate_kinodynamics(
-                next_wp, heading_to_next,
-                onward_wp, onward_heading,
-                R=self.R, alpha_max=self.alpha_max_rad
-            )
-            if (is_valid and is_next_valid
-                    and self._check_collision(prev_wp, next_wp)):
-                # Can skip current point
-                i += 1
-                continue
+            best = i + 1
+            for j in range(n - 1, i, -1):
+                target_wp = path[j][0]
+                heading_to = su.angle_to_heading(anchor_wp, target_wp)
+                is_valid, _ = prep.validate_kinodynamics(
+                    anchor_wp, anchor_h, target_wp, heading_to,
+                    R=self.R, alpha_max=self.alpha_max_rad)
+                if not is_valid:
+                    continue
+                # Onward turn at the target: for the last body waypoint it is
+                # the terminal turn onto the goal approach (the flown leg is
+                # path[-1] -> T = goal_pos at goal_heading; use those, not the
+                # offset goal_state.waypoint which sits up to GOAL_THRESHOLD away
+                # and would spuriously fail the đoản-trình length check).
+                if j == n - 1:
+                    onward_wp = self.scenario['goal_pos']
+                    onward_h = self.scenario['goal_heading']
+                else:
+                    onward_wp = path[j + 1][0]
+                    onward_h = su.angle_to_heading(target_wp, onward_wp)
+                is_next_valid, _ = prep.validate_kinodynamics(
+                    target_wp, heading_to, onward_wp, onward_h,
+                    R=self.R, alpha_max=self.alpha_max_rad)
+                if is_next_valid and self._check_collision(anchor_wp, target_wp):
+                    best = j
+                    break
 
-            smoothed.append(path[i])
-            i += 1
+            smoothed.append(path[best])
+            i = best
 
-        smoothed.append(path[-1])
         return smoothed
     
     def get_search_stats(self):
