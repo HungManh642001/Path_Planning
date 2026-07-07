@@ -202,6 +202,7 @@ Dynamic Obstacles: {len(scenario.get('dynamic_obstacles', []))} | Islands: {len(
     if save_path:
         plt.savefig(save_path, dpi=config.FIGURE_DPI, bbox_inches='tight')
         print(f"Figure saved to {save_path}")
+        plt.close()
     
     return fig
 
