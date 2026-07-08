@@ -98,7 +98,20 @@ class KinodynamicAstar:
         self.max_iterations = config.MAX_ITERATIONS
         self.R = preprocessed_scenario['turn_radius']
         self.alpha_max_rad = preprocessed_scenario['alpha_max_rad']
-        
+
+        # Pre-computed constants (depend only on R / alpha_max / config, all
+        # fixed for the planner's lifetime) hoisted out of the per-expansion
+        # hot loops. Values are byte-identical to computing them inline.
+        self._fan_distance = (2 * self.R * math.tan(self.alpha_max_rad / 2)
+                              + config.RADIAL_FAN_STEP_M)
+        self._arc_sample_step = math.radians(config.ARC_SAMPLE_STEP_DEG)
+        self._arc_sample_n = int(round(2.0 * math.pi / self._arc_sample_step))
+
+        # Whether the state being expanded rides any circle boundary; set as a
+        # side effect of _arc_hop_successors (which already evaluates
+        # riding_sense per circle) so get_next_states need not recompute it.
+        self._riding = False
+
         # Track if search failed
         self.search_failed = False
 
@@ -144,8 +157,7 @@ class KinodynamicAstar:
         # inflated boundary (see config.CONSTRUCTION_CLEARANCE_M).
         delta = config.CONSTRUCTION_CLEARANCE_M
         successors.extend(self._arc_hop_successors(current_state))
-        riding = any(ag.riding_sense(P, h, center, radius + delta) != 0
-                     for center, radius in self.scenario['circle_obstacles'])
+        riding = self._riding      # set as a side effect of _arc_hop_successors
 
         # --- Strategy A: dynamic tangent / vertex / goal candidates ---
         goal_wp = self.goal_state.waypoint
@@ -185,7 +197,7 @@ class KinodynamicAstar:
             # initial heading) that tangent/vertex candidates cannot express;
             # without this the search can commit to a long detour (seed 319:
             # 978.8 km vs 728.9 km with the valve).
-            if self._check_collision(P, goal_wp) or self.num_strategy_b <= 0:
+            if self.num_strategy_b <= 0:
                 return successors
             self.num_strategy_b -= 1
 
@@ -196,7 +208,7 @@ class KinodynamicAstar:
         # departure points. ---
             
         num_directions = config.RADIAL_FAN_DIRECTIONS
-        distance = 2 * self.R * math.tan(self.alpha_max_rad / 2) + config.RADIAL_FAN_STEP_M
+        distance = self._fan_distance
         for i in range(num_directions):
             heading_offset = -self.alpha_max_rad + 2 * self.alpha_max_rad * i / (num_directions - 1)
             next_heading = h + heading_offset
@@ -237,6 +249,7 @@ class KinodynamicAstar:
         goal_wp = self.goal_state.waypoint
         delta = config.CONSTRUCTION_CLEARANCE_M
         successors = []
+        self._riding = False   # recomputed each expansion; read by get_next_states
         for idx, (center, radius) in enumerate(self.scenario['circle_obstacles']):
             # All riding geometry is BUILT on the lifted radius r_ride so
             # every constructed chord/tangent keeps >= delta true clearance
@@ -245,6 +258,9 @@ class KinodynamicAstar:
             s = ag.riding_sense(P, h, center, r_ride)
             if s == 0:
                 continue
+            # Riding this circle (regardless of whether it yields a departure
+            # below) — matches the old any(riding_sense != 0) test exactly.
+            self._riding = True
             # A state that is itself an arc-hop departure point of this same
             # circle+sense must not regenerate ride candidates: every departure
             # on this ride was already enumerated from the ride-start state,
@@ -299,8 +315,8 @@ class KinodynamicAstar:
         Conservative: quantised down to ARC_SAMPLE_STEP_DEG; the fixed 45-deg
         bulge keeps the result independent of ARC_WAYPOINT_STEP_DEG."""
         r_out = r_ride * _ARC_CLEAR_BULGE
-        step = math.radians(config.ARC_SAMPLE_STEP_DEG)
-        n = int(round(2.0 * math.pi / step))
+        step = self._arc_sample_step
+        n = self._arc_sample_n
         phi_prev = phi0
         for k in range(1, n + 1):
             phi_next = phi0 + s * k * step
@@ -391,7 +407,7 @@ class KinodynamicAstar:
                     return False
         return True
 
-    def _check_fixed_legs(self, path):
+    def _check_fixed_legs(self):
         """Validate the fixed takeoff/approach legs W_{n-1}->T.
         Returns True if the fixed legs are collision-free, False otherwise.
         """
@@ -639,7 +655,7 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
     # Run A* search (dynamic successors)
     planner = KinodynamicAstar(preprocessed_scenario)
 
-    legs_ok = planner._check_fixed_legs(path)
+    legs_ok = planner._check_fixed_legs()
     path = None
     if legs_ok:
         if verbose:
