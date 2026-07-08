@@ -200,8 +200,12 @@ class KinodynamicAstar:
         for i in range(num_directions):
             heading_offset = -self.alpha_max_rad + 2 * self.alpha_max_rad * i / (num_directions - 1)
             next_heading = h + heading_offset
-            nx = P[0] + distance * math.cos(next_heading)
-            ny = P[1] + distance * math.sin(next_heading)
+            if heading_offset == 0:
+                distance_m = config.WRAP_STEP_M
+            else:
+                distance_m = distance
+            nx = P[0] + distance_m * math.cos(next_heading)
+            ny = P[1] + distance_m * math.sin(next_heading)
             next_waypoint = (nx, ny)
             if not self._in_bounds(next_waypoint):
                 continue
@@ -212,7 +216,7 @@ class KinodynamicAstar:
             if not is_valid:
                 continue
             turn = abs(_angle_diff(next_heading, h))
-            cost = distance + config.TURN_PENALTY_WEIGHT * turn
+            cost = distance_m + config.TURN_PENALTY_WEIGHT * turn
             successors.append((State(next_waypoint, next_heading), cost))
 
         return successors
