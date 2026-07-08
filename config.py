@@ -91,7 +91,7 @@ STATE_HEADING_QUANTUM_DEG = 3.0     # degrees
 HEURISTIC_WEIGHT = 1.0
 
 # Threshold for considering a point as reached (meters)
-GOAL_THRESHOLD = 1000.0  # meters; reachable given STATE_POS_QUANTUM
+GOAL_THRESHOLD = 1.0  # meters; reachable given STATE_POS_QUANTUM
 
 # Cost added per radian of heading change at a transition (meters per radian)
 TURN_PENALTY_WEIGHT = 0  # 4000.0
