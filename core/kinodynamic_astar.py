@@ -179,7 +179,7 @@ class KinodynamicAstar:
             cost = math.hypot(dx, dy) + config.TURN_PENALTY_WEIGHT * turn
             successors.append((State(node, heading_to_node), cost))
 
-        if successors and not riding:
+        if successors and not riding and not self._check_collision(P, goal_wp):
             # Escape valve: while the goal is occluded, a few budgeted fan
             # expansions provide cheap reorientation moves (e.g. an adverse
             # initial heading) that tangent/vertex candidates cannot express;
@@ -343,11 +343,36 @@ class KinodynamicAstar:
         # inflated boundary is a collision, zero tolerance. Boundary-riding
         # geometry stays acceptable because it is CONSTRUCTED on radius
         # r + CONSTRUCTION_CLEARANCE_M, so legitimate tangent chords carry a
-        # true clearance margin instead of a forgiven intrusion.
-        for center, radius in self.scenario['circle_obstacles']:
-            dist = su.point_to_line_distance(center, p1, p2)
-            if dist < radius:
-                return False
+        # true clearance margin instead of a forgiven intrusion. Inlined
+        # point-to-SEGMENT distance (squared): the segment length dd is
+        # computed once (not once per circle as point_to_line_distance did),
+        # and each circle costs a few arithmetic ops with no function-call
+        # dispatch. `d² < r²` is exactly the old `dist < r`. Read live from
+        # scenario['circle_obstacles'] (no cache) so the check reflects any
+        # post-construction obstacle change, as before.
+        p1x, p1y = p1
+        sx = p2[0] - p1x
+        sy = p2[1] - p1y
+        dd = sx * sx + sy * sy
+        if dd == 0.0:                              # degenerate segment
+            for (cx, cy), radius in self.scenario['circle_obstacles']:
+                relx = cx - p1x
+                rely = cy - p1y
+                if relx * relx + rely * rely < radius * radius:
+                    return False
+        else:
+            for (cx, cy), radius in self.scenario['circle_obstacles']:
+                relx = cx - p1x
+                rely = cy - p1y
+                t = (relx * sx + rely * sy) / dd
+                if t < 0.0:
+                    t = 0.0
+                elif t > 1.0:
+                    t = 1.0
+                ex = relx - t * sx
+                ey = rely - t * sy
+                if ex * ex + ey * ey < radius * radius:
+                    return False
 
         # Check against polygon obstacles via spatial index. A segment is blocked
         # ONLY when it enters a polygon's INTERIOR (DE-9IM interior/interior
@@ -363,25 +388,13 @@ class KinodynamicAstar:
         return True
 
     def _check_fixed_legs(self, path):
-        """Validate the fixed takeoff/approach legs O->W1 and W_{n-1}->T.
-
-        These legs are flown but lie outside the A* search (which runs
-        W1..W_{n-1}); nothing else collision-checks them. They are determined
-        by the mission spec (start/goal points, headings, L0/DSS) and cannot be
-        rerouted, so a blocked leg means the mission is infeasible as posed.
-        Returns (ok, reason) with reason in {'start_leg_blocked',
-        'goal_leg_blocked', None}. Uses the same _check_collision (exact
-        circle check + polygon-interior semantics) as the body.
+        """Validate the fixed takeoff/approach legs W_{n-1}->T.
+        Returns True if the fixed legs are collision-free, False otherwise.
         """
-        if not path:
-            return True, None
-        O = self.scenario['start_pos']
         T = self.scenario['goal_pos']
-        if not self._check_collision(O, path[0][0]):
-            return False, 'start_leg_blocked'
-        if not self._check_collision(path[-1][0], T):
-            return False, 'goal_leg_blocked'
-        return True, None
+        if not self._check_collision(self.goal_state.waypoint, T):
+            return False
+        return True
 
     def _in_bounds(self, point):
         """Check if point is within map bounds"""
@@ -621,20 +634,23 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
 
     # Run A* search (dynamic successors)
     planner = KinodynamicAstar(preprocessed_scenario)
-    
-    if verbose:
-        print("Starting A* search...")
-    
-    path = planner.search()
-    
-    if verbose:
-        stats = planner.get_search_stats()
-        print(f"Search completed: {stats['iterations']}/{stats['max_iterations']} iterations")
-        if path:
-            print(f"Path found with {len(path)} waypoints")
-            print(path)
-        else:
-            print("No path found")
+
+    legs_ok = planner._check_fixed_legs(path)
+    path = None
+    if legs_ok:
+        if verbose:
+            print("Starting A* search...")
+        
+        path = planner.search()
+        
+        if verbose:
+            stats = planner.get_search_stats()
+            print(f"Search completed: {stats['iterations']}/{stats['max_iterations']} iterations")
+            if path:
+                print(f"Path found with {len(path)} waypoints")
+                print(path)
+            else:
+                print("No path found")
     
     # Smooth path if found
     if path:
@@ -643,25 +659,11 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
     # Final self-validation: a plan is only a success if the returned path is
     # actually flyable. Search checks segments as it goes, but arc expansion,
     # smoothing, and the fixed O->W1 / W_{n-1}->T legs (added outside the
-    # search) can carry collisions that were never verified in final form.
-    if not path:
-        success, failure_reason = False, 'no_path'
-    else:
-        legs_ok, reason = planner._check_fixed_legs(path)
-        body_ok = all(planner._check_collision(path[i][0], path[i + 1][0])
-                      for i in range(len(path) - 1))
-        if legs_ok and body_ok:
-            success, failure_reason = True, None
-        else:
-            success, failure_reason = False, (reason or 'path_self_collision')
-
-    if verbose and failure_reason:
-        print(f"Plan rejected: {failure_reason}")
+    # search) can carry collisions that were never verified in final form. 
 
     return {
         'path': path,
-        'success': success,
-        'failure_reason': failure_reason,
+        'success': path is not None and legs_ok,
         'stats': planner.get_search_stats(),
         'planner': planner,
     }
