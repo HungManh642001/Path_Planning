@@ -27,6 +27,10 @@ def _angle_diff(a, b):
 # any expansion step <= 45 deg stay within r / cos(pi/8) of the center.
 _ARC_CLEAR_BULGE = 1.0 / math.cos(math.pi / 8.0)
 
+# Minimum usable straight-flight length (đoản trình) between two waypoints, in
+# metres. Matches the threshold historically used by validate_kinodynamics.
+_MIN_STRAIGHT_M = 10.0
+
 
 class State:
     """Represents an autonomous aircraft state: (waypoint, heading)"""
@@ -38,6 +42,13 @@ class State:
         self.g_cost = float('inf')  # Cost from start
         self.h_cost = 0  # Heuristic to goal
         self.arc_from = None  # (center, radius, arc_start_pt, s) if reached via arc hop
+        # Remaining straight length of the INCOMING segment after its near-end
+        # turn reserve — the budget still available to the far-end (this
+        # waypoint's) turn. Set exactly at creation; the đoản-trình far-end
+        # check is deferred to this state's own expansion, where its outgoing
+        # turn is known (no alpha_max worst-case). inf = no straight constraint
+        # carried in (start state, arc-ride departures).
+        self.straight_budget = float('inf')
     
     def __hash__(self):
         return hash(su.state_to_tuple(self.waypoint, self.heading))
@@ -93,7 +104,11 @@ class KinodynamicAstar:
             preprocessed_scenario['start_state']['heading']
         )
         self.start_state.g_cost = 0
-        
+        # The incoming O->W1 leg's straight length (near turn at O is 0). The
+        # far-end (turn at W1) đoản-trình is then deferred to W1's expansion.
+        self.start_state.straight_budget = math.dist(
+            preprocessed_scenario['start_pos'], self.start_state.waypoint)
+
         self.goal_state = State(
             preprocessed_scenario['goal_state']['waypoint'],
             preprocessed_scenario['goal_state']['heading']
@@ -125,7 +140,11 @@ class KinodynamicAstar:
         # Pre-computed constants (depend only on R / alpha_max / config, all
         # fixed for the planner's lifetime) hoisted out of the per-expansion
         # hot loops. Values are byte-identical to computing them inline.
-        self._fan_distance = (2 * self.R * math.tan(self.alpha_max_rad / 2)
+        # Only the NEAR-end turn (at the current point) is reserved here; the
+        # far-end turn at the fan point is deferred to that point's own
+        # expansion (via straight_budget), so a single R*tan(alpha_max/2)
+        # reserve suffices instead of the old worst-case 2*R*tan(alpha_max/2).
+        self._fan_distance = (self.R * math.tan(self.alpha_max_rad / 2)
                               + config.RADIAL_FAN_STEP_M)
         self._arc_sample_step = math.radians(config.ARC_SAMPLE_STEP_DEG)
         self._arc_sample_n = int(round(2.0 * math.pi / self._arc_sample_step))
@@ -167,6 +186,28 @@ class KinodynamicAstar:
         dy = goal_state.waypoint[1] - state.waypoint[1]
         return math.sqrt(dx * dx + dy * dy)
     
+    def _doan_trinh(self, current, seg_len, turn_at_current, far_reserve=0.0):
+        """Exact đoản-trình (min straight-segment) check for the edge
+        current -> new, split across the two events its two turns become known.
+
+        `turn_at_current` (the turn AT `current`, from its incoming heading onto
+        this new segment) eats the incoming segment's far end AND the new
+        segment's near end. `far_reserve` is the new segment's far-end bite when
+        it is already known (terminal turn onto the goal); 0 otherwise, in which
+        case that check is deferred to the new state's own expansion.
+
+        Returns the new state's `straight_budget` (new segment length minus the
+        near reserve) when both ends have room, else None.
+        """
+        reserve = self.R * math.tan(turn_at_current / 2.0)
+        # Deferred far-end check of `current`'s incoming segment.
+        if current.straight_budget - reserve < _MIN_STRAIGHT_M:
+            return None
+        budget = seg_len - reserve
+        if budget - far_reserve < _MIN_STRAIGHT_M:
+            return None
+        return budget
+
     def get_next_states(self, current_state):
         """Dynamic successors: tangent points to circles + polygon hull vertices +
         the goal; radial fan as a fallback when no graph candidate is valid."""
@@ -199,29 +240,38 @@ class KinodynamicAstar:
             turn = abs(_angle_diff(heading_to_node, h))
             if turn > self.alpha_max_rad:
                 continue
+            # Far-end reserve of this segment: 0 for an interior waypoint (its
+            # turn is unknown here, deferred to that waypoint's expansion); for
+            # the terminal goal the far turn IS known now (onto goal_heading, or
+            # 0 in free mode), so reserve it exactly.
+            far_reserve = 0.0
             if node is goal_wp:
                 if self._free_goal:
                     # Free approach: the edge INTO T is the straight seeker
-                    # run-in, so it must be at least DSS long (heading already
-                    # points at T; _check_collision below keeps it clear). No
-                    # fixed goal_heading, so no terminal-turn check.
-                    if dx * dx + dy * dy < self._dss * self._dss:
+                    # run-in. Its USABLE straight length (after the turn fillet
+                    # at P bites R*tan(turn/2)) must be at least DSS — checking
+                    # the raw distance would let the fillet steal into the
+                    # seeker leg. Heading already points at T; _check_collision
+                    # below keeps it clear; no fixed goal_heading terminal turn.
+                    if math.hypot(dx, dy) - self.R * math.tan(turn / 2.0) < self._dss:
                         continue
                 else:
                     # At the final waypoint W_{n-1} the autonomous aircraft must
                     # turn from the approach heading onto goal_heading; that
-                    # terminal turn must also be feasible.
+                    # terminal turn must also be feasible and reserves its bite.
                     final_turn = abs(_angle_diff(self.goal_state.heading, heading_to_node))
                     if final_turn > self.alpha_max_rad:
                         continue
-            is_valid, _ = prep.validate_kinodynamics(
-                P, h, node, heading_to_node, R=self.R, alpha_max=self.alpha_max_rad)
-            if not is_valid:
+                    far_reserve = self.R * math.tan(final_turn / 2.0)
+            budget = self._doan_trinh(current_state, math.hypot(dx, dy), turn, far_reserve)
+            if budget is None:
                 continue
             if not self._check_collision(P, node):
                 continue
             cost = math.hypot(dx, dy) + config.TURN_PENALTY_WEIGHT * turn
-            successors.append((State(node, heading_to_node), cost))
+            nxt = State(node, heading_to_node)
+            nxt.straight_budget = budget
+            successors.append((nxt, cost))
 
         if successors and not riding and not self._check_collision(P, goal_wp):
             # Escape valve: while the goal is occluded, a few budgeted fan
@@ -255,13 +305,14 @@ class KinodynamicAstar:
                 continue
             if not self._check_collision(P, next_waypoint):
                 continue
-            is_valid, _ = prep.validate_kinodynamics(
-                P, h, next_waypoint, next_heading, R=self.R, alpha_max=self.alpha_max_rad)
-            if not is_valid:
-                continue
             turn = abs(_angle_diff(next_heading, h))
+            budget = self._doan_trinh(current_state, distance_m, turn)
+            if budget is None:
+                continue
             cost = distance_m + config.TURN_PENALTY_WEIGHT * turn
-            successors.append((State(next_waypoint, next_heading), cost))
+            nxt = State(next_waypoint, next_heading)
+            nxt.straight_budget = budget
+            successors.append((nxt, cost))
 
         return successors
 
@@ -501,7 +552,6 @@ class KinodynamicAstar:
 
             # Pop best state from open set
             _, _, current = heapq.heappop(self.open_set)
-            print(current)
             
             if current in self.closed_set:
                 continue
@@ -650,29 +700,41 @@ class KinodynamicAstar:
             for j in range(n - 1, i, -1):
                 target_wp = path[j][0]
                 heading_to = su.angle_to_heading(anchor_wp, target_wp)
+                # Onward waypoint after target = the far-end turn of the
+                # anchor->target chord. Known here (path[j+1], or the goal leg),
+                # so pass it to validate BOTH ends of the chord exactly instead
+                # of the alpha_max worst case. For the free-goal terminal there
+                # is no onward turn (the chord is the straight run-in into T).
+                if j == n - 1 and self._free_goal:
+                    onward_wp = onward_h = None
+                elif j == n - 1:
+                    # The flown leg is path[-1] -> T = goal_pos at goal_heading;
+                    # use those, not the offset goal_state.waypoint which sits up
+                    # to GOAL_THRESHOLD away and would spuriously fail the length.
+                    onward_wp = self.scenario['goal_pos']
+                    onward_h = self.scenario['goal_heading']
+                else:
+                    onward_wp = path[j + 1][0]
+                    onward_h = su.angle_to_heading(target_wp, onward_wp)
+
                 is_valid, _ = prep.validate_kinodynamics(
                     anchor_wp, anchor_h, target_wp, heading_to,
+                    w_next_next=onward_wp, heading_next_next=onward_h,
                     R=self.R, alpha_max=self.alpha_max_rad)
                 if not is_valid:
                     continue
-                # Onward turn at the target: for the last body waypoint it is
-                # the terminal turn onto the goal approach (the flown leg is
-                # path[-1] -> T = goal_pos at goal_heading; use those, not the
-                # offset goal_state.waypoint which sits up to GOAL_THRESHOLD away
-                # and would spuriously fail the đoản-trình length check).
+
+                # Onward feasibility: the terminal run-in must stay >= DSS in
+                # free mode; otherwise the target->onward turn must be flyable.
                 if j == n - 1 and self._free_goal:
-                    # Free approach: target_wp == T and the anchor->T chord IS
-                    # the straight seeker run-in. There is no onward turn; the
-                    # only extra requirement is that the run-in stays >= DSS, so
-                    # a shortcut may not collapse the final leg below DSS.
-                    is_next_valid = math.dist(anchor_wp, target_wp) >= self._dss - config.EPS
+                    # Free run-in: USABLE straight length (after the turn fillet
+                    # at the anchor) must stay >= DSS, matching the search's
+                    # goal-candidate rule, so a shortcut cannot steal the fillet
+                    # bite out of the seeker leg.
+                    turn_anchor = abs(_angle_diff(heading_to, anchor_h))
+                    usable = math.dist(anchor_wp, target_wp) - self.R * math.tan(turn_anchor / 2.0)
+                    is_next_valid = usable >= self._dss - config.EPS
                 else:
-                    if j == n - 1:
-                        onward_wp = self.scenario['goal_pos']
-                        onward_h = self.scenario['goal_heading']
-                    else:
-                        onward_wp = path[j + 1][0]
-                        onward_h = su.angle_to_heading(target_wp, onward_wp)
                     is_next_valid, _ = prep.validate_kinodynamics(
                         target_wp, heading_to, onward_wp, onward_h,
                         R=self.R, alpha_max=self.alpha_max_rad)
