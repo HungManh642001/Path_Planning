@@ -29,7 +29,7 @@ APPROACH_ANGLE_DEFAULT = 30.0
 
 # ====== SAFETY & OBSTACLE HANDLING ======
 # Safety margin buffer (m) - distance to expand obstacle boundaries
-SAFE_MARGIN = 10000.0
+SAFE_MARGIN = 0.0
 
 # Polygon inflation join style: 'mitre' keeps sharp corners so each obstacle
 # yields a few real corner vertices (used as navigation waypoints) instead of
