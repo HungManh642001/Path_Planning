@@ -2,6 +2,8 @@ results*/
 cases/*
 logs/*
 docs/
+tests/
+cases/
 .superpowers/
 .pytest_cache/
 .codegraph/
