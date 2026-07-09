@@ -101,7 +101,7 @@ def calculate_start_state(origin, init_heading, L0=config.L0, R=config.R, alpha_
 
 def calculate_end_state(target, target_heading, dss=config.DSS, R=config.R, alpha_max_rad=config.ALPHA_MAX_RAD):
     """
-    Calculate the final waypoint W_{n-1} before seeker engagement.
+    Calculate the final waypoint W_{n-1} before terminal camera sensor lock.
     
     From dynamics: d_n = l_n + d_ss + R * tan(α_{n-1} / 2)
     With l_n = 0 (we reach W_{n-1} directly at goal), so d_n = d_ss + R * tan(α_{n-1} / 2)
@@ -109,7 +109,7 @@ def calculate_end_state(target, target_heading, dss=config.DSS, R=config.R, alph
     Args:
         target: (x, y) goal position T
         target_heading: Final approach heading (radians)
-        dss: Distance for seeker lock-on and guidance
+        dss: Distance for terminal camera sensor lock
         R: Turn radius
         alpha_max_rad: Maximum turn angle allowed (radians)
     
@@ -230,7 +230,7 @@ def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS, safe_ma
         scenario: Scenario dict from map_generator
         R: Turn radius
         L0: Minimum stabilization distance
-        DSS: Seeker engagement distance
+        DSS: Distance for terminal camera sensor lock
         safe_margin: Safety margin buffer (m) - distance to expand obstacle boundaries
         alpha_max_rad: Maximum turn angle allowed (radians)
     
@@ -247,7 +247,19 @@ def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS, safe_ma
     
     # Calculate start and goal waypoints
     start_state = calculate_start_state(scenario['start'], scenario['start_heading'], L0, R, alpha_max_rad)
-    goal_state = calculate_end_state(scenario['goal'], scenario['goal_heading'], DSS, R, alpha_max_rad)
+    if scenario['goal_heading'] is None:
+        # Free terminal approach direction: there is no fixed goal_heading to
+        # offset W_{n-1} along, so the search targets T itself and the final
+        # searched edge becomes the straight seeker run-in (>= DSS, any
+        # direction). heading=None flags free mode for the planner.
+        goal_state = {
+            'waypoint': scenario['goal'],
+            'heading': None,
+            'engagement_distance': DSS,
+            'distance_to_target': DSS,
+        }
+    else:
+        goal_state = calculate_end_state(scenario['goal'], scenario['goal_heading'], DSS, R, alpha_max_rad)
     
     # Process obstacles
     inflated_data = compute_inflated_obstacles(scenario['obstacles'], R, safe_margin, alpha_max_rad)
@@ -267,4 +279,11 @@ def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS, safe_ma
         'polygon_obstacles': inflated_data['polygon_obstacles'],
         'islands': scenario.get('islands', []),
         'dynamic_obstacles': scenario.get('dynamic_obstacles', []),
+        # Per-scenario operating area / bounds. `safezones` is an optional list
+        # of polygons (the aircraft must stay inside their union); `map_bounds`
+        # is the legacy (width, height) rectangle. Both are threaded through so
+        # the planner can constrain the search to them instead of the global
+        # config.MAP_WIDTH/HEIGHT.
+        'safezones': scenario.get('safezones'),
+        'map_bounds': scenario.get('map_bounds'),
     }

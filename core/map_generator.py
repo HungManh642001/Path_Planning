@@ -191,7 +191,8 @@ def create_scenario(scenario_config):
             - 'start': (x, y) start position
             - 'start_heading': heading angle in radians
             - 'goal': (x, y) goal position
-            - 'goal_heading': heading angle in radians
+            - 'goal_heading': heading angle in radians, or None for a free
+              terminal approach direction (planner chooses it)
             - 'num_islands': number of islands
             - 'num_dynamic_obstacles': number of dynamic obstacles
             - 'map_bounds': (width, height)
@@ -204,8 +205,13 @@ def create_scenario(scenario_config):
         'start': scenario_config.get('start'),
         'start_heading': scenario_config.get('start_heading', 0),
         'goal': scenario_config.get('goal'),
-        'goal_heading': scenario_config.get('goal_heading', 0),
+        # None => free terminal approach direction (the planner chooses it).
+        'goal_heading': scenario_config.get('goal_heading'),
         'map_bounds': scenario_config.get('map_bounds', (config.MAP_WIDTH, config.MAP_HEIGHT)),
+        # Optional operating areas: a LIST of polygons, each a list of (x, y)
+        # vertices. The aircraft must stay inside their union. None/empty =>
+        # fall back to the config.MAP_WIDTH/HEIGHT rectangle.
+        'safezones': scenario_config.get('safezones'),
     }
     
     # Generate obstacles

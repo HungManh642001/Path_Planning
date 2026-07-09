@@ -7,7 +7,9 @@ import heapq
 import math
 from collections import defaultdict
 import numpy as np
-from shapely.geometry import Polygon, LineString
+from shapely.geometry import Polygon, LineString, Point
+from shapely.prepared import prep as shp_prep
+from shapely.ops import unary_union
 from shapely import STRtree
 
 import config
@@ -71,6 +73,20 @@ class KinodynamicAstar:
         for poly in self._polygons:
             self._poly_vertices.extend(poly.convex_hull.exterior.coords[:-1])
 
+        # Operating areas (safezones). When one or more polygons are supplied the
+        # aircraft must stay inside their UNION — both every generated waypoint
+        # (_in_bounds) and every edge/chord (_check_collision) are constrained to
+        # it. The union (a Polygon or MultiPolygon) is prepared once so the
+        # repeated point/segment containment tests on the hot search path are
+        # cheap. When absent, fall back to the rectangle from the scenario's
+        # map_bounds, else the global config.MAP_WIDTH/HEIGHT (unchanged legacy
+        # behaviour).
+        safezones = preprocessed_scenario.get('safezones')
+        self._safezone = unary_union([Polygon(sz) for sz in safezones]) if safezones else None
+        self._safezone_prep = shp_prep(self._safezone) if self._safezone is not None else None
+        map_bounds = preprocessed_scenario.get('map_bounds')
+        self._bounds_w, self._bounds_h = map_bounds if map_bounds else (config.MAP_WIDTH, config.MAP_HEIGHT)
+
         # Start and goal states
         self.start_state = State(
             preprocessed_scenario['start_state']['waypoint'],
@@ -82,7 +98,14 @@ class KinodynamicAstar:
             preprocessed_scenario['goal_state']['waypoint'],
             preprocessed_scenario['goal_state']['heading']
         )
-        
+
+        # Free terminal approach mode: goal_heading is None. The search then
+        # targets T itself (goal_state.waypoint == goal_pos) and the final edge
+        # into T must be a straight run-in of length >= DSS in a search-chosen
+        # direction (no fixed approach heading, no terminal turn).
+        self._free_goal = preprocessed_scenario.get('goal_heading') is None
+        self._dss = preprocessed_scenario['goal_state'].get('engagement_distance', config.DSS)
+
         # Search variables. NOTE: there is deliberately NO came_from dict —
         # State hashing quantises to a coarse lattice (1000 m / 3°), so a
         # lattice-keyed parent map lets two distinct candidates collide and
@@ -176,12 +199,21 @@ class KinodynamicAstar:
             turn = abs(_angle_diff(heading_to_node, h))
             if turn > self.alpha_max_rad:
                 continue
-            # At the final waypoint W_{n-1} the autonomous aircraft must turn from the approach
-            # heading onto goal_heading; that terminal turn must also be feasible.
             if node is goal_wp:
-                final_turn = abs(_angle_diff(self.goal_state.heading, heading_to_node))
-                if final_turn > self.alpha_max_rad:
-                    continue
+                if self._free_goal:
+                    # Free approach: the edge INTO T is the straight seeker
+                    # run-in, so it must be at least DSS long (heading already
+                    # points at T; _check_collision below keeps it clear). No
+                    # fixed goal_heading, so no terminal-turn check.
+                    if dx * dx + dy * dy < self._dss * self._dss:
+                        continue
+                else:
+                    # At the final waypoint W_{n-1} the autonomous aircraft must
+                    # turn from the approach heading onto goal_heading; that
+                    # terminal turn must also be feasible.
+                    final_turn = abs(_angle_diff(self.goal_state.heading, heading_to_node))
+                    if final_turn > self.alpha_max_rad:
+                        continue
             is_valid, _ = prep.validate_kinodynamics(
                 P, h, node, heading_to_node, R=self.R, alpha_max=self.alpha_max_rad)
             if not is_valid:
@@ -400,11 +432,23 @@ class KinodynamicAstar:
         # sit on a polygon corner (the corners ARE navigation goals) and lets a
         # segment run ALONG an edge to hug the obstacle boundary. The STRtree gives
         # a bounding-box prefilter; the exact predicate runs only on candidates.
+        line = None
         if self._poly_tree is not None:
             line = LineString([p1, p2])
             for idx in self._poly_tree.query(line):
                 if self._polygons[idx].relate_pattern(line, 'T********'):
                     return False
+
+        # Safezone containment: the WHOLE chord must stay inside the operating
+        # area. Endpoint checks (_in_bounds) are not enough — smoothing shortcuts
+        # a chord to a far waypoint, and for a non-convex safezone that chord can
+        # exit the area even when both endpoints are inside. `covers` allows the
+        # chord to run along the boundary.
+        if self._safezone is not None:
+            if line is None:
+                line = LineString([p1, p2])
+            if not self._safezone.covers(line):
+                return False
         return True
 
     def _check_fixed_legs(self):
@@ -417,14 +461,17 @@ class KinodynamicAstar:
         return True
 
     def _in_bounds(self, point):
-        """Check if point is within map bounds"""
+        """Check if point is inside the operating area.
+
+        With a safezone polygon: point must be covered by it (`covers`, so a
+        point exactly on the operating-area boundary is allowed). Without one:
+        the legacy axis-aligned rectangle [0, w] x [0, h].
+        """
         x, y = point
-        # bounds = self.scenario['start_state']['waypoint']  # Just a rough bound
-        
-        # Allow some overshoot
-        margin = 0
-        return (-margin < x < config.MAP_WIDTH + margin and
-                -margin < y < config.MAP_HEIGHT + margin)
+        if self._safezone_prep is not None:
+            return self._safezone_prep.covers(Point(x, y))
+        return (0 < x < self._bounds_w and
+                0 < y < self._bounds_h)
     
     def search(self):
         """
@@ -454,6 +501,7 @@ class KinodynamicAstar:
 
             # Pop best state from open set
             _, _, current = heapq.heappop(self.open_set)
+            print(current)
             
             if current in self.closed_set:
                 continue
@@ -479,15 +527,27 @@ class KinodynamicAstar:
             )
             
             if dist_to_goal < config.GOAL_THRESHOLD:
-                # Reaching the goal region is not enough: the autonomous aircraft must arrive
-                # able to turn onto the approach heading within alpha_max. A state
-                # that wrap-stepped / flew straight into the region can be close but
-                # badly misaligned; accepting it would force a > alpha_max terminal
-                # turn at W_{n-1}. Require an aligned arrival; otherwise keep
-                # searching (the goal_wp candidate provides an aligned approach).
-                approach_turn = abs(_angle_diff(self.goal_state.heading, current.heading))
-                if approach_turn <= self.alpha_max_rad:
-                    return self._reconstruct_path(current)
+                if self._free_goal:
+                    # Free approach: T is reached via the straight run-in edge.
+                    # Guard that the incoming edge really is a valid run-in
+                    # (>= DSS), so a fan/wrap successor that happens to land on T
+                    # cannot be accepted without a proper seeker run-in.
+                    print(current.parent)
+                    print(math.dist(
+                            current.parent.waypoint, current.waypoint))
+                    if current.parent is not None and math.dist(
+                            current.parent.waypoint, current.waypoint) >= self._dss - config.EPS:
+                        return self._reconstruct_path(current)
+                else:
+                    # Reaching the goal region is not enough: the autonomous aircraft must arrive
+                    # able to turn onto the approach heading within alpha_max. A state
+                    # that wrap-stepped / flew straight into the region can be close but
+                    # badly misaligned; accepting it would force a > alpha_max terminal
+                    # turn at W_{n-1}. Require an aligned arrival; otherwise keep
+                    # searching (the goal_wp candidate provides an aligned approach).
+                    approach_turn = abs(_angle_diff(self.goal_state.heading, current.heading))
+                    if approach_turn <= self.alpha_max_rad:
+                        return self._reconstruct_path(current)
             
             # Expand neighbors
             successors = self.get_next_states(current)
@@ -600,15 +660,22 @@ class KinodynamicAstar:
                 # path[-1] -> T = goal_pos at goal_heading; use those, not the
                 # offset goal_state.waypoint which sits up to GOAL_THRESHOLD away
                 # and would spuriously fail the đoản-trình length check).
-                if j == n - 1:
-                    onward_wp = self.scenario['goal_pos']
-                    onward_h = self.scenario['goal_heading']
+                if j == n - 1 and self._free_goal:
+                    # Free approach: target_wp == T and the anchor->T chord IS
+                    # the straight seeker run-in. There is no onward turn; the
+                    # only extra requirement is that the run-in stays >= DSS, so
+                    # a shortcut may not collapse the final leg below DSS.
+                    is_next_valid = math.dist(anchor_wp, target_wp) >= self._dss - config.EPS
                 else:
-                    onward_wp = path[j + 1][0]
-                    onward_h = su.angle_to_heading(target_wp, onward_wp)
-                is_next_valid, _ = prep.validate_kinodynamics(
-                    target_wp, heading_to, onward_wp, onward_h,
-                    R=self.R, alpha_max=self.alpha_max_rad)
+                    if j == n - 1:
+                        onward_wp = self.scenario['goal_pos']
+                        onward_h = self.scenario['goal_heading']
+                    else:
+                        onward_wp = path[j + 1][0]
+                        onward_h = su.angle_to_heading(target_wp, onward_wp)
+                    is_next_valid, _ = prep.validate_kinodynamics(
+                        target_wp, heading_to, onward_wp, onward_h,
+                        R=self.R, alpha_max=self.alpha_max_rad)
                 if is_next_valid and self._check_collision(anchor_wp, target_wp):
                     best = j
                     break

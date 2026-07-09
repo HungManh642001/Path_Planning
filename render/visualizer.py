@@ -13,12 +13,107 @@ import config
 import core.spatial_utils as su
 import render.trajectory as tr
 
+from shapely.geometry import Polygon as _ShPoly, Point as _ShPoint
+
+
+def _plot_extents(scenario, pad=2000.0):
+    """Axis limits for a scenario (legacy 'map' view).
+
+    Uses the bounding box of all safezone polygons (plus padding) when present,
+    else falls back to the global config.MAP_WIDTH/HEIGHT rectangle (legacy
+    behaviour). Returns ((xmin, xmax), (ymin, ymax)).
+    """
+    safezones = scenario.get('safezones') if scenario else None
+    if safezones:
+        xs = [p[0] for poly in safezones for p in poly]
+        ys = [p[1] for poly in safezones for p in poly]
+        return (min(xs) - pad, max(xs) + pad), (min(ys) - pad, max(ys) + pad)
+    return (-pad, config.MAP_WIDTH + pad), (-pad, config.MAP_HEIGHT + pad)
+
+
+def _content_extents(scenario, preprocessed=None, result=None, pad_frac=0.08, min_pad=1000.0):
+    """Axis limits framed to the mission ('content'/auto-fit view).
+
+    Bounding box of the flown path + start/goal + obstacles, expanded to include
+    the SMALLEST safezone polygon that contains both start and goal (the
+    operating corridor). Larger enclosing safezones are excluded from the frame
+    (they are still drawn, just clipped). Falls back to the config.MAP_WIDTH/
+    HEIGHT rectangle when no content is available. Returns ((xmin,xmax),(ymin,ymax)).
+    """
+    xs, ys = [], []
+
+    def add(p):
+        xs.append(p[0])
+        ys.append(p[1])
+
+    def add_box(cx, cy, r):
+        add((cx - r, cy - r))
+        add((cx + r, cy + r))
+
+    # Mission endpoints and interior waypoints.
+    if preprocessed:
+        for k in ('start_pos', 'goal_pos'):
+            if preprocessed.get(k) is not None:
+                add(preprocessed[k])
+        for k in ('start_state', 'goal_state'):
+            st = preprocessed.get(k) or {}
+            if st.get('waypoint') is not None:
+                add(st['waypoint'])
+        # Inflated obstacles so drawn buffer zones are not clipped.
+        for obs in preprocessed.get('obstacles', []):
+            if obs.get('type') == 'circle':
+                (cx, cy) = obs['center']
+                add_box(cx, cy, obs['radius'])
+            elif obs.get('type') == 'polygon':
+                for p in obs['polygon']:
+                    add(p)
+
+    # The flown trajectory.
+    if result and result.get('path'):
+        for wp, _h in result['path']:
+            add(wp)
+
+    # Raw obstacles.
+    if scenario:
+        for isl in scenario.get('islands', []):
+            for p in isl:
+                add(p)
+        for (cx, cy), r in scenario.get('dynamic_obstacles', []):
+            add_box(cx, cy, r)
+
+    # Operating corridor: smallest safezone covering BOTH start and goal.
+    safezones = (scenario or {}).get('safezones')
+    sp = (preprocessed or {}).get('start_pos') if preprocessed else (scenario or {}).get('start')
+    gp = (preprocessed or {}).get('goal_pos') if preprocessed else (scenario or {}).get('goal')
+    if safezones and sp is not None and gp is not None:
+        best = None
+        for sz in safezones:
+            try:
+                poly = _ShPoly(sz)
+                if not poly.is_valid:
+                    poly = poly.buffer(0)
+                if poly.covers(_ShPoint(sp)) and poly.covers(_ShPoint(gp)):
+                    if best is None or poly.area < best[0]:
+                        best = (poly.area, sz)
+            except Exception:
+                continue
+        if best is not None:
+            for p in best[1]:
+                add(p)
+
+    if not xs:
+        return (-min_pad, config.MAP_WIDTH + min_pad), (-min_pad, config.MAP_HEIGHT + min_pad)
+    minx, maxx, miny, maxy = min(xs), max(xs), min(ys), max(ys)
+    span = max(maxx - minx, maxy - miny, 1.0)
+    pad = max(min_pad, pad_frac * span)
+    return (minx - pad, maxx + pad), (miny - pad, maxy + pad)
+
 
 def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
-                 save_path=None, figsize=(14, 12), trajectory_mode='dubins'):
+                 save_path=None, figsize=(14, 12), trajectory_mode='dubins', fit='map'):
     """
     Create comprehensive visualization of mission scenario and trajectory.
-    
+
     Args:
         scenario: Original scenario from map_generator
         preprocessed: Preprocessed scenario from preprocessing.prepare_scenario()
@@ -26,24 +121,39 @@ def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
         title: Figure title
         save_path: Path to save figure (optional)
         figsize: Figure size
-    
+        fit: View framing. 'map' (default) keeps the legacy full-map / safezone-bbox
+             view; 'content' auto-fits the axes to the flown path + start/goal +
+             obstacles (+ the operating-corridor safezone) so a small mission is
+             easy to follow inside a large map.
+
     Returns:
         Matplotlib figure object
     """
-    
+
     fig, ax = plt.subplots(figsize=figsize, dpi=config.FIGURE_DPI)
-    
+
     # Set up map background
-    map_bounds = preprocessed['start_state']['waypoint']  # Rough estimate
-    ax.set_xlim(-2000, config.MAP_WIDTH + 2000)
-    ax.set_ylim(-2000, config.MAP_HEIGHT + 2000)
+    if fit == 'content':
+        (xlim, ylim) = _content_extents(scenario, preprocessed, result)
+    else:
+        (xlim, ylim) = _plot_extents(scenario)
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
     ax.set_aspect('equal')
     ax.grid(True, alpha=0.3)
-    
-    # Draw map background
-    ax.add_patch(Rectangle((0, 0), config.MAP_WIDTH, config.MAP_HEIGHT, 
-                           fill=True, facecolor='lightblue', edgecolor='blue', 
-                           linewidth=2, alpha=0.3))
+
+    # Draw operating areas: each safezone polygon when supplied, else the full
+    # config.MAP_WIDTH/HEIGHT rectangle (legacy behaviour).
+    safezones = scenario.get('safezones')
+    if safezones:
+        for sz in safezones:
+            ax.add_patch(MplPolygon(sz, closed=True, fill=True,
+                                    facecolor='lightblue', edgecolor='blue',
+                                    linewidth=2, alpha=0.3))
+    else:
+        ax.add_patch(Rectangle((0, 0), config.MAP_WIDTH, config.MAP_HEIGHT,
+                               fill=True, facecolor='lightblue', edgecolor='blue',
+                               linewidth=2, alpha=0.3))
     
     # ====== DRAW OBSTACLES ======
     
@@ -181,9 +291,9 @@ def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
     
     # Add info box
     info_text = f"""Autonomous Aircraft Path Planning System
-R = {config.R}m | α_max = {config.ALPHA_MAX}° | L₀ = {config.L0}m
-Dynamic Obstacles: {len(scenario.get('dynamic_obstacles', []))} | Islands: {len(scenario.get('islands', []))}"""
-    
+    R = {config.R}m | α_max = {config.ALPHA_MAX}° | L₀ = {config.L0}m
+    Dynamic Obstacles: {len(scenario.get('dynamic_obstacles', []))} | Islands: {len(scenario.get('islands', []))}"""
+        
     if result:
         stats = result.get('stats', {})
         success = result.get('success', False)
@@ -334,8 +444,9 @@ def plot_obstacles_comparison(scenario, preprocessed, title="Obstacle Inflation"
                          edgecolor='darkred', linewidth=1.5, alpha=0.5)
         ax1.add_patch(patch)
     
-    ax1.set_xlim(0, config.MAP_WIDTH)
-    ax1.set_ylim(0, config.MAP_HEIGHT)
+    (cmp_xlim, cmp_ylim) = _plot_extents(scenario, pad=0.0)
+    ax1.set_xlim(*cmp_xlim)
+    ax1.set_ylim(*cmp_ylim)
     ax1.set_aspect('equal')
     ax1.grid(True, alpha=0.3)
     ax1.set_title('Original Obstacles')
@@ -357,8 +468,8 @@ def plot_obstacles_comparison(scenario, preprocessed, title="Obstacle Inflation"
                               edgecolor='darkred', linewidth=1.5, alpha=0.6)
             ax2.add_patch(patch)
     
-    ax2.set_xlim(0, config.MAP_WIDTH)
-    ax2.set_ylim(0, config.MAP_HEIGHT)
+    ax2.set_xlim(*cmp_xlim)
+    ax2.set_ylim(*cmp_ylim)
     ax2.set_aspect('equal')
     ax2.grid(True, alpha=0.3)
     ax2.set_title(f'Inflated Obstacles (R={config.R}m + buffer={config.SAFE_MARGIN}m)')
