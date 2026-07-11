@@ -58,3 +58,118 @@ class FocalKinodynamicAstar(KinodynamicAstar):
         if approach_turn <= self.alpha_max_rad:
             return self._reconstruct_path(current)
         return None
+
+    def search(self):
+        """Focal (A*epsilon) search. OPEN is ordered by the admissible
+        f = g + h_euclid (weight 1) so f_min bounds the optimum; FOCAL holds
+        every live OPEN node with f <= w * f_min and is expanded by minimum
+        secondary_h. Guarantees returned cost <= w * optimal."""
+        _start = time.perf_counter()
+        _budget = config.TIME_BUDGET_S
+        w = 1.0 + self.focal_eps
+
+        if not self.start_corners:
+            self.search_failed = True
+            return None
+
+        counter = itertools.count()
+        open_heap = []      # (f, count, state) — all inserted OPEN nodes
+        focal_heap = []     # (secondary, count, state) — nodes with f <= w*f_min
+        in_focal = set()    # id(state) currently pushed to focal_heap
+        self.open_set = open_heap  # keep get_search_stats() meaningful
+
+        for corner in self.start_corners:
+            corner.h_cost = self.heuristic(corner, self.goal_state)
+            if corner.g_cost < self.g_scores[corner]:
+                self.g_scores[corner] = corner.g_cost
+            heapq.heappush(open_heap, (corner.g_cost + corner.h_cost, next(counter), corner))
+
+        def _is_live(state):
+            return (state not in self.closed_set and
+                    state.g_cost <= self.g_scores.get(state, float('inf')))
+
+        def _clean_open_top():
+            while open_heap and not _is_live(open_heap[0][2]):
+                heapq.heappop(open_heap)
+
+        def _refill_focal(f_bound):
+            # Tolerant admission: g_cost and h_cost for two nodes with the
+            # SAME true admissible f (e.g. multiple seeded start corners
+            # collinear with O and the goal) are computed via independent
+            # floating-point paths (ray-distance vs. hypot) and can land ~1
+            # ULP apart at these magnitudes (~1e5-1e6 m). A strict f <=
+            # f_bound at eps=0 (w=1.0, zero-width window) then silently
+            # excludes the true optimum from FOCAL, so the tie-break falls to
+            # a worse node — breaking the eps=0 == optimal guarantee. EPS is
+            # metres, orders of magnitude above the float noise, negligible
+            # against real path costs.
+            for f, c, st in open_heap:
+                if f <= f_bound + config.EPS and id(st) not in in_focal and _is_live(st):
+                    heapq.heappush(focal_heap, (self.secondary_h(st), c, st))
+                    in_focal.add(id(st))
+
+        _clean_open_top()
+        f_min = open_heap[0][0] if open_heap else None
+        if f_min is not None:
+            _refill_focal(w * f_min)
+
+        while open_heap and self.iteration_count < self.max_iterations:
+            if _budget is not None and (time.perf_counter() - _start) > _budget:
+                break
+            self.iteration_count += 1
+
+            # Select the FOCAL-best live node; if FOCAL drained, refill and retry.
+            current = None
+            while focal_heap:
+                _, _, cand = heapq.heappop(focal_heap)
+                in_focal.discard(id(cand))
+                if _is_live(cand):
+                    current = cand
+                    break
+            if current is None:
+                _clean_open_top()
+                if not open_heap:
+                    break
+                f_min = open_heap[0][0]
+                _refill_focal(w * f_min)
+                continue
+
+            self.closed_set.add(current)
+
+            # Escape-valve re-arm (mirrors base search): give the fan a fresh
+            # budget as a last resort when the frontier is nearly dead.
+            if len(open_heap) <= 1 and self.num_strategy_b <= 0:
+                self.num_strategy_b = config.NUM_STRATEGY_B
+
+            reached = self._goal_reached(current)
+            if reached is not None:
+                return reached
+
+            for next_state, transition_cost in self.get_next_states(current):
+                if next_state in self.closed_set:
+                    continue
+                tentative_g = self.g_scores[current] + transition_cost
+                if tentative_g < self.g_scores.get(next_state, float('inf')):
+                    next_state.parent = current
+                    self.g_scores[next_state] = tentative_g
+                    next_state.g_cost = tentative_g
+                    next_state.h_cost = self.heuristic(next_state, self.goal_state)
+                    f = tentative_g + next_state.h_cost
+                    c = next(counter)
+                    heapq.heappush(open_heap, (f, c, next_state))
+                    if f_min is not None and f <= w * f_min + config.EPS:
+                        heapq.heappush(focal_heap, (self.secondary_h(next_state), c, next_state))
+                        in_focal.add(id(next_state))
+
+            # Update f_min after expansion; widen FOCAL if it rose.
+            _clean_open_top()
+            if open_heap:
+                new_fmin = open_heap[0][0]
+                if f_min is None or new_fmin > f_min:
+                    f_min = new_fmin
+                    _refill_focal(w * f_min)
+            else:
+                f_min = None
+
+        self.search_failed = True
+        return None
