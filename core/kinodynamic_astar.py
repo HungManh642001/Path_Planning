@@ -49,7 +49,12 @@ class State:
         # turn is known (no alpha_max worst-case). inf = no straight constraint
         # carried in (start state, arc-ride departures).
         self.straight_budget = float('inf')
-    
+        # Required straight length of the INCOMING segment (đoản-trình
+        # threshold used by the deferred far-end check). Normal states need
+        # the generic minimum; seeded start corners override this with L0 so
+        # the takeoff stabilization leg is enforced exactly.
+        self.min_straight_in = _MIN_STRAIGHT_M
+
     def __hash__(self):
         return hash(su.state_to_tuple(self.waypoint, self.heading))
     
@@ -96,6 +101,14 @@ class KinodynamicAstar:
         self._safezone = unary_union([Polygon(sz) for sz in safezones]) if safezones else None
         self._safezone_prep = shp_prep(self._safezone) if self._safezone is not None else None
         map_bounds = preprocessed_scenario.get('map_bounds')
+        # Only enforce a rectangular bound when one is EXPLICITLY supplied. The
+        # global config.MAP_WIDTH/HEIGHT is a legacy 500 km default that is
+        # meaningless for scenarios living elsewhere (e.g. real missions at
+        # y ~ 1.15e6); enforcing it there would reject every waypoint. When
+        # neither a safezone nor an explicit map_bounds is given, _in_bounds is
+        # permissive (the search is still bounded by obstacles, candidates,
+        # MAX_ITERATIONS and the time budget).
+        self._has_explicit_bounds = map_bounds is not None
         self._bounds_w, self._bounds_h = map_bounds if map_bounds else (config.MAP_WIDTH, config.MAP_HEIGHT)
 
         # Start and goal states
@@ -136,6 +149,40 @@ class KinodynamicAstar:
         self.max_iterations = config.MAX_ITERATIONS
         self.R = preprocessed_scenario['turn_radius']
         self.alpha_max_rad = preprocessed_scenario['alpha_max_rad']
+
+        # Seeded start corners: instead of rooting the search at the single
+        # worst-case W1 (L0 + R*tan(alpha_max/2) along the takeoff ray), seed
+        # K corner states at d_i = L0 + R*tan(a_i/2) with tan-uniform buckets
+        # tan(a_i/2) = (i/K)*tan(alpha_max/2), i = 1..K (bucket K == legacy
+        # W1, so NUM_START_CORNERS = 1 is exactly legacy). A corner seeded for
+        # a_i affords any first turn alpha <= a_i while keeping the takeoff
+        # straight l1 >= L0 EXACTLY (straight_budget + min_straight_in = L0).
+        # Corners that leave the operating area or whose takeoff leg O->corner
+        # collides are NOT seeded — feasibility recovery near obstacles and
+        # safezone edges, where the old fixed W1 could land inside an inflated
+        # zone and kill the whole plan.
+        O = preprocessed_scenario['start_pos']
+        u_start = preprocessed_scenario['start_state']['heading']
+        L0_start = preprocessed_scenario['start_state'].get('straight_length', config.L0)
+        K = max(1, int(config.NUM_START_CORNERS))
+        tan_max = math.tan(self.alpha_max_rad / 2.0)
+        self.start_corners = []
+        for i in range(1, K + 1):
+            d_i = L0_start + self.R * (i / K) * tan_max
+            corner = (O[0] + d_i * math.cos(u_start),
+                      O[1] + d_i * math.sin(u_start))
+            if not self._in_bounds(corner):
+                continue
+            if not self._check_collision(O, corner):
+                continue
+            st = State(corner, u_start)
+            # True along-ray cost from O. All corners share the same O origin,
+            # so relative costs between corners are exact (the legacy single
+            # root could use g=0 because its offset was a common constant).
+            st.g_cost = d_i
+            st.straight_budget = d_i
+            st.min_straight_in = L0_start
+            self.start_corners.append(st)
 
         # Pre-computed constants (depend only on R / alpha_max / config, all
         # fixed for the planner's lifetime) hoisted out of the per-expansion
@@ -197,11 +244,14 @@ class KinodynamicAstar:
         case that check is deferred to the new state's own expansion.
 
         Returns the new state's `straight_budget` (new segment length minus the
-        near reserve) when both ends have room, else None.
+        near reserve) when both ends have room, else None. The deferred
+        far-end check of `current`'s incoming segment uses `current`'s own
+        `min_straight_in` threshold (generic minimum, or L0 for a seeded
+        start corner).
         """
         reserve = self.R * math.tan(turn_at_current / 2.0)
         # Deferred far-end check of `current`'s incoming segment.
-        if current.straight_budget - reserve < _MIN_STRAIGHT_M:
+        if current.straight_budget - reserve < current.min_straight_in:
             return None
         budget = seg_len - reserve
         if budget - far_reserve < _MIN_STRAIGHT_M:
@@ -515,12 +565,16 @@ class KinodynamicAstar:
         """Check if point is inside the operating area.
 
         With a safezone polygon: point must be covered by it (`covers`, so a
-        point exactly on the operating-area boundary is allowed). Without one:
-        the legacy axis-aligned rectangle [0, w] x [0, h].
+        point exactly on the operating-area boundary is allowed). Else, with an
+        EXPLICIT map_bounds: the axis-aligned rectangle [0, w] x [0, h]. Else
+        (no operating area configured): permissive — the legacy 500 km config
+        default is not a real constraint for a scenario that lives elsewhere.
         """
-        x, y = point
         if self._safezone_prep is not None:
-            return self._safezone_prep.covers(Point(x, y))
+            return self._safezone_prep.covers(Point(*point))
+        if not self._has_explicit_bounds:
+            return True
+        x, y = point
         return (0 < x < self._bounds_w and
                 0 < y < self._bounds_h)
     
@@ -537,13 +591,23 @@ class KinodynamicAstar:
         _budget = config.TIME_BUDGET_S
 
         # Initialize
-        self.start_state.h_cost = self.heuristic(self.start_state, self.goal_state)
-        heapq.heappush(self.open_set, (
-            self.start_state.g_cost + config.HEURISTIC_WEIGHT * self.start_state.h_cost,
-            self.iteration_count,
-            self.start_state
-        ))
-        self.g_scores[self.start_state] = 0
+        # Seed every feasible start corner. If none survived construction
+        # (takeoff ray blocked / outside the operating area), the start is
+        # blocked: fail fast and honestly.
+        if not self.start_corners:
+            self.search_failed = True
+            return None
+        for corner in self.start_corners:
+            corner.h_cost = self.heuristic(corner, self.goal_state)
+            heapq.heappush(self.open_set, (
+                corner.g_cost + config.HEURISTIC_WEIGHT * corner.h_cost,
+                self.iteration_count,
+                corner
+            ))
+            # Two corners can share a lattice cell when the bucket spacing is
+            # below STATE_POS_QUANTUM; keep the cheaper g per cell.
+            if corner.g_cost < self.g_scores[corner]:
+                self.g_scores[corner] = corner.g_cost
 
         while self.open_set and self.iteration_count < self.max_iterations:
             if _budget is not None and (time.perf_counter() - _start) > _budget:
@@ -579,15 +643,20 @@ class KinodynamicAstar:
             if dist_to_goal < config.GOAL_THRESHOLD:
                 if self._free_goal:
                     # Free approach: T is reached via the straight run-in edge.
-                    # Guard that the incoming edge really is a valid run-in
-                    # (>= DSS), so a fan/wrap successor that happens to land on T
-                    # cannot be accepted without a proper seeker run-in.
-                    print(current.parent)
-                    print(math.dist(
-                            current.parent.waypoint, current.waypoint))
-                    if current.parent is not None and math.dist(
-                            current.parent.waypoint, current.waypoint) >= self._dss - config.EPS:
-                        return self._reconstruct_path(current)
+                    # Guard that the incoming edge is a valid run-in — its USABLE
+                    # straight length (after the turn fillet at the previous
+                    # waypoint bites R*tan(turn/2)) must be >= DSS, so there is
+                    # room both to bank onto the run-in AND for the full DSS
+                    # seeker leg. Checking only the raw distance would accept an
+                    # edge whose fillet steals into the seeker leg, or a fan/wrap
+                    # successor that lands on T without a proper run-in.
+                    if current.parent is not None:
+                        seg = math.dist(current.parent.waypoint, current.waypoint)
+                        bearing = su.angle_to_heading(current.parent.waypoint, current.waypoint)
+                        turn_at_prev = abs(_angle_diff(bearing, current.parent.heading))
+                        usable = seg - self.R * math.tan(turn_at_prev / 2.0)
+                        if usable >= self._dss - config.EPS:
+                            return self._reconstruct_path(current)
                 else:
                     # Reaching the goal region is not enough: the autonomous aircraft must arrive
                     # able to turn onto the approach heading within alpha_max. A state
@@ -700,6 +769,18 @@ class KinodynamicAstar:
             for j in range(n - 1, i, -1):
                 target_wp = path[j][0]
                 heading_to = su.angle_to_heading(anchor_wp, target_wp)
+                # First-anchor L0 guard: when the anchor is path[0] (the
+                # seeded takeoff corner), a shortcut changes the first turn
+                # alpha_1, and the incoming O->corner leg must still keep
+                # l1 = d(O, corner) - R*tan(alpha_1/2) >= L0. Legacy code was
+                # safe implicitly via the alpha_max reserve in W1's placement;
+                # minimal corners need the guard explicit.
+                if len(smoothed) == 1:
+                    a1_new = abs(_angle_diff(heading_to, anchor_h))
+                    d0 = math.dist(self.scenario['start_pos'], anchor_wp)
+                    l0_req = self.scenario['start_state']['straight_length']
+                    if d0 - self.R * math.tan(a1_new / 2.0) < l0_req - config.EPS:
+                        continue
                 # Onward waypoint after target = the far-end turn of the
                 # anchor->target chord. Known here (path[j+1], or the goal leg),
                 # so pass it to validate BOTH ends of the chord exactly instead

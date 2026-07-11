@@ -77,6 +77,13 @@ MAP_HEIGHT = 500000.0
 MAP_ORIGIN = (0.0, 0.0)
 
 # ====== A* SEARCH ======
+# Number of seeded start-corner states on the start-heading ray. Corner i
+# (i = 1..K, tan-uniform buckets: tan(a_i/2) = (i/K) * tan(alpha_max/2)) sits
+# at d_i = L0 + R*tan(a_i/2) and affords first turns alpha <= a_i while
+# keeping the takeoff straight l1 >= L0 exactly. Bucket K reproduces the
+# legacy worst-case W1, so NUM_START_CORNERS = 1 is exactly legacy behaviour.
+NUM_START_CORNERS = 4
+
 # Maximum iterations for A* search
 MAX_ITERATIONS = 50000
 
