@@ -78,6 +78,11 @@ class FocalKinodynamicAstar(KinodynamicAstar):
         in_focal = set()    # id(state) currently pushed to focal_heap
         self.open_set = open_heap  # keep get_search_stats() meaningful
 
+        # Admissible OPEN uses heuristic weight 1 intentionally (NOT
+        # config.HEURISTIC_WEIGHT) so f = g + h stays a true lower bound and
+        # the focal bound holds; focal_eps is the only suboptimality knob.
+        w = 1.0 + self.focal_eps
+
         for corner in self.start_corners:
             corner.h_cost = self.heuristic(corner, self.goal_state)
             if corner.g_cost < self.g_scores[corner]:

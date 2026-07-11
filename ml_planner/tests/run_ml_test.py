@@ -2,7 +2,7 @@ from ml_planner.run_ml import compare_seed, run_benchmark
 
 
 def test_compare_seed_reports_bound_and_keys():
-    row = compare_seed(1, focal_eps=0.05)
+    row = compare_seed(2, focal_eps=0.05)
     for key in ('seed', 'base_success', 'focal_success', 'base_cost',
                 'focal_cost', 'cost_ratio', 'within_bound',
                 'base_iters', 'focal_iters', 'base_time', 'focal_time'):

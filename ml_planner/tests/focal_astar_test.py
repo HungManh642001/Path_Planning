@@ -5,6 +5,7 @@ import pytest
 import core.kinodynamic_astar as astar
 import core.map_generator as mg
 import core.preprocessing as prep
+from core.kinodynamic_astar import State
 from ml_planner.focal_astar import FocalKinodynamicAstar
 
 
@@ -103,3 +104,22 @@ def test_epsilon_bound_holds_on_obstacle_scenarios(scenario_func):
     assert path is not None
     path = planner.smooth_path(path)
     assert _mission_cost(pre2, path) <= 1.05 * base_cost + 1e-6
+
+
+def test_goal_reached_accepts_aligned_rejects_misaligned():
+    pre = prep.prepare_scenario(mg.scenario2_single_obstacle())
+    planner = FocalKinodynamicAstar(pre, focal_eps=0.05)
+    gwp = planner.goal_state.waypoint
+    gh = planner.goal_state.heading
+    # Aligned arrival exactly at the goal waypoint -> accepted (returns a path).
+    aligned = State(gwp, gh)
+    aligned.parent = planner.start_state
+    assert planner._goal_reached(aligned) is not None
+    # Misaligned by more than alpha_max -> rejected.
+    misaligned = State(gwp, gh + planner.alpha_max_rad + 0.5)
+    misaligned.parent = planner.start_state
+    assert planner._goal_reached(misaligned) is None
+    # Far from the goal -> rejected regardless of heading.
+    far = State((gwp[0] + 1e6, gwp[1]), gh)
+    far.parent = planner.start_state
+    assert planner._goal_reached(far) is None
