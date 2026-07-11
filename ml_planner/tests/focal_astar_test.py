@@ -1,5 +1,7 @@
 import math
 
+import pytest
+
 import core.kinodynamic_astar as astar
 import core.map_generator as mg
 import core.preprocessing as prep
@@ -74,3 +76,30 @@ def test_focal_respects_epsilon_bound():
     path = planner.search()
     assert path is not None
     assert _mission_cost(pre, path) <= 1.05 * opt + 1e-6
+
+
+@pytest.mark.parametrize("scenario_func", [
+    mg.scenario4_complex_maze,
+    mg.scenario12_perimeter_dynamic_obstacles,
+    mg.scenario13_dense_island_field,
+    mg.scenario16_extreme_complexity,
+])
+def test_epsilon_bound_holds_on_obstacle_scenarios(scenario_func):
+    # The real guarantee (user's requirement): focal must not be worse than the
+    # CURRENT algorithm (base) by more than epsilon = 5%. Verified on obstacle
+    # maps that actually force detours -- scenario2 alone is unobstructed and
+    # gives false confidence. Reproducing the base EXACTLY at eps=0 is NOT
+    # required: both base and focal are non-reopening lattice searches, so a
+    # sub-0.1% tie-break difference is expected and accepted (documented
+    # decision). The meaningful contract is the 1.05x ceiling.
+    pre = prep.prepare_scenario(scenario_func())
+    base = astar.plan_trajectory(pre, verbose=False)
+    assert base['success']
+    base_cost = _mission_cost(pre, base['path'])
+
+    pre2 = prep.prepare_scenario(scenario_func())
+    planner = FocalKinodynamicAstar(pre2, focal_eps=0.05)
+    path = planner.search()
+    assert path is not None
+    path = planner.smooth_path(path)
+    assert _mission_cost(pre2, path) <= 1.05 * base_cost + 1e-6
