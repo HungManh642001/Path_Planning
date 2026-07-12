@@ -8,6 +8,8 @@ Uses core/* read-only.
 
 import contextlib
 import heapq
+import itertools
+import time
 from collections import defaultdict
 
 import numpy as np
@@ -52,6 +54,63 @@ class _RecordingAstar(FocalKinodynamicAstar):
         return successors
 
 
+# Expansions the exploring labeler runs. It does NOT stop at the goal: it
+# keeps expanding in A* (f) order so backward-Dijkstra labels a DENSE
+# neighborhood around the optimal corridor, not just the thin path the plain
+# solve explores. Higher = denser labels but slower / more memory.
+DEFAULT_MAX_EXPLORE = 4000
+
+
+class _ExploringAstar(_RecordingAstar):
+    """Records edges like _RecordingAstar but expands in A* (f) order WITHOUT
+    stopping at the goal, up to max_explore expansions (or the time budget /
+    open exhaustion). It notes the first goal-accepting state's key
+    (`goal_key`) as the backward-Dijkstra source. This densifies the labeled
+    region far beyond the plain optimal solve."""
+
+    def __init__(self, preprocessed_scenario, max_explore=DEFAULT_MAX_EXPLORE):
+        super().__init__(preprocessed_scenario)
+        self.max_explore = max_explore
+        self.goal_key = None
+
+    def explore(self):
+        """Best-first (f = g + h_euclid) expansion recording all edges; returns
+        True once a goal-accepting state was seen (so it can be labeled)."""
+        _start = time.perf_counter()
+        _budget = config.TIME_BUDGET_S
+        if not self.start_corners:
+            return False
+        counter = itertools.count()
+        open_heap = []
+        for corner in self.start_corners:
+            corner.h_cost = self.heuristic(corner, self.goal_state)
+            if corner.g_cost < self.g_scores[corner]:
+                self.g_scores[corner] = corner.g_cost
+            heapq.heappush(open_heap, (corner.g_cost + corner.h_cost, next(counter), corner))
+        expanded = 0
+        while open_heap and expanded < self.max_explore:
+            if _budget is not None and (time.perf_counter() - _start) > _budget:
+                break
+            _, _, current = heapq.heappop(open_heap)
+            if current in self.closed_set:
+                continue
+            self.closed_set.add(current)
+            expanded += 1
+            if self.goal_key is None and self._goal_reached(current) is not None:
+                self.goal_key = su.state_to_tuple(current.waypoint, current.heading)
+            for nxt, tcost in self.get_next_states(current):
+                if nxt in self.closed_set:
+                    continue
+                tentative_g = self.g_scores[current] + tcost
+                if tentative_g < self.g_scores.get(nxt, float('inf')):
+                    nxt.parent = current
+                    self.g_scores[nxt] = tentative_g
+                    nxt.g_cost = tentative_g
+                    nxt.h_cost = self.heuristic(nxt, self.goal_state)
+                    heapq.heappush(open_heap, (tentative_g + nxt.h_cost, next(counter), nxt))
+        return self.goal_key is not None
+
+
 def backward_costs(edges, goal_key):
     """Exact cost-to-go for every node that can reach goal_key, via Dijkstra
     on the reversed edge set."""
@@ -89,18 +148,18 @@ def rasterize_labels(costs, key2wp, affine, grid_res):
     return label, mask.astype(np.float32)
 
 
-def generate_sample(scenario, grid_res=None):
-    """Run the oracle, backward-label, rasterize. None if unsolved."""
+def generate_sample(scenario, grid_res=None, max_explore=DEFAULT_MAX_EXPLORE):
+    """Run the exploring labeler, backward-label, rasterize. None if the goal
+    was never reached within the exploration budget."""
     if grid_res is None:
         grid_res = mlcfg.GRID_RES
     with _no_budget():
-        planner = _RecordingAstar(prep.prepare_scenario(scenario))
-        path = planner.search()
-    if path is None or planner.raw_route is None:
+        planner = _ExploringAstar(prep.prepare_scenario(scenario), max_explore=max_explore)
+        found = planner.explore()
+    if not found:
         return None
     pre = planner.scenario
-    goal_key = su.state_to_tuple(*planner.raw_route[-1])
-    costs = backward_costs(planner.edges, goal_key)
+    costs = backward_costs(planner.edges, planner.goal_key)
     affine = raster.compute_crop(pre, grid_res)
     channels = raster.build_channels(pre, affine, grid_res)
     label, mask = rasterize_labels(costs, planner.key2wp, affine, grid_res)
