@@ -13,8 +13,11 @@ from collections import defaultdict
 import numpy as np
 
 import config
+import core.preprocessing as prep
 import core.spatial_utils as su
 from ml_planner.focal_astar import FocalKinodynamicAstar
+import ml_planner.raster as raster
+import ml_planner.config as mlcfg
 
 
 @contextlib.contextmanager
@@ -67,3 +70,67 @@ def backward_costs(edges, goal_key):
                 dist[u] = nd
                 heapq.heappush(pq, (nd, u))
     return dist
+
+
+def rasterize_labels(costs, key2wp, affine, grid_res):
+    """Min cost-to-go per grid cell (field is position-only, so aggregate the
+    best achievable cost at each cell). Returns (label, mask) float32."""
+    label = np.full((grid_res, grid_res), np.inf, dtype=np.float64)
+    for key, c in costs.items():
+        wp = key2wp.get(key)
+        if wp is None:
+            continue
+        gx, gy = affine.world_to_grid(*wp)
+        ix, iy = int(round(gx)), int(round(gy))
+        if 0 <= iy < grid_res and 0 <= ix < grid_res and c < label[iy, ix]:
+            label[iy, ix] = c
+    mask = np.isfinite(label)
+    label = np.where(mask, label, 0.0).astype(np.float32)
+    return label, mask.astype(np.float32)
+
+
+def generate_sample(scenario, grid_res=None):
+    """Run the oracle, backward-label, rasterize. None if unsolved."""
+    if grid_res is None:
+        grid_res = mlcfg.GRID_RES
+    with _no_budget():
+        planner = _RecordingAstar(prep.prepare_scenario(scenario))
+        path = planner.search()
+    if path is None or planner.raw_route is None:
+        return None
+    pre = planner.scenario
+    goal_key = su.state_to_tuple(*planner.raw_route[-1])
+    costs = backward_costs(planner.edges, goal_key)
+    affine = raster.compute_crop(pre, grid_res)
+    channels = raster.build_channels(pre, affine, grid_res)
+    label, mask = rasterize_labels(costs, planner.key2wp, affine, grid_res)
+    return {
+        'channels': channels,
+        'label': label,
+        'mask': mask,
+        'affine': np.array([affine.x0, affine.y0, affine.scale, grid_res],
+                           dtype=np.float64),
+    }
+
+
+def export_dataset(scenarios, out_path, grid_res=None):
+    """Write a compressed .npz stacking every solved sample. Returns count."""
+    if grid_res is None:
+        grid_res = mlcfg.GRID_RES
+    chans, labels, masks, affines = [], [], [], []
+    for scenario in scenarios:
+        sample = generate_sample(scenario, grid_res)
+        if sample is None:
+            continue
+        chans.append(sample['channels'])
+        labels.append(sample['label'])
+        masks.append(sample['mask'])
+        affines.append(sample['affine'])
+    if not chans:
+        raise ValueError("no solvable scenarios produced a sample")
+    np.savez_compressed(
+        out_path,
+        channels=np.stack(chans), label=np.stack(labels),
+        mask=np.stack(masks), affine=np.stack(affines),
+    )
+    return len(chans)

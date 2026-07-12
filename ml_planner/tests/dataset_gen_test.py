@@ -1,10 +1,13 @@
+import os
 import math
+
+import numpy as np
 
 import core.map_generator as mg
 import core.preprocessing as prep
 import core.kinodynamic_astar as astar
 import core.spatial_utils as su
-from ml_planner.dataset_gen import _RecordingAstar, backward_costs, _no_budget
+from ml_planner.dataset_gen import _RecordingAstar, backward_costs, _no_budget, rasterize_labels, generate_sample, export_dataset
 
 
 def _mission(pre, path):
@@ -36,3 +39,27 @@ def test_backward_costs_reconstruct_base_optimum():
         for c in planner.start_corners
     )
     assert abs(best - base_mission) <= 0.02 * base_mission
+
+
+def test_generate_sample_shapes_and_mask():
+    scen = mg.scenario2_single_obstacle()
+    sample = generate_sample(scen, grid_res=64)
+    assert sample is not None
+    assert sample['channels'].shape == (4, 64, 64)
+    assert sample['label'].shape == (64, 64)
+    assert sample['mask'].shape == (64, 64)
+    assert sample['mask'].sum() > 0                      # some cells labeled
+    # Labeled cells carry finite non-negative cost-to-go.
+    labeled = sample['label'][sample['mask'] > 0]
+    assert np.all(np.isfinite(labeled)) and np.all(labeled >= 0.0)
+
+
+def test_export_dataset_roundtrip(tmp_path):
+    out = os.path.join(tmp_path, "ds.npz")
+    n = export_dataset([mg.scenario1_open_ocean(), mg.scenario2_single_obstacle()],
+                       out, grid_res=64)
+    assert n >= 1
+    data = np.load(out)
+    assert data['channels'].shape == (n, 4, 64, 64)
+    assert data['label'].shape == (n, 64, 64)
+    assert data['mask'].shape == (n, 64, 64)
