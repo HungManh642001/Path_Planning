@@ -11,7 +11,7 @@ def test_training_notebook_is_valid_and_covers_contract():
     assert isinstance(nb.get("cells"), list) and len(nb["cells"]) >= 4
     text = "\n".join("".join(c.get("source", [])) for c in nb["cells"])
     # The notebook must document the hard I/O contract and masked loss.
-    for token in ("channels", "cost_to_go", "256", "mask", "onnx"):
+    for token in ("channels", "cost_to_go", "384", "mask", "onnx"):
         assert token in text
 
 

@@ -12,8 +12,9 @@ FOCAL_EPS = 0.05
 FOCAL_WEIGHT = 1.0 + FOCAL_EPS
 
 # ====== PHASE-2 PLACEHOLDERS (CNN guidance map; unused in Phase 1) ======
-# Fixed grid resolution for the per-problem cost-to-go field.
-GRID_RES = 256
+# Fixed grid resolution for the per-problem cost-to-go field. Higher = finer
+# cells (better resolves narrow gaps on hard maps) at higher build_field cost.
+GRID_RES = 384
 # Path to the exported ONNX guidance model (produced off-machine on Colab).
 # Missing file => planner falls back to the hand-crafted secondary heuristic.
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "guidance.onnx")

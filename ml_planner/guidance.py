@@ -37,9 +37,9 @@ def bilinear_lookup(field, gx, gy):
 class Guidance:
     """Loads an ONNX cost-to-go model; builds one field per problem.
 
-    Note: grid_res must equal the ONNX model's exported spatial size (the training
-    notebook exports static 256x256 axes), or build_field will fail and the planner
-    falls back to hand-crafted guidance.
+    Note: grid_res (mlcfg.GRID_RES) must equal the ONNX model's exported spatial
+    size (the training notebook exports static GRID_RES x GRID_RES axes), or
+    build_field will fail and the planner falls back to hand-crafted guidance.
     """
 
     def __init__(self, model_path=mlcfg.MODEL_PATH, grid_res=mlcfg.GRID_RES):
@@ -71,11 +71,24 @@ class Guidance:
         return LARGE if v is None else v
 
 
+# Loaded ONNX sessions cached by model path so repeated planning calls in one
+# process don't reload the model (build_field still runs per problem).
+_GUIDANCE_CACHE = {}
+
+
+def _cached_guidance(model_path):
+    g = _GUIDANCE_CACHE.get(model_path)
+    if g is None:
+        g = Guidance(model_path)
+        _GUIDANCE_CACHE[model_path] = g
+    return g
+
+
 def make_guidance_secondary(preprocessed, model_path=None, guidance_obj=None):
     """Build the guidance field once and return (secondary_callable, True), or
     (None, False) when no model is available or build_field fails (caller falls back
     to hand-crafted)."""
-    g = guidance_obj if guidance_obj is not None else Guidance(
+    g = guidance_obj if guidance_obj is not None else _cached_guidance(
         model_path or mlcfg.MODEL_PATH)
     if not g.available:
         return None, False
