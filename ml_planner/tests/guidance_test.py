@@ -82,3 +82,17 @@ def test_real_onnx_roundtrip(tmp_path):
     g.build_field(pre)
     assert g.field.shape == (64, 64)
     assert g.lookup(pre['goal_pos']) < LARGE
+
+
+def test_make_guidance_secondary_survives_build_failure():
+    class _BrokenGuidance:
+        available = True
+        def build_field(self, preprocessed):
+            raise RuntimeError("bad model I/O")
+        def lookup(self, waypoint):
+            return 0.0
+
+    pre = prep.prepare_scenario(mg.scenario2_single_obstacle())
+    cb, available = make_guidance_secondary(pre, guidance_obj=_BrokenGuidance())
+    assert available is False
+    assert cb is None

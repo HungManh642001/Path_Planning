@@ -35,7 +35,12 @@ def bilinear_lookup(field, gx, gy):
 
 
 class Guidance:
-    """Loads an ONNX cost-to-go model; builds one field per problem."""
+    """Loads an ONNX cost-to-go model; builds one field per problem.
+
+    Note: grid_res must equal the ONNX model's exported spatial size (the training
+    notebook exports static 256x256 axes), or build_field will fail and the planner
+    falls back to hand-crafted guidance.
+    """
 
     def __init__(self, model_path=mlcfg.MODEL_PATH, grid_res=mlcfg.GRID_RES):
         self.model_path = model_path
@@ -68,10 +73,14 @@ class Guidance:
 
 def make_guidance_secondary(preprocessed, model_path=None, guidance_obj=None):
     """Build the guidance field once and return (secondary_callable, True), or
-    (None, False) when no model is available (caller falls back to hand-crafted)."""
+    (None, False) when no model is available or build_field fails (caller falls back
+    to hand-crafted)."""
     g = guidance_obj if guidance_obj is not None else Guidance(
         model_path or mlcfg.MODEL_PATH)
     if not g.available:
         return None, False
-    g.build_field(preprocessed)
+    try:
+        g.build_field(preprocessed)
+    except Exception:
+        return None, False
     return (lambda state: g.lookup(state.waypoint)), True
