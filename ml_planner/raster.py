@@ -6,6 +6,7 @@ where ix is grid-x from world-x and iy is grid-y from world-y.
 """
 
 import numpy as np
+from matplotlib.path import Path as _MplPath
 
 
 class Affine:
@@ -45,3 +46,46 @@ def compute_crop(preprocessed, grid_res, margin_frac=0.1):
     x0 = cx - 0.5 * side
     y0 = cy - 0.5 * side
     return Affine(x0, y0, grid_res / side, grid_res)
+
+
+def _cell_centers_world(affine, grid_res):
+    """Convert grid cell indices to world coordinates at cell centers."""
+    idx = np.arange(grid_res, dtype=np.float64) + 0.5
+    gx, gy = np.meshgrid(idx, idx)          # both shape (grid_res, grid_res), [iy, ix]
+    wx = affine.x0 + gx / affine.scale
+    wy = affine.y0 + gy / affine.scale
+    return wx, wy
+
+
+def build_channels(preprocessed, affine, grid_res):
+    """(4, H, W) float32: occupancy, safezone, dist-to-goal, start marker."""
+    wx, wy = _cell_centers_world(affine, grid_res)
+    pts = np.column_stack([wx.ravel(), wy.ravel()])
+
+    occ = np.zeros((grid_res, grid_res), dtype=bool)
+    for (cx, cy), r in preprocessed['circle_obstacles']:
+        occ |= ((wx - cx) ** 2 + (wy - cy) ** 2) < r * r
+    for poly in preprocessed['polygon_obstacles']:
+        occ |= _MplPath(poly).contains_points(pts).reshape(grid_res, grid_res)
+
+    safezones = preprocessed.get('safezones')
+    if safezones:
+        inside = np.zeros((grid_res, grid_res), dtype=bool)
+        for poly in safezones:
+            inside |= _MplPath(poly).contains_points(pts).reshape(grid_res, grid_res)
+        safe = inside.astype(np.float32)
+    else:
+        safe = np.ones((grid_res, grid_res), dtype=np.float32)
+
+    gx_goal, gy_goal = preprocessed['goal_pos']
+    dist = np.sqrt((wx - gx_goal) ** 2 + (wy - gy_goal) ** 2)
+    diag = np.sqrt(2.0) * grid_res / affine.scale
+    dgoal = (dist / diag).astype(np.float32)
+
+    start = np.zeros((grid_res, grid_res), dtype=np.float32)
+    sgx, sgy = affine.world_to_grid(*preprocessed['start_pos'])
+    si, sj = int(round(sgy)), int(round(sgx))
+    if 0 <= si < grid_res and 0 <= sj < grid_res:
+        start[si, sj] = 1.0
+
+    return np.stack([occ.astype(np.float32), safe, dgoal, start], axis=0)
