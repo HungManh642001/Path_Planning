@@ -7,6 +7,7 @@ FocalKinodynamicAstar. Does not modify the base module.
 import math
 
 from ml_planner.focal_astar import FocalKinodynamicAstar
+from ml_planner.guidance import make_guidance_secondary
 
 
 def path_length(path):
@@ -24,7 +25,15 @@ def plan_trajectory_focal(preprocessed_scenario, focal_eps=None, secondary=None,
     the fixed takeoff/approach legs are clear AND a body path was found, the
     same contract as the base plan_trajectory.
     """
-    planner = FocalKinodynamicAstar(preprocessed_scenario, focal_eps=focal_eps, secondary=secondary)
+    # 'guidance' selects the learned CNN secondary when a model is available,
+    # else falls back to the hand-crafted secondary (Phase-1 behavior). Any
+    # other value (None or a callable) is passed through unchanged.
+    resolved_secondary = secondary
+    if secondary == 'guidance':
+        cb, _available = make_guidance_secondary(preprocessed_scenario)
+        resolved_secondary = cb            # None when unavailable -> hand-crafted
+
+    planner = FocalKinodynamicAstar(preprocessed_scenario, focal_eps=focal_eps, secondary=resolved_secondary)
 
     legs_ok = planner._check_fixed_legs()
     path = None
