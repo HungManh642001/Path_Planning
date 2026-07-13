@@ -10,9 +10,13 @@ def _mission(pre, path):
     return math.dist(pre['start_pos'], path[0][0]) + path_length(path)
 
 
-def test_guidance_flag_falls_back_without_model():
-    # No guidance.onnx present -> 'guidance' must degrade to the hand-crafted
-    # secondary and behave exactly like secondary=None.
+def test_guidance_flag_falls_back_when_unavailable(monkeypatch):
+    # When no model is available, secondary='guidance' must degrade to the
+    # hand-crafted secondary and behave exactly like secondary=None. Force the
+    # unavailable case deterministically (a real guidance.onnx may be present in
+    # ml_planner/models/ on the dev machine).
+    import ml_planner.plan as plan_mod
+    monkeypatch.setattr(plan_mod, 'make_guidance_secondary', lambda *a, **k: (None, False))
     scen = mg.scenario4_complex_maze()
     r_guided = plan_trajectory_focal(prep.prepare_scenario(scen), secondary='guidance')
     r_default = plan_trajectory_focal(prep.prepare_scenario(scen), secondary=None)
