@@ -126,3 +126,22 @@ def test_empty_map_graph_is_start_goal_edge():
     g = build_graph(prep.prepare_scenario(scen))
     assert len(g.nodes) == 2
     assert len(g.edges) == 1 and tuple(g.edges[0]) == (0, 1)
+
+
+def test_two_node_ring_keeps_both_arcs():
+    # Goal at the circle center -> no goal tangents, so the ring has exactly
+    # the 2 start tangent nodes; both complementary arcs must survive dedup.
+    circles = [((250_000.0, 250_000.0), 20_000.0)]
+    scen = {'start': (20_000.0, 250_000.0), 'start_heading': 0.0,
+            'goal': (250_000.0, 250_000.0), 'goal_heading': 0.0,
+            'islands': [], 'dynamic_obstacles': list(circles),
+            'obstacles': [{'type': 'circle', 'center': c, 'radius': r}
+                          for c, r in circles]}
+    pre = prep.prepare_scenario(scen)
+    g = build_graph(pre)
+    arc_lengths = g.edge_feat[g.edge_feat[:, 1] == EDGE_ARC][:, 0]
+    assert len(arc_lengths) == 2
+    (c0, r0) = pre['circle_obstacles'][0]
+    rc = r0 + 1.0                      # config.CONSTRUCTION_CLEARANCE_M
+    full_circle = 2.0 * math.pi * rc / g.scale
+    assert abs(float(arc_lengths.sum()) - full_circle) < 1e-6

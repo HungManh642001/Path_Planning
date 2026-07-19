@@ -138,11 +138,20 @@ def build_graph(preprocessed):
         if len(ring) < 2:
             continue
         ring.sort(key=lambda k: math.atan2(nodes[k][1] - c[1], nodes[k][0] - c[0]))
-        for a, b in zip(ring, ring[1:] + ring[:1]):
+        pairs = list(zip(ring, ring[1:] + ring[:1]))
+        if len(ring) == 2:
+            pairs = pairs[:1]       # zip repeats the same pair; handle both arcs below
+        for a, b in pairs:
             phi_a = math.atan2(nodes[a][1] - c[1], nodes[a][0] - c[0])
             phi_b = math.atan2(nodes[b][1] - c[1], nodes[b][0] - c[0])
             dphi = (phi_b - phi_a) % (2.0 * math.pi)
             add_edge(a, b, EDGE_ARC, length=rc * dphi)
+            if len(ring) == 2:
+                # Complementary arc: a distinct riding option that the
+                # undirected (min,max) dedup would otherwise silently drop.
+                aa, bb = (a, b) if a < b else (b, a)
+                edges.append((aa, bb))
+                efeat.append(((rc * (2.0 * math.pi - dphi)) / D, EDGE_ARC))
 
     # kNN fill for local connectivity (clear segments only).
     tree = cKDTree(pts)
