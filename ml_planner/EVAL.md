@@ -78,3 +78,25 @@ python ml_planner/train/train_guidance.py \
 Consumes the `guidance_dataset*.npz` shards from `ml_planner.build_dataset`,
 trains the residual-over-Euclid U-Net, and exports a single-file ONNX matching
 the `channels`→`cost_to_go` / `GRID_RES²` contract.
+
+## GNN tangent-graph guidance (prototype)
+
+The GNN secondary runs on an explicit tangent/bitangent graph (numpy MPNN,
+ms-scale build+forward) — see docs/superpowers/specs/2026-07-19-gnn-guidance-design.md.
+
+```bash
+# 1) Build the graph dataset (parallel oracle solves; ~same cost as the CNN one)
+python -m ml_planner.graph_dataset 0 2400 6 2000
+
+# 2) Train on any GPU machine (torch only needed here)
+python ml_planner/train/train_graph.py \
+    --data-dir ml_planner/data --out ml_planner/models/graph_guidance.npz
+
+# 3) Evaluate: offline Spearman gate (>= 0.8) + 4-way end-to-end + acceptance
+python -m ml_planner.benchmark --offline-n 10 --gnn-offline-n 10 --bench-n 30
+```
+
+Acceptance (spec §2): on hard held-out maps vs hand-crafted, the GNN must win
+speed (total iterations AND net wall-time) or quality (mean cost-ratio), and
+must not lose the other axis (time within +5%, cost-ratio within +0.002).
+With no `models/graph_guidance.npz` the gnn columns fall back to hand-crafted.

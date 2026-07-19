@@ -3,7 +3,9 @@
 Offline eval and the trainer are not unit-tested (they need a model file / a
 GPU); they are CLIs verified manually per ml_planner/EVAL.md.
 """
+import ml_planner.benchmark as bm
 from ml_planner.benchmark import planner_benchmark, CSV_COLUMNS
+from batch_random_test import generate_random_scenario
 
 
 def test_rows_have_all_csv_columns_and_bound_holds():
@@ -25,3 +27,29 @@ def test_guided_falls_back_to_hand_without_model():
     if r['hand_success'] and r['guided_success']:
         assert r['guided_mission'] == r['hand_mission']
         assert r['guided_iters'] == r['hand_iters']
+
+
+def test_compare_one_emits_gnn_columns_without_model():
+    row = bm.compare_one(generate_random_scenario, 7003, 'easy',
+                         guidance=None, eps=0.05, graph_guidance=None)
+    for col in ('gnn_success', 'gnn_iters', 'gnn_time', 'gnn_mission',
+                'gnn_flight', 'gnn_cost_ratio', 'gnn_bound_ok',
+                'gnn_beats_hand_iters'):
+        assert col in row
+    assert all(c in bm.CSV_COLUMNS for c in
+               ('gnn_success', 'gnn_iters', 'gnn_time', 'gnn_cost_ratio'))
+
+
+def test_gnn_acceptance_logic():
+    # speed win + quality not-worse => PASS
+    assert bm.gnn_acceptance(it_g=100, it_h=200, t_g=1.0, t_h=2.0,
+                             cost_g=1.010, cost_h=1.009) is True
+    # quality win + time within 5% => PASS
+    assert bm.gnn_acceptance(it_g=250, it_h=200, t_g=2.09, t_h=2.0,
+                             cost_g=1.001, cost_h=1.009) is True
+    # no win on either axis => FAIL
+    assert bm.gnn_acceptance(it_g=250, it_h=200, t_g=2.5, t_h=2.0,
+                             cost_g=1.010, cost_h=1.009) is False
+    # quality win but time blown past 5% => FAIL
+    assert bm.gnn_acceptance(it_g=250, it_h=200, t_g=2.5, t_h=2.0,
+                             cost_g=1.001, cost_h=1.009) is False
