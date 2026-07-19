@@ -115,3 +115,21 @@ plus a fixed ~0.16 s/problem graph-build+forward cost and a ~100 µs/call kNN
 lookup (+0.11 s/scenario at iso-iterations). Qualitatively the same behavior
 as the CNN. Hand-crafted stays the default; the GNN (like the CNN) is a
 quality-mode option, not an accelerator, in its current form.
+
+## Lazy focal + AI corridor (bound-preserving)
+
+Collision checks are deferred to pop time (optimistic nodes keep f_min a
+valid lower bound, so the 1.05x guarantee is intact — see
+docs/superpowers/specs/2026-07-19-lazy-corridor-design.md). The corridor
+(GNN value field -> boolean grid) gates FOCAL admission only; a wrong model
+can only cost time. Benchmark columns: `lazy_*` (mechanism baseline, no
+model), `lcor_*` (lazy + corridor), plus real-check counters
+`hand_checks/lazy_checks/lcor_checks` for attribution.
+
+Acceptance: lcor must beat hand-crafted on hard-map wall-time with ZERO
+epsilon-bound violations. Early-stop: if pure lazy already fails to beat
+hand, stop — the corridor layer is moot.
+
+```bash
+python -m ml_planner.benchmark --offline-n 0 --gnn-offline-n 0 --bench-n 30
+```

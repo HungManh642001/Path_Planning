@@ -53,3 +53,28 @@ def test_gnn_acceptance_logic():
     # quality win but time blown past 5% => FAIL
     assert bm.gnn_acceptance(it_g=250, it_h=200, t_g=2.5, t_h=2.0,
                              cost_g=1.001, cost_h=1.009) is False
+
+
+def test_compare_one_emits_lazy_and_lcor_columns():
+    row = bm.compare_one(generate_random_scenario, 7003, 'easy',
+                         guidance=None, eps=0.05, graph_guidance=None)
+    for col in ('lazy_success', 'lazy_iters', 'lazy_time', 'lazy_checks',
+                'lcor_success', 'lcor_iters', 'lcor_time', 'lcor_checks',
+                'hand_checks', 'lazy_bound_ok', 'lcor_bound_ok'):
+        assert col in row
+    assert all(c in bm.CSV_COLUMNS for c in
+               ('lazy_iters', 'lcor_iters', 'hand_checks', 'lazy_checks', 'lcor_checks'))
+
+
+def test_lazy_verdict_layers(capsys):
+    hard = dict(n=5, t_h=10.0, it_h=1000, checks_h=50000,
+                t_lz=8.0, it_lz=1000, checks_lz=20000, viol_lz=0,
+                t_lc=7.0, it_lc=900, checks_lc=15000, viol_lc=0)
+    bm.lazy_verdict(hard)
+    out = capsys.readouterr().out
+    assert 'LAZY' in out and 'PASS' in out
+    # bound violation flips the verdict regardless of speed
+    hard['viol_lc'] = 1
+    bm.lazy_verdict(hard)
+    out = capsys.readouterr().out
+    assert 'FAIL' in out

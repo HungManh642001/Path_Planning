@@ -33,7 +33,8 @@ import ml_planner.dataset_gen as dg
 from ml_planner.build_dataset import hard_scenario
 from ml_planner.guidance import Guidance
 from ml_planner.graph_guidance import GraphGuidance
-from ml_planner.plan import plan_trajectory_focal, path_length
+from ml_planner.corridor import build_corridor
+from ml_planner.plan import plan_trajectory_focal, path_length, plan_trajectory_lazy
 
 EPS = 0.05
 OUT_CSV = os.path.join(os.path.dirname(__file__), "data", "benchmark_results.csv")
@@ -173,6 +174,19 @@ def _gnn_plan(scen, graph_guidance, eps):
     return plan_trajectory_focal(pre, focal_eps=eps, secondary=sec)
 
 
+def _lazy_plan(scen, eps):
+    """Pure lazy focal (mechanism baseline, no model)."""
+    pre = prep.prepare_scenario(scen)
+    return plan_trajectory_lazy(pre, corridor=None, focal_eps=eps)
+
+
+def _lcor_plan(scen, graph_guidance, eps):
+    """Lazy + AI corridor; time INCLUDES build_corridor (field + raster)."""
+    pre = prep.prepare_scenario(scen)
+    cor = build_corridor(pre, graph_guidance)    # None on missing model
+    return plan_trajectory_lazy(pre, corridor=cor, focal_eps=eps)
+
+
 def _safe(fn):
     try:
         r, dt = None, 0.0
@@ -192,6 +206,8 @@ def compare_one(scen_func, seed, difficulty, guidance, eps, graph_guidance=None)
     rh, th = _safe(lambda: plan_trajectory_focal(prep.prepare_scenario(scen), focal_eps=eps, secondary=None))
     rg, tg = _safe(lambda: _guided_plan(scen, guidance, eps))
     rn, tn = _safe(lambda: _gnn_plan(scen, graph_guidance, eps))
+    rlz, tlz = _safe(lambda: _lazy_plan(scen, eps))
+    rlc, tlc = _safe(lambda: _lcor_plan(scen, graph_guidance, eps))
 
     def ok(r):
         return bool(r and r.get('success'))
@@ -205,8 +221,14 @@ def compare_one(scen_func, seed, difficulty, guidance, eps, graph_guidance=None)
     row['gnn_success'] = ok(rn)
     row['gnn_iters'] = rn['stats']['iterations'] if ok(rn) else ''
     row['gnn_time'] = round(tn, 3)
+    row['lazy_success'] = ok(rlz)
+    row['lazy_iters'] = rlz['stats']['iterations'] if ok(rlz) else ''
+    row['lazy_time'] = round(tlz, 3)
+    row['lcor_success'] = ok(rlc)
+    row['lcor_iters'] = rlc['stats']['iterations'] if ok(rlc) else ''
+    row['lcor_time'] = round(tlc, 3)
 
-    for name, r in (('base', rb), ('hand', rh), ('guided', rg), ('gnn', rn)):
+    for name, r in (('base', rb), ('hand', rh), ('guided', rg), ('gnn', rn), ('lazy', rlz), ('lcor', rlc)):
         row[f'{name}_mission'] = round(mission_cost(pm, r['path']), 1) if ok(r) else ''
         row[f'{name}_flight'] = round(flight_distance(pm, r['path']), 1) if ok(r) else ''
 
@@ -220,13 +242,24 @@ def compare_one(scen_func, seed, difficulty, guidance, eps, graph_guidance=None)
         row['gnn_cost_ratio'] = round(row['gnn_mission'] / bm, 4) if ok(rn) else ''
         row['gnn_flight_ratio'] = round(row['gnn_flight'] / bf, 4) if ok(rn) and bf else ''
         row['gnn_bound_ok'] = (row['gnn_mission'] <= 1.05 * bm + 1e-6) if ok(rn) else ''
+        row['lazy_cost_ratio'] = round(row['lazy_mission'] / bm, 4) if ok(rlz) else ''
+        row['lazy_bound_ok'] = (row['lazy_mission'] <= 1.05 * bm + 1e-6) if ok(rlz) else ''
+        row['lcor_cost_ratio'] = round(row['lcor_mission'] / bm, 4) if ok(rlc) else ''
+        row['lcor_bound_ok'] = (row['lcor_mission'] <= 1.05 * bm + 1e-6) if ok(rlc) else ''
     else:
         for c in ('hand_cost_ratio', 'guided_cost_ratio', 'guided_flight_ratio', 'hand_bound_ok', 'guided_bound_ok',
-                  'gnn_cost_ratio', 'gnn_flight_ratio', 'gnn_bound_ok'):
+                  'gnn_cost_ratio', 'gnn_flight_ratio', 'gnn_bound_ok',
+                  'lazy_cost_ratio', 'lazy_bound_ok', 'lcor_cost_ratio', 'lcor_bound_ok'):
             row[c] = ''
 
     row['guided_beats_hand_iters'] = (ok(rg) and ok(rh) and rg['stats']['iterations'] < rh['stats']['iterations'])
     row['gnn_beats_hand_iters'] = (ok(rn) and ok(rh) and rn['stats']['iterations'] < rh['stats']['iterations'])
+
+    def checks(r):
+        return r['stats'].get('collision_checks', '') if ok(r) else ''
+    row['hand_checks'] = checks(rh)
+    row['lazy_checks'] = checks(rlz)
+    row['lcor_checks'] = checks(rlc)
     return row
 
 
@@ -248,6 +281,10 @@ CSV_COLUMNS = [
     'hand_cost_ratio', 'guided_cost_ratio', 'guided_flight_ratio',
     'hand_bound_ok', 'guided_bound_ok', 'guided_beats_hand_iters',
     'gnn_cost_ratio', 'gnn_flight_ratio', 'gnn_bound_ok', 'gnn_beats_hand_iters',
+    'lazy_success', 'lcor_success', 'lazy_iters', 'lcor_iters',
+    'lazy_time', 'lcor_time', 'lazy_mission', 'lcor_mission',
+    'lazy_flight', 'lcor_flight', 'lazy_cost_ratio', 'lcor_cost_ratio',
+    'lazy_bound_ok', 'lcor_bound_ok', 'hand_checks', 'lazy_checks', 'lcor_checks',
 ]
 
 
@@ -265,7 +302,7 @@ def write_csv(rows, path=OUT_CSV):
 def _summ(rows, diff):
     sub = [r for r in rows if r['difficulty'] == diff
            and r['base_success'] and r['hand_success'] and r['guided_success']
-           and r['gnn_success']]
+           and r['gnn_success'] and r['lazy_success'] and r['lcor_success']]
     print(f"\n--- {diff.upper()}  ({len(sub)} solved by all four) ---")
     if not sub:
         print("  (none)")
@@ -293,10 +330,21 @@ def _summ(rows, diff):
     print(f"  guided beats hand (fewer iters): {wins}/{len(sub)} scenarios ({100*wins/len(sub):.0f}%)")
     wins_gnn = sum(1 for r in sub if r['gnn_beats_hand_iters'])
     print(f"  gnn beats hand (fewer iters): {wins_gnn}/{len(sub)}")
+    it_lz, t_lz = sum(col('lazy_iters')), sum(col('lazy_time'))
+    it_lc, t_lc = sum(col('lcor_iters')), sum(col('lcor_time'))
+    ck_h = sum(v for v in col('hand_checks') if v != '')
+    ck_lz = sum(v for v in col('lazy_checks') if v != '')
+    ck_lc = sum(v for v in col('lcor_checks') if v != '')
+    print(f"  lazy         iters={it_lz}  time={t_lz:.1f}s  checks={ck_lz} (hand checks={ck_h})")
+    print(f"  lazy+corr    iters={it_lc}  time={t_lc:.1f}s  checks={ck_lc}")
     return dict(it_h=it_h, it_g=it_g, t_h=t_h, t_g=t_g, wins=wins, n=len(sub),
                 it_n=it_n, t_n=t_n,
                 cost_h=statistics.mean(col('hand_cost_ratio')),
-                cost_n=statistics.mean(col('gnn_cost_ratio')))
+                cost_n=statistics.mean(col('gnn_cost_ratio')),
+                it_lz=it_lz, t_lz=t_lz, it_lc=it_lc, t_lc=t_lc,
+                checks_h=ck_h, checks_lz=ck_lz, checks_lc=ck_lc,
+                viol_lz=sum(1 for r in sub if r['lazy_bound_ok'] is False),
+                viol_lc=sum(1 for r in sub if r['lcor_bound_ok'] is False))
 
 
 def gnn_acceptance(it_g, it_h, t_g, t_h, cost_g, cost_h):
@@ -336,6 +384,30 @@ def _verdict(hard):
         print("  ✅ PASS — GNN wins at least one axis without losing the other."
               if ok else
               "  ❌ FAIL — GNN neither wins an axis nor holds the other (spec §2).")
+
+
+def lazy_verdict(hard):
+    """Spec 2026-07-19 (lazy-corridor) §2: LCOR must beat hand on wall-time
+    with ZERO bound violations; report layered attribution (mechanism vs AI).
+    Early-stop signal: if pure lazy already fails to beat hand, the corridor
+    layer is moot."""
+    print("\n=== LAZY / CORRIDOR ACCEPTANCE (hard maps, vs hand-crafted) ===")
+    print(f"  hand  t={hard['t_h']:.1f}s  checks={hard['checks_h']}")
+    print(f"  lazy  t={hard['t_lz']:.1f}s  checks={hard['checks_lz']}  "
+          f"(mechanism: {100 * (1 - hard['t_lz'] / hard['t_h']):+.1f}% time vs hand)")
+    print(f"  lcor  t={hard['t_lc']:.1f}s  checks={hard['checks_lc']}  "
+          f"(AI increment: {100 * (1 - hard['t_lc'] / max(hard['t_lz'], 1e-9)):+.1f}% time vs lazy)")
+    viol = hard['viol_lz'] + hard['viol_lc']
+    if viol:
+        print(f"  ❌ FAIL — {viol} epsilon-bound violation(s): NOT acceptable (non-negotiable).")
+        return
+    if hard['t_lz'] >= hard['t_h']:
+        print("  ⚠️ EARLY-STOP SIGNAL — pure lazy does not beat hand on wall-time; "
+              "corridor layer is moot on this distribution.")
+    if hard['t_lc'] < hard['t_h']:
+        print("  ✅ PASS — lazy+corridor beats hand-crafted on wall-time with 0 violations.")
+    else:
+        print("  ❌ FAIL — lazy+corridor does not beat hand-crafted on wall-time.")
 
 
 def main():
@@ -390,6 +462,8 @@ def main():
     _summ(rows, 'easy')
     hard_summ = _summ(rows, 'hard')
     _verdict(hard_summ)
+    if hard_summ and 'it_lz' in hard_summ:
+        lazy_verdict(hard_summ)
     path = write_csv(rows)
     print(f"\nper-scenario results -> {path}  ({len(rows)} rows)")
 
