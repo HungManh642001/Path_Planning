@@ -266,7 +266,7 @@ def _summ(rows, diff):
     sub = [r for r in rows if r['difficulty'] == diff
            and r['base_success'] and r['hand_success'] and r['guided_success']
            and r['gnn_success']]
-    print(f"\n--- {diff.upper()}  ({len(sub)} solved by all three) ---")
+    print(f"\n--- {diff.upper()}  ({len(sub)} solved by all four) ---")
     if not sub:
         print("  (none)")
         return
@@ -314,7 +314,7 @@ def gnn_acceptance(it_g, it_h, t_g, t_h, cost_g, cost_h):
 def _verdict(hard):
     print("\n=== VERDICT (hard maps) ===")
     if not hard or hard['n'] == 0:
-        print("  inconclusive — no hard scenario solved by all three.")
+        print("  inconclusive — no hard scenario solved by all four.")
         return
     faster_iter = hard['it_g'] < hard['it_h']
     faster_time = hard['t_g'] < hard['t_h']

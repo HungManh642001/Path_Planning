@@ -28,7 +28,7 @@ KNN_FILL_K = 6      # local-connectivity fill beyond the tangent structure
 class Graph:
     nodes: np.ndarray       # (M, 2) float64 world coords
     node_feat: np.ndarray   # (M, 7) float32, spec §6
-    edges: np.ndarray       # (E, 2) int32, undirected, a < b, deduplicated
+    edges: np.ndarray       # (E, 2) int32, undirected, a < b, deduplicated — except one intentional parallel pair per 2-node ring (both complementary arcs)
     edge_feat: np.ndarray   # (E, 2) float32: [length/D, EDGE_CHORD|EDGE_ARC]
     kdtree: cKDTree
     start_idx: int

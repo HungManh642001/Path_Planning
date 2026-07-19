@@ -1,11 +1,7 @@
-import math
-
 import numpy as np
 import pytest
 
 import core.preprocessing as prep
-import ml_planner.config as mlcfg
-from ml_planner.graph import build_graph
 from ml_planner.graph_guidance import (GraphGuidance, make_graph_secondary,
                                        mpnn_forward)
 
