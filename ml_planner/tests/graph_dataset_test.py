@@ -64,3 +64,23 @@ def test_shard_roundtrip(tmp_path):
         for k in ('node_feat', 'edges', 'edge_feat', 'label', 'mask'):
             assert np.array_equal(orig[k], back[k]), k
         assert float(orig['scale']) == float(back['scale'])
+
+
+def test_load_shards_returns_owned_arrays(tmp_path):
+    # Slices must be real copies, not views pinning the shard's full
+    # decompressed members (the Colab OOM regression).
+    rng = np.random.default_rng(1)
+    samples = []
+    for m, e in ((4, 3), (6, 5)):
+        samples.append(dict(
+            node_feat=rng.normal(size=(m, 7)).astype(np.float32),
+            edges=rng.integers(0, m, size=(e, 2)).astype(np.int32),
+            edge_feat=rng.normal(size=(e, 2)).astype(np.float32),
+            label=rng.normal(size=m).astype(np.float32),
+            mask=np.ones(m, dtype=np.float32),
+            scale=np.float64(50.0)))
+    path = str(tmp_path / "graph_dataset_000.npz")
+    write_shard(path, samples)
+    for g in load_shards(str(tmp_path)):
+        for k in ('node_feat', 'edges', 'edge_feat', 'label', 'mask'):
+            assert g[k].base is None, k

@@ -90,19 +90,28 @@ def write_shard(path, samples):
 
 
 def load_shards(data_dir, pattern="graph_dataset_*.npz"):
-    """Read every shard back into a list of per-graph dicts."""
+    """Read every shard back into a list of per-graph dicts.
+
+    Each npz member is decompressed exactly ONCE per shard and per-graph
+    slices are COPIED out of it. Re-indexing the NpzFile per graph would
+    decompress the full member on every access and return slices that pin
+    those full-size buffers alive -- on a ~1.6k-graph dataset that exhausts
+    Colab's RAM (the process dies with ^C) before training even starts.
+    """
     out = []
     for path in sorted(glob.glob(os.path.join(data_dir, pattern))):
-        z = np.load(path)
-        no, eo = z['node_offsets'], z['edge_offsets']
-        for i in range(len(no) - 1):
-            out.append(dict(
-                node_feat=z['node_feat'][no[i]:no[i + 1]],
-                edges=z['edges'][eo[i]:eo[i + 1]],
-                edge_feat=z['edge_feat'][eo[i]:eo[i + 1]],
-                label=z['label'][no[i]:no[i + 1]],
-                mask=z['mask'][no[i]:no[i + 1]],
-                scale=np.float64(z['scale'][i])))
+        with np.load(path) as z:
+            nf, ed, ef = z['node_feat'], z['edges'], z['edge_feat']
+            lb, mk = z['label'], z['mask']
+            no, eo, sc = z['node_offsets'], z['edge_offsets'], z['scale']
+            for i in range(len(no) - 1):
+                out.append(dict(
+                    node_feat=nf[no[i]:no[i + 1]].copy(),
+                    edges=ed[eo[i]:eo[i + 1]].copy(),
+                    edge_feat=ef[eo[i]:eo[i + 1]].copy(),
+                    label=lb[no[i]:no[i + 1]].copy(),
+                    mask=mk[no[i]:no[i + 1]].copy(),
+                    scale=np.float64(sc[i])))
     return out
 
 
