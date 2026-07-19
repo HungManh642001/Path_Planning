@@ -73,46 +73,47 @@ ml_planner/
 
 ### 4.2 `lazy_focal.py` — `LazyFocalKinodynamicAstar(FocalKinodynamicAstar)`
 
-**Bẫy check theo ngữ cảnh (không nhân bản code core):**
+*(Amended trong bước lập plan: hiện thực hóa TƯƠNG ĐƯƠNG nhưng đơn giản hơn
+bản duyệt miệng — không cần heap treo riêng hay gate chấp nhận goal; mọi tính
+chất đã duyệt (bound, ba mode, tiêu chí, money test) giữ nguyên.)*
 
-- `get_next_states(current)`: arm `self._lazy_ctx = current`, gọi `super()`,
-  finally disarm.
-- `_check_collision(p1, p2)` override: khi `_lazy_ctx` đang arm, `p1 ==
-  ctx.waypoint`, corridor active và `not corridor.contains(p2)` → KHÔNG check;
-  ghi `(f_opt, counter, ctx, p2)` vào `self._suspended` heap; trả False (core
-  tự bỏ candidate). Mọi call khác → `super()._check_collision`.
-  - `f_opt = g(ctx) + hypot + TURN_PENALTY·turn + h_euclid(p2)` — turn tính từ
-    `ctx.heading`; đoản trình CHƯA kiểm (chỉ có thể loại → optimism hợp lệ).
-  - Kiểm LOS của valve (`_check_collision(P, goal_wp)`) không bị bẫy vì goal
-    luôn trong corridor (ép True). `smooth_path`/`_check_fixed_legs` chạy khi
-    cờ đã hạ → check thật.
+**Nguyên lý hiện thực:** node "treo" = node LẠC QUAN nằm ngay TRONG OPEN với
+cạnh-vào chưa check (`edge_validated=False`). Vì f lạc quan ≤ f thật, `f_min
+= OPEN top` tự động là cận dưới hợp lệ — không phải gộp heap nào. Corridor
+chỉ gate **cửa vào FOCAL**; "activation" chính là cơ chế refill sẵn có.
 
-**`f_min` toàn cục + activation (sửa tối thiểu `focal_astar.py`):**
-
-- Hook mới trong `FocalKinodynamicAstar`: `_frontier_f_min(open_top)` mặc
-  định trả `open_top` — hành vi base KHÔNG đổi (test bound hiện có xác nhận).
-  `LazyFocal` override → `min(open_top, susp_top)`.
-- Search loop của LazyFocal (override `search()` với phần lõi kế thừa qua
-  hook, phần thêm):
-  1. *Chấp nhận goal*: khi `_goal_reached(current) != None`, chỉ trả về nếu
-     `g(current) ≤ w·f_min_global + config.EPS`. Chưa đạt → activation loop:
-     while `susp_top_f < g(current)/w`: pop node treo; tính lại
-     heading/turn/`_doan_trinh(parent,…)` + `_check_collision` THẬT; hợp lệ →
-     tạo State, cập nhật `g_scores`, đẩy OPEN (+FOCAL nếu lọt band); không →
-     bỏ. Xét lại điều kiện; goal tạm bị từ chối → đẩy lại OPEN (lazy-deletion
-     sẵn có xử lý).
-  2. *OPEN+FOCAL cạn nhưng heap treo còn* → activation bắt buộc trước khi
-     được phép kết luận "no path" (completeness).
-- Bất biến (ghi docstring + test): mọi đường khả thi chưa bị loại có đại diện
-  trong OPEN ∪ SUSPENDED với f ≤ chi phí thật → `f_min_global ≤ C*` →
-  `g_nghiệm ≤ w·f_min_global ≤ (1+ε)·C*`.
+- **Bẫy defer (không nhân bản code core):** `get_next_states` arm
+  `self._lazy_ctx = current` rồi gọi `super()`; override `_check_collision`:
+  khi cờ arm, `p1 == ctx.waypoint` và `p2 != goal_wp` → KHÔNG check, ghi `p2`
+  vào tập deferred của lượt arm, trả **True** (candidate được tạo lạc quan);
+  sau `super()` trả về, đánh dấu `edge_validated=False` cho các successor có
+  waypoint trong tập deferred. Chord tới goal KHÔNG BAO GIỜ defer (giữ đúng
+  hành vi valve LOS ở cùng call-site và bảo đảm goal luôn đã-validate khi
+  được chấp nhận). Đoản trình vẫn kiểm eager (đứng trước collision trong core
+  loop). Arc-hop không dùng `_check_collision` (đã xác minh) → luôn eager.
+- **Validate-on-pop (hook trong `FocalKinodynamicAstar`, base = no-op):**
+  vòng chọn node từ FOCAL thêm điều kiện `self._validate_on_pop(cand)`; lazy
+  override: nếu `edge_validated` False → chạy `_check_collision` THẬT trên
+  `(parent.waypoint, waypoint)`; fail → xóa entry `g_scores` (cho phép
+  tái khám phá lattice cell qua cạnh khác) và trả False (node bị bỏ, KHÔNG
+  vào closed). Node không bao giờ expand khi cạnh-vào chưa validate.
+- **Corridor gate cửa FOCAL (hook `_focal_admissible`, base = True):** refill
+  + inline-push chỉ nhận state có `corridor.contains(waypoint)`. Node ngoài
+  corridor ở lại OPEN — giữ `f_min` (bound) mà không bao giờ bị check/expand
+  chừng nào band còn node trong corridor. Nhánh drain có **fallback admit-all**
+  (`self._admit_all`): band không còn node trong corridor → refill bỏ qua
+  filter — corridor sai chỉ gây chậm, không bao giờ starve/livelock/no-path
+  giả (đây là "activation" ở dạng đơn giản nhất).
+- Bất biến (docstring + test): mọi đường khả thi chưa bị loại có đại diện
+  trong OPEN với f lạc quan ≤ chi phí thật → `f_min ≤ C*` → nghiệm được
+  chấp nhận (luôn đã-validate) có `g ≤ w·f_min + EPS ≤ (1+ε)·C* + EPS`.
 - Định nghĩa CHÍNH THỨC ba mode:
-  - `eager` (mặc định cũ) = FocalKinodynamicAstar nguyên trạng.
-  - `LazyFocal(corridor=None)` = **lazy thuần (Phương án C)**: bẫy treo MỌI
-    candidate chưa check (không phân biệt corridor), validate-on-demand theo
-    đúng loop activation trên; đây là baseline cơ chế.
-  - `LazyFocal(corridor=C)` = chỉ treo candidate NGOÀI corridor; candidate
-    trong corridor check ngay lúc sinh (như eager) để expand không trễ.
+  - `eager` (mặc định cũ) = FocalKinodynamicAstar nguyên trạng (hook no-op —
+    hành vi không đổi byte nào, suite hiện có pin điều này).
+  - `LazyFocal(corridor=None)` = **lazy thuần (Phương án C)**: defer MỌI
+    candidate, validate-on-pop, FOCAL admission không đổi (hand secondary vẫn
+    điều khiển thứ tự — tách bạch "lazy" khỏi "corridor").
+  - `LazyFocal(corridor=C)` = lazy thuần + gate cửa FOCAL theo corridor.
 - Plan-time API: `plan_trajectory_lazy(preprocessed, corridor=None,
   focal_eps=None)` mirror `plan_trajectory_focal` (secondary=hand-crafted cố
   định), fallback `_safe`-style về focal thường nếu lỗi bất ngờ.
@@ -140,8 +141,12 @@ ml_planner/
 - `corridor_test.py`: membership math trên case tay; start/goal ép True;
   model thiếu → None; ngoài crop → False; determinism.
 - `lazy_focal_test.py`:
-  1. *Tương đương*: corridor all-True → path + iterations GIỐNG HỆT focal
-     eager trên scenarios chuẩn (2/4/12/13).
+  1. *Tương đương*: (a) trên scenario KHÔNG chướng ngại (mọi cạnh hợp lệ,
+     defer không đổi gì) lazy ≡ eager (path + iterations GIỐNG HỆT); (b)
+     corridor all-True ≡ lazy thuần (corridor không đổi hành vi khi không
+     loại gì). Trên map CÓ chướng ngại lazy không buộc giống hệt eager từng
+     iteration (node lạc quan có thể hạ f_min → band khác nhẹ) — hợp đồng là
+     BOUND, được nhóm test 2–3 pin.
   2. *Bound lazy thuần*: tham số hóa `mission_cost ≤ 1.05×base` trên
      scenarios 4/12/13/16 với corridor=None (tái dùng pattern test Phase 1).
   3. **Money test**: corridor all-False (trừ ô start/goal) → vẫn trả đường
