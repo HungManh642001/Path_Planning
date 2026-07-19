@@ -22,3 +22,10 @@ MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "guidance.onnx")
 # ml_planner/train/train_graph.py). Missing file => planner falls back to the
 # hand-crafted secondary heuristic, exactly like the CNN model above.
 GRAPH_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "graph_guidance.npz")
+
+# ====== LAZY FOCAL + AI CORRIDOR ======
+# Corridor slack: a cell belongs to the corridor when
+# dist(start, cell) + V_hat(cell) <= (1 + CORRIDOR_DELTA) * V_hat(start).
+CORRIDOR_DELTA = 0.15
+# Boolean admission grid resolution (contains() is one array index).
+CORRIDOR_GRID_RES = 128
