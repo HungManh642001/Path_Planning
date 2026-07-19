@@ -1,5 +1,6 @@
 import math
 
+import numpy as np
 import pytest
 
 import core.kinodynamic_astar as astar
@@ -7,6 +8,9 @@ import core.map_generator as mg
 import core.preprocessing as prep
 from ml_planner.focal_astar import FocalKinodynamicAstar
 from ml_planner.lazy_focal import LazyFocalKinodynamicAstar
+from ml_planner import raster
+from ml_planner.corridor import Corridor
+from ml_planner.plan import plan_trajectory_lazy
 
 
 def _path_len(path):
@@ -111,3 +115,55 @@ def test_no_path_map_terminates_with_none():
     pre2 = prep.prepare_scenario(scen)
     lazy = LazyFocalKinodynamicAstar(pre2, focal_eps=0.05)
     assert lazy.search() is None
+
+
+def _corridor_with_mask(pre, fill, grid_res=32):
+    """Helper to build a Corridor mask with start/goal cells True, rest fill."""
+    aff = raster.compute_crop(pre, grid_res)
+    mask = np.full((grid_res, grid_res), fill, dtype=bool)
+    for pt in (pre['start_pos'], pre['goal_pos']):
+        gx, gy = aff.world_to_grid(*pt)
+        # Use truncation (int) not rounding, matching Corridor.contains convention
+        # that cells are [i, i+1) half-open intervals.
+        ix, iy = int(gx), int(gy)
+        if 0 <= iy < grid_res and 0 <= ix < grid_res:
+            mask[iy, ix] = True
+    return Corridor(mask, aff)
+
+
+@pytest.mark.parametrize("scenario_func", [
+    mg.scenario4_complex_maze,
+    mg.scenario12_perimeter_dynamic_obstacles,
+])
+def test_money_all_false_corridor_still_bound(scenario_func):
+    # THE money test: a maximally wrong corridor (nothing admitted except the
+    # start/goal cells) may only cost time — the admit-all fallback must
+    # still produce a valid path within the 1.05x bound.
+    base = _base_cost(scenario_func)
+    pre = prep.prepare_scenario(scenario_func())
+    cor = _corridor_with_mask(pre, fill=False)
+    res = plan_trajectory_lazy(pre, corridor=cor, focal_eps=0.05)
+    assert res['success']
+    assert _mission_cost(pre, res['path']) <= 1.05 * base + 1e-6
+
+
+def test_all_true_corridor_equals_pure_lazy():
+    # An all-True corridor admits everything -> identical to corridor=None.
+    scen = mg.scenario4_complex_maze
+    pre_a = prep.prepare_scenario(scen())
+    cor = _corridor_with_mask(pre_a, fill=True)
+    res_a = plan_trajectory_lazy(pre_a, corridor=cor, focal_eps=0.05)
+    pre_b = prep.prepare_scenario(scen())
+    res_b = plan_trajectory_lazy(pre_b, corridor=None, focal_eps=0.05)
+    assert res_a['success'] and res_b['success']
+    assert res_a['stats']['iterations'] == res_b['stats']['iterations']
+    assert abs(_mission_cost(pre_a, res_a['path'])
+               - _mission_cost(pre_b, res_b['path'])) < 1e-6
+
+
+def test_plan_trajectory_lazy_stats_contract():
+    pre = prep.prepare_scenario(mg.scenario2_single_obstacle())
+    res = plan_trajectory_lazy(pre, focal_eps=0.05)
+    assert res['success']
+    assert res['stats']['collision_checks'] > 0
+    assert res['path'] is not None
