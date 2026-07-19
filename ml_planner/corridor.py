@@ -1,9 +1,11 @@
 """AI corridor: rasterize the GNN per-node cost-to-go into a boolean grid.
 
-Corridor membership gates FOCAL admission only — never correctness: nodes
-outside the corridor stay in OPEN (still bounding f_min) and the drain-path
-admit-all fallback admits them whenever the in-corridor band drains, so a
-wrong model can only cost time, never the epsilon bound.
+Corridor membership is a FOCAL ordering tiebreak only — never correctness:
+FOCAL still holds every in-band node, in-corridor nodes are merely expanded
+first, so a wrong model can only cost time, never the epsilon bound.
+(Admission gating was tried first and BROKE the bound — non-reopening lets
+worse paths permanently close cells while in-band nodes are held out; see
+the seed-6011 regression test.)
 """
 
 import numpy as np

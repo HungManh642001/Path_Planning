@@ -169,6 +169,37 @@ def test_plan_trajectory_lazy_stats_contract():
     assert res['path'] is not None
 
 
+def test_real_corridor_keeps_bound_seed_6011():
+    # Regression (LC-T6 benchmark, seed 6011): corridor as a FOCAL *admission
+    # gate* broke the epsilon bound (ratio 1.0567; eager+gate 1.0668 — so the
+    # gate itself, not laziness, was the cause): in a non-reopening search,
+    # holding in-band nodes out of FOCAL lets worse paths close their lattice
+    # cells first, and the locked-in inflation is not limited by the 5% band.
+    # The corridor must therefore act as an ordering TIEBREAK inside FOCAL
+    # (prefer in-corridor, never exclude), which keeps the exact safety
+    # envelope of the eager focal search.
+    from ml_planner.build_dataset import hard_scenario
+    from ml_planner.corridor import build_corridor
+    from ml_planner.graph_guidance import GraphGuidance
+    gg = GraphGuidance()
+    if not gg.available:
+        pytest.skip("graph_guidance.npz not available")
+    scen = hard_scenario(6011)
+    pre = prep.prepare_scenario(scen)
+    base = astar.plan_trajectory(pre, verbose=False)
+    assert base['success']
+    base_cost = _mission_cost(pre, base['path'])
+
+    pre2 = prep.prepare_scenario(scen)
+    cor = build_corridor(pre2, gg)
+    assert cor is not None
+    lazy = LazyFocalKinodynamicAstar(pre2, focal_eps=0.05, corridor=cor)
+    path = lazy.search()
+    assert path is not None
+    path = lazy.smooth_path(path)
+    assert _mission_cost(pre2, path) <= 1.05 * base_cost + 1e-6
+
+
 def test_invalidated_states_die_no_revalidation_churn():
     # Regression (LC-T6 benchmark collapse, seeds 6001/6002/7005...): a state
     # whose deferred edge fails validation must be DEAD, not merely dropped

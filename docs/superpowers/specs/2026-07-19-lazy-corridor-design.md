@@ -172,3 +172,27 @@ chỉ gate **cửa vào FOCAL**; "activation" chính là cơ chế refill sẵn 
 Nếu PASS: gộp `lcor` thành mode mặc định của ml_planner; thêm safezone vào
 corridor (kiến trúc crop dùng chung đã sẵn); cân nhắc corridor cho arc-hop
 (`_sector_clear`) — hiện chỉ phủ Strategy A + fan qua `_check_collision`.
+
+---
+
+## Amendment 2 (2026-07-19, trong LC-T6 debug): corridor = tiebreak, KHÔNG phải cổng admission
+
+Hai bug tìm thấy ở cổng go/no-go (benchmark 30 seed), cả hai đã sửa với
+regression test:
+
+1. **Liveness (commit 58152a2)**: state có edge trì hoãn rớt validation bị
+   xóa `g_scores` nhưng vẫn "sống" theo predicate `g_cost <= g_scores.get(st,
+   inf)` → được nạp lại FOCAL và TRẢ PHÍ check thật mỗi lần pop (98k lần / 321
+   iteration, seed 6001) → cạn time budget → no-path giả (hard 8/30 thay vì
+   25/30). Sửa: cờ `edge_dead` + loại trong `_is_live`.
+
+2. **Cổng admission phá bound ε (§4.2 cũ SAI)**: seed 6011 cho ratio 1.0567
+   (lazy+gate) và 1.0668 (eager+gate — chứng minh cổng, không phải lazy, là
+   nguyên nhân). Trong search không reopen, giữ node in-band NGOÀI FOCAL cho
+   phép đường xấu hơn đóng ô lưới trước; phần lạm phát bị khóa vĩnh viễn không
+   bị chặn bởi dải (1+ε). Mệnh đề "gate chỉ tốn thời gian" trong spec là sai.
+   **Sửa**: corridor thành khóa sắp xếp trong FOCAL — `secondary_h` trả
+   `(0 nếu trong corridor còn 1 nếu ngoài, secondary tay)`; FOCAL luôn chứa MỌI
+   node in-band (đúng vỏ an toàn của focal eager, 0 vi phạm trong toàn bộ lịch
+   sử benchmark với 3 secondary khác nhau). Cơ chế admit-all/drain của Task 1
+   giữ nguyên (trung tính, không còn ai dùng để gate).

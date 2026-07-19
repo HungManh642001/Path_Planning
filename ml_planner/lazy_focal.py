@@ -5,10 +5,10 @@ successor is created optimistically with edge_validated=False) and paid only
 when the node is actually popped for expansion. An optimistic f is <= the
 true f (a collision check can only delete an edge, never cheapen it), so
 f_min over OPEN remains a valid lower bound and the focal (1+eps) guarantee
-is unchanged. An optional Corridor (ml_planner/corridor.py) gates FOCAL
-admission only: out-of-corridor nodes sit in OPEN (still bounding f_min) and
-are admitted anyway by the drain-path admit-all fallback, so a wrong model
-can only cost time, never the bound.
+is unchanged. An optional Corridor (ml_planner/corridor.py) acts as a FOCAL
+ordering tiebreak: FOCAL still holds every in-band node (identical safety
+envelope to the eager focal search), in-corridor nodes are merely expanded
+first, so a wrong model can only cost time, never the bound.
 
 Never deferred: chords to the goal waypoint (keeps the valve LOS test at the
 same call site honest, and guarantees every accepted goal arrival rides a
@@ -69,8 +69,17 @@ class LazyFocalKinodynamicAstar(FocalKinodynamicAstar):
             del self.g_scores[state]
         return False
 
-    # ---- corridor gates FOCAL admission only ---------------------------
-    def _focal_admissible(self, state):
+    # ---- corridor is a FOCAL ordering tiebreak, never a gate ------------
+    # Admission gating broke the epsilon bound (benchmark seed 6011, ratio
+    # 1.0567; eager+gate 1.0668, so the gate itself was the cause): in a
+    # non-reopening search, holding in-band nodes out of FOCAL lets worse
+    # paths close their lattice cells first, and that locked-in inflation is
+    # not limited by the (1+eps) band. Preferring in-corridor nodes inside a
+    # FOCAL that still holds EVERY in-band node keeps the exact safety
+    # envelope of the eager focal search.
+    def secondary_h(self, state):
+        s = super().secondary_h(state)
         if self.corridor is None:
-            return True
-        return self.corridor.contains(state.waypoint[0], state.waypoint[1])
+            return s
+        inside = self.corridor.contains(state.waypoint[0], state.waypoint[1])
+        return (0 if inside else 1, s)
