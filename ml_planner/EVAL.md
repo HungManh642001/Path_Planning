@@ -121,8 +121,9 @@ quality-mode option, not an accelerator, in its current form.
 Collision checks are deferred to pop time (optimistic nodes keep f_min a
 valid lower bound, so the 1.05x guarantee is intact — see
 docs/superpowers/specs/2026-07-19-lazy-corridor-design.md). The corridor
-(GNN value field -> boolean grid) gates FOCAL admission only; a wrong model
-can only cost time. Benchmark columns: `lazy_*` (mechanism baseline, no
+(GNN value field -> boolean grid) is a FOCAL ordering tiebreak (in-corridor
+nodes expand first; FOCAL keeps every in-band node); a wrong model can only
+cost time. Benchmark columns: `lazy_*` (mechanism baseline, no
 model), `lcor_*` (lazy + corridor), plus real-check counters
 `hand_checks/lazy_checks/lcor_checks` for attribution.
 
@@ -133,3 +134,44 @@ hand, stop — the corridor layer is moot.
 ```bash
 python -m ml_planner.benchmark --offline-n 0 --gnn-offline-n 0 --bench-n 30
 ```
+
+### Go/no-go result (2026-07-19, 30 seeds/tier, commits 58152a2 + 2fbb321)
+
+The first two runs exposed two real bugs, both fixed with regression tests
+before any verdict (per the plan's stop-and-debug rule):
+
+1. **Liveness churn** (fix `58152a2`): invalidated deferred states stayed
+   "live" in OPEN after their `g_scores` deletion, were re-admitted to FOCAL
+   every refill and re-paid the real collision check on every pop (98k
+   rejected re-validations in 321 iterations on seed 6001). This exhausted
+   the wall-clock budget and reported spurious no-path on maps the eager
+   planner solves — hard-tier success collapsed to 8/30. Fixed with an
+   `edge_dead` flag excluded by `_is_live`.
+2. **Admission gate broke the ε bound** (fix `2fbb321`): seed 6011 violated
+   the bound (lcor 1.0567; eager+gate 1.0668 — the gate, not laziness, was
+   the cause). In a non-reopening search, withholding in-band nodes from
+   FOCAL lets worse paths permanently close lattice cells; the locked-in
+   inflation is not limited by the 5% band. The corridor was demoted to a
+   FOCAL ordering tiebreak (spec Amendment 2).
+
+Final run (hard tier, 24 maps solved by all six planners):
+
+| planner | wall time | iterations | real checks | bound violations |
+|---|---|---|---|---|
+| hand (eager focal) | 34.1 s | 22 261 | 838 080 | 0 |
+| **lazy (pure mechanism)** | **17.7 s** | 21 483 | **116 456** | **0** |
+| lcor (lazy + GNN corridor) | 41.5 s | 51 125 | 240 724 | 0 |
+
+Easy tier: lazy 0.7 s vs hand 1.1 s, checks 5 903 vs 28 341; zero
+violations anywhere.
+
+**Verdict: the mechanism wins, the AI layer loses.** Pure lazy evaluation
+beats the hand-crafted default by **-48% wall-time** and **-86% real
+collision checks** on hard maps at identical quality guarantees (0
+violations, same ε=5% envelope) — the speed axis the two learned-secondary
+prototypes could not win. The GNN corridor's increment is negative
+(2.4x the iterations of pure lazy: preferring in-corridor nodes overrides
+the better-informed hand secondary ordering, plus ~0.16 s/map build cost) —
+formally FAIL per spec §2, consistent with the CNN/GNN secondary verdicts
+that learned guidance does not buy wall-time in this planner. **Recommended
+fast mode: `plan_trajectory_lazy(pre, corridor=None)`** — no model needed.
