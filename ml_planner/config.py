@@ -18,3 +18,7 @@ GRID_RES = 384
 # Path to the exported ONNX guidance model (produced off-machine on Colab).
 # Missing file => planner falls back to the hand-crafted secondary heuristic.
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "guidance.onnx")
+# Tangent-graph GNN guidance weights (numpy .npz, produced by
+# ml_planner/train/train_graph.py). Missing file => planner falls back to the
+# hand-crafted secondary heuristic, exactly like the CNN model above.
+GRAPH_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "graph_guidance.npz")
