@@ -14,6 +14,14 @@ Never deferred: chords to the goal waypoint (keeps the valve LOS test at the
 same call site honest, and guarantees every accepted goal arrival rides a
 validated edge), đoản-trình checks (run before collision in the core loop),
 and arc-hop geometry (_max_clear_wrap/_sector_clear, not _check_collision).
+
+Bound caveat: path SAFETY is structural (every returned edge is validated),
+but the epsilon bound in lazy mode is empirically validated rather than
+proven — a cheaper colliding edge can transiently shadow a valid competitor
+into the same lattice cell (g_scores deletion re-opens the cell, but a
+one-off fan successor may not be re-proposed), the same no-reopening caveat
+the base planner already carries. 0 violations across the 60-map benchmark
++ the seed-6011 regression test are the evidence.
 """
 
 from ml_planner.focal_astar import FocalKinodynamicAstar
