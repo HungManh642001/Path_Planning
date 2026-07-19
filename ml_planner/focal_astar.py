@@ -21,7 +21,10 @@ from ml_planner.secondary import handcrafted_secondary
 
 class FocalKinodynamicAstar(KinodynamicAstar):
     def __init__(self, preprocessed_scenario, focal_eps=None, secondary=None):
+        self.collision_checks = 0    # REAL collision checks paid (lazy A/B metric)
+        self._admit_all = False      # drain-path override of _focal_admissible
         super().__init__(preprocessed_scenario)
+        self.collision_checks = 0    # Reset after initialization (counts search phase only)
         self.focal_eps = mlcfg.FOCAL_EPS if focal_eps is None else focal_eps
         self._secondary = secondary  # Callable[[State], float] or None
 
@@ -34,6 +37,22 @@ class FocalKinodynamicAstar(KinodynamicAstar):
             self.goal_state.waypoint,
             self.scenario['circle_obstacles'],
         )
+
+    def _check_collision(self, p1, p2):
+        self.collision_checks += 1
+        return super()._check_collision(p1, p2)
+
+    # ---- extension points for the lazy variant (behavior-neutral here) ----
+    def _focal_admissible(self, state):
+        """FOCAL admission filter; the lazy+corridor subclass narrows this.
+        Rejected states stay in OPEN (still bounding f_min); the drain path
+        retries with _admit_all so filtering can never starve the search."""
+        return True
+
+    def _validate_on_pop(self, state):
+        """Last-moment edge validation; the lazy subclass defers collision
+        checks to here. Returning False discards the pop (state NOT closed)."""
+        return True
 
     def _goal_reached(self, current):
         """Return the reconstructed path if `current` is an accepted goal
@@ -109,7 +128,9 @@ class FocalKinodynamicAstar(KinodynamicAstar):
             # metres, orders of magnitude above the float noise, negligible
             # against real path costs.
             for f, c, st in open_heap:
-                if f <= f_bound + config.EPS and id(st) not in in_focal and _is_live(st):
+                if (f <= f_bound + config.EPS and id(st) not in in_focal
+                        and _is_live(st)
+                        and (self._admit_all or self._focal_admissible(st))):
                     heapq.heappush(focal_heap, (self.secondary_h(st), c, st))
                     in_focal.add(id(st))
 
@@ -128,7 +149,7 @@ class FocalKinodynamicAstar(KinodynamicAstar):
             while focal_heap:
                 _, _, cand = heapq.heappop(focal_heap)
                 in_focal.discard(id(cand))
-                if _is_live(cand):
+                if _is_live(cand) and self._validate_on_pop(cand):
                     current = cand
                     break
             if current is None:
@@ -137,6 +158,15 @@ class FocalKinodynamicAstar(KinodynamicAstar):
                     break
                 f_min = open_heap[0][0]
                 _refill_focal(w * f_min)
+                if not focal_heap and open_heap:
+                    # Admission filtering (corridor) found nothing in band:
+                    # admit unconditionally so filtering can only cost time,
+                    # never starve the search or fake a no-path.
+                    self._admit_all = True
+                    try:
+                        _refill_focal(w * f_min)
+                    finally:
+                        self._admit_all = False
                 continue
 
             self.closed_set.add(current)
@@ -162,7 +192,8 @@ class FocalKinodynamicAstar(KinodynamicAstar):
                     f = tentative_g + next_state.h_cost
                     c = next(counter)
                     heapq.heappush(open_heap, (f, c, next_state))
-                    if f_min is not None and f <= w * f_min + config.EPS:
+                    if (f_min is not None and f <= w * f_min + config.EPS
+                            and (self._admit_all or self._focal_admissible(next_state))):
                         heapq.heappush(focal_heap, (self.secondary_h(next_state), c, next_state))
                         in_focal.add(id(next_state))
 

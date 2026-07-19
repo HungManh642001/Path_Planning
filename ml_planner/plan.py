@@ -49,9 +49,11 @@ def plan_trajectory_focal(preprocessed_scenario, focal_eps=None, secondary=None,
     if path:
         path = planner.smooth_path(path)
 
+    stats = planner.get_search_stats()
+    stats['collision_checks'] = planner.collision_checks
     return {
         'path': path,
         'success': path is not None and legs_ok,
-        'stats': planner.get_search_stats(),
+        'stats': stats,
         'planner': planner,
     }

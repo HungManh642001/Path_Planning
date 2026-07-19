@@ -123,3 +123,42 @@ def test_goal_reached_accepts_aligned_rejects_misaligned():
     far = State((gwp[0] + 1e6, gwp[1]), gh)
     far.parent = planner.start_state
     assert planner._goal_reached(far) is None
+
+
+def test_collision_checks_counted():
+    pre = prep.prepare_scenario(mg.scenario4_complex_maze())
+    planner = FocalKinodynamicAstar(pre, focal_eps=0.05)
+    assert planner.collision_checks == 0
+    path = planner.search()
+    assert path is not None
+    assert planner.collision_checks > 0
+
+
+def test_admission_filter_reject_all_still_solves_via_admit_all():
+    # A hostile admission filter must only slow the search down (drain-path
+    # admit-all fallback), never starve it or break the bound.
+    scen = mg.scenario4_complex_maze
+    opt = _optimal_cost(scen)
+    pre = prep.prepare_scenario(scen())
+    planner = FocalKinodynamicAstar(pre, focal_eps=0.05)
+    planner._focal_admissible = lambda st: False
+    path = planner.search()
+    assert path is not None
+    path = planner.smooth_path(path)
+    assert _mission_cost(pre, path) <= 1.05 * opt + 1e-6
+
+
+def test_validate_on_pop_false_discards_without_closing():
+    # Rejecting every pop must terminate with no path, not hang or crash.
+    pre = prep.prepare_scenario(mg.scenario2_single_obstacle())
+    planner = FocalKinodynamicAstar(pre, focal_eps=0.05)
+    planner._validate_on_pop = lambda st: False
+    assert planner.search() is None
+
+
+def test_focal_stats_include_collision_checks():
+    from ml_planner.plan import plan_trajectory_focal
+    pre = prep.prepare_scenario(mg.scenario2_single_obstacle())
+    res = plan_trajectory_focal(pre, focal_eps=0.05)
+    assert res['success']
+    assert res['stats']['collision_checks'] > 0
