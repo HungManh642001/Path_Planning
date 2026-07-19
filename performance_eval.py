@@ -36,17 +36,30 @@ class PerformanceMetrics:
         
         waypoints = [wp for wp, _ in path]
         headings = [h for _, h in path]
-        
+
+        # Distances are measured over the FULL flown mission O -> W1 -> ... -> T,
+        # not just the search path. The search path starts at W1 (the seeded
+        # takeoff corner) and, in fixed-goal mode, ends at W_{n-1}, so it omits
+        # the takeoff leg O->W1 and the terminal leg W_{n-1}->T. Prepend O and
+        # append T (mirroring render.trajectory.build_full_path) so
+        # total_distance is the true flown length.
+        full_wps = list(waypoints)
+        O = preprocessed.get('start_pos') if preprocessed else None
+        T = preprocessed.get('goal_pos') if preprocessed else None
+        if O is not None and (not full_wps or math.dist(O, full_wps[0]) > 1.0):
+            full_wps = [tuple(O)] + full_wps
+        if T is not None and (not full_wps or math.dist(T, full_wps[-1]) > 1.0):
+            full_wps = full_wps + [tuple(T)]
+
         # Calculate distances
         segment_distances = []
         total_distance = 0
-        
-        for i in range(len(waypoints) - 1):
-            wp1 = waypoints[i]
-            wp2 = waypoints[i + 1]
-            dist = math.sqrt((wp2[0] - wp1[0])**2 + (wp2[1] - wp1[1])**2)
+
+        for i in range(len(full_wps) - 1):
+            dist = math.dist(full_wps[i], full_wps[i + 1])
             segment_distances.append(dist)
             total_distance += dist
+            print(f"Segment {i}: {full_wps[i]} -> {full_wps[i + 1]}, Distance: {dist:.2f} m")
         
         # Calculate turn angles
         turn_angles = []

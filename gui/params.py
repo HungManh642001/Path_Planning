@@ -15,7 +15,7 @@ PARAM_SPECS = [
     {'key': 'turn_radius',  'label': 'Turn Radius R (m)',   'group': 'tactical', 'min': 3000.0,  'max': 15000.0, 'default': config.R},
     {'key': 'alpha_max_deg','label': 'Max Turn Angle (deg)','group': 'tactical', 'min': 10.0,    'max': 90.0,    'default': config.ALPHA_MAX},
     {'key': 'l0',           'label': 'L0 stabilize (m)',    'group': 'tactical', 'min': 1000.0,  'max': 20000.0, 'default': config.L0},
-    {'key': 'dss',          'label': 'Seeker DSS (m)',      'group': 'tactical', 'min': 5000.0,  'max': 60000.0, 'default': config.DSS},
+    {'key': 'dss',          'label': 'Terminal camera sensor lock DSS (m)',      'group': 'tactical', 'min': 5000.0,  'max': 60000.0, 'default': config.DSS},
     {'key': 'safe_margin',  'label': 'Safe Margin (m)',     'group': 'tactical', 'min': 0.0,     'max': 30000.0, 'default': config.SAFE_MARGIN},
     {'key': 'start_angle', 'label': 'Takeoff Angle (deg)',  'group': 'tactical', 'min': config.START_ANGLE_MIN,   'max': config.START_ANGLE_MAX,   'default': config.START_ANGLE_DEFAULT},
     {'key': 'approach_angle','label': 'Goal Approach Angle (deg)','group': 'tactical','min': config.APPROACH_ANGLE_MIN, 'max': config.APPROACH_ANGLE_MAX, 'default': config.APPROACH_ANGLE_DEFAULT},

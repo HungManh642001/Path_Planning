@@ -7,6 +7,7 @@ import core.kinodynamic_astar as astar
 import core.arc_geometry as ag
 import core.path_validation as pv
 import render.trajectory as tr
+from batch_random_test import generate_random_scenario
 
 CENTER = (250000.0, 250000.0)
 RAW_R = 30000.0
@@ -27,13 +28,15 @@ def test_arc_hop_successors_from_riding_state():
     pre = prep.prepare_scenario(synthetic_circle_scenario())
     planner = astar.KinodynamicAstar(pre)
     (_, r_inf), = pre['circle_obstacles']
-    P = (CENTER[0], CENTER[1] - r_inf)  # due south, heading east => CCW
+    # Riding geometry is built on the lifted radius r_ride = r + delta.
+    r_ride = r_inf + config.CONSTRUCTION_CLEARANCE_M
+    P = (CENTER[0], CENTER[1] - r_ride)  # due south, heading east => CCW
     st = astar.State(P, 0.0)
     succ = planner._arc_hop_successors(st)
     assert succ, "a riding state must generate arc-hop successors"
     for nxt, cost in succ:
         center, radius, arc_start, s = nxt.arc_from
-        assert (center, radius, s) == (CENTER, r_inf, 1)
+        assert (center, radius, s) == (CENTER, r_ride, 1)
         assert arc_start == P
         dphi = ag.arc_angle(P, nxt.waypoint, center, s)
         assert math.isclose(cost, radius * dphi, rel_tol=1e-9)
@@ -41,7 +44,7 @@ def test_arc_hop_successors_from_riding_state():
             math.hypot(nxt.waypoint[0] - center[0], nxt.waypoint[1] - center[1]),
             radius, rel_tol=1e-9)
     # The goal's departure point must be among the successors.
-    dep_goal = ag.departure_point(pre['goal_state']['waypoint'], CENTER, r_inf, 1)
+    dep_goal = ag.departure_point(pre['goal_state']['waypoint'], CENTER, r_ride, 1)
     assert any(math.dist(nxt.waypoint, dep_goal) < 1.0 for nxt, _ in succ)
 
 
@@ -95,7 +98,8 @@ def test_fan_added_while_riding_boundary():
     pre = prep.prepare_scenario(synthetic_circle_scenario())
     planner = astar.KinodynamicAstar(pre)
     (_, r_inf), = pre['circle_obstacles']
-    P = (CENTER[0], CENTER[1] - r_inf)  # due south, heading east => riding CCW
+    r_ride = r_inf + config.CONSTRUCTION_CLEARANCE_M
+    P = (CENTER[0], CENTER[1] - r_ride)  # due south, heading east => riding CCW
     st = astar.State(P, 0.0)
     succ = planner.get_next_states(st)
     assert any(s_.arc_from is not None for s_, _ in succ)  # arc-hops present
@@ -134,7 +138,7 @@ def test_departure_state_does_not_refire_same_ride():
     pre = prep.prepare_scenario(scn)
     planner = astar.KinodynamicAstar(pre)
     (c1, r1) = pre['circle_obstacles'][0]
-    P = (c1[0], c1[1] - r1)
+    P = (c1[0], c1[1] - (r1 + config.CONSTRUCTION_CLEARANCE_M))
     ride_start = astar.State(P, 0.0)
     hops = planner._arc_hop_successors(ride_start)
     assert len(hops) > 1, "ride-start needs >1 distinct departure candidate"
@@ -159,8 +163,9 @@ def test_dep_cache_memoizes_and_preserves_successor_set():
     pre = prep.prepare_scenario(scn)
     planner = astar.KinodynamicAstar(pre)
     (c1, r1) = pre['circle_obstacles'][0]
+    r_ride = r1 + config.CONSTRUCTION_CLEARANCE_M
 
-    P = (c1[0], c1[1] - r1)
+    P = (c1[0], c1[1] - r_ride)
     st = astar.State(P, ag.tangent_heading(P, c1, 1))
     assert planner._dep_cache == {}
     first = planner._arc_hop_successors(st)
@@ -170,7 +175,7 @@ def test_dep_cache_memoizes_and_preserves_successor_set():
     # Ride the SAME circle+sense again from a different boundary point; the
     # cache entry must be reused unchanged (not recomputed), and the
     # resulting successor targets must match a cold-cache computation.
-    P2 = (c1[0] - r1, c1[1])
+    P2 = (c1[0] - r_ride, c1[1])
     st2 = astar.State(P2, ag.tangent_heading(P2, c1, 1))
     planner._arc_hop_successors(st2)
     assert list(planner._dep_cache[(0, 1)]) == cached_deps
@@ -286,3 +291,71 @@ def test_plan_no_path_reason():
         k.KinodynamicAstar.search = orig
     assert result['success'] is False
     assert result['failure_reason'] == 'no_path'
+
+
+def _assert_honest_outcome(seed):
+    """A plan must be either a genuinely flyable success (strict oracle over
+    the full O..T path, zero circle tolerance) or an honest failure with a
+    valid reason — never a silent invalid path."""
+    scn = generate_random_scenario(seed=seed)
+    pre = prep.prepare_scenario(scn)
+    result = astar.plan_trajectory(pre)
+    if result['success']:
+        full = tr.build_full_path(result['path'], pre)
+        rawc = [(o['center'], o['radius']) for o in scn['obstacles'] if o['type'] == 'circle']
+        rawp = [o['polygon'] for o in scn['obstacles'] if o['type'] == 'polygon']
+        assert pv.path_is_valid(
+            full, pre['circle_obstacles'], pre['polygon_obstacles'],
+            config.R, config.ALPHA_MAX_RAD, config.L0, config.DSS,
+            raw_circle_obstacles=rawc, raw_polygon_obstacles=rawp,
+            circle_tol=0.0), f"seed {seed}: success but strict oracle rejected"
+        assert result['failure_reason'] is None
+    else:
+        assert result['failure_reason'] in (
+            'no_path', 'start_leg_blocked', 'goal_leg_blocked', 'path_self_collision')
+
+
+def test_seed_155_historic_polygon_escape_is_honest():
+    """Seed 155 historically emitted an arc-expansion chord through a polygon
+    interior (the annulus gap). With sector-based ride clearance the planner
+    must either route around it (success + strict-oracle-valid) or fail
+    honestly — never return a silently invalid path."""
+    _assert_honest_outcome(155)
+
+
+def test_seed_223_historic_phantom_edge_is_honest():
+    """Seed 223 historically carried a never-validated 'phantom' edge from
+    lattice-dedup came_from splicing (misread as a 37 m legitimate graze).
+    With per-object parent reconstruction every edge is exactly a validated
+    transition; outcome must be honest under the strict (zero-tol) oracle."""
+    _assert_honest_outcome(223)
+
+
+def test_sector_sweep_sees_annulus_intruder():
+    """Direct regression for the annulus gap (F4): an obstacle intruding the
+    ride corridor [r_ride, 1.0824*r_ride] WITHOUT reaching the outer bulge
+    ring was invisible to the old polyline-at-bulge sweep but is struck by
+    real arc-expansion chords. The sector sweep must block the ride there."""
+    pre = prep.prepare_scenario(synthetic_circle_scenario())
+    planner = astar.KinodynamicAstar(pre)
+    (_, r_inf), = pre['circle_obstacles']
+    r_ride = r_inf + config.CONSTRUCTION_CLEARANCE_M
+    # Intruder circle: reaches into the annulus (its inner edge sits at
+    # ~1.01*r_ride from the ridden center) but stops well short of the outer
+    # bulge ring (1.0824*r_ride). Placed due EAST of the ridden circle.
+    d_center = 1.05 * r_ride
+    r_intruder = 0.04 * r_ride       # inner edge at 1.01, outer at 1.09... keep inside band:
+    r_intruder = 0.03 * r_ride       # edge span [1.02, 1.08] * r_ride
+    intruder_center = (CENTER[0] + d_center, CENTER[1])
+    planner.scenario['circle_obstacles'].append((intruder_center, r_intruder))
+
+    # Ride starts due SOUTH (angle -90 deg), CCW toward the east side.
+    phi0 = -math.pi / 2
+    max_wrap = planner._max_clear_wrap(CENTER, r_ride, phi0, +1)
+    # CCW from south, the intruder sits ~90 deg ahead; the sweep must stop
+    # before reaching it (well under a full circle).
+    assert max_wrap < math.radians(95), (
+        f"sweep ignored an annulus intruder: max_wrap={math.degrees(max_wrap):.1f} deg")
+    # Sanity: without the intruder the ride is fully clear.
+    planner.scenario['circle_obstacles'].pop()
+    assert planner._max_clear_wrap(CENTER, r_ride, phi0, +1) == 2 * math.pi

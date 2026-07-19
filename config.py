@@ -29,7 +29,7 @@ APPROACH_ANGLE_DEFAULT = 30.0
 
 # ====== SAFETY & OBSTACLE HANDLING ======
 # Safety margin buffer (m) - distance to expand obstacle boundaries
-SAFE_MARGIN = 10000.0
+SAFE_MARGIN = 0.0
 
 # Polygon inflation join style: 'mitre' keeps sharp corners so each obstacle
 # yields a few real corner vertices (used as navigation waypoints) instead of
@@ -52,15 +52,23 @@ ARC_WAYPOINT_STEP_DEG = 30.0
 # Angular step (deg) for sampling arc clearance during search.
 ARC_SAMPLE_STEP_DEG = 5.0
 
-# Tolerance (m) by which a straight segment may graze inside a circle's
-# INFLATED boundary. Shared by the planner (_check_collision) and, when
-# validating planner output, the oracle (path_is_valid(..., circle_tol=...)).
-# Set from measurement: the max body graze of legitimate raw-safe paths was
-# ~20.97 m (arc-expansion chords / tangent segments dipping into the inflation
-# band); this value adds headroom. It is a tiny fraction of the ~13.3 km
-# inflation band and never approaches the raw obstacle. Polygon interior is
-# checked tolerance-free.
-CIRCLE_GRAZE_TOL_M = 23.0
+# Collision checking is EXACT: any penetration of a circle's INFLATED
+# boundary (dist < radius) is a collision — zero tolerance. Feasibility of
+# boundary-riding geometry is achieved on the CONSTRUCTION side instead:
+# all riding geometry (tangent points, bitangent departures, circumscribed
+# arc vertices) is built on radius r + CONSTRUCTION_CLEARANCE_M, so every
+# planner-made chord keeps at least that much true clearance — float noise
+# (~mm) is absorbed by construction, never forgiven by validation.
+# DEPRECATED, kept at 0.0 only because gui/params.py still exposes a slider
+# for it; the planner treats it as exactly zero semantics.
+CIRCLE_GRAZE_TOL_M = 0.0
+
+# Construction clearance (m): the extra radius on which boundary-riding
+# geometry is BUILT (r_ride = inflated radius + this). Keeps constructed
+# tangent chords strictly outside the inflated boundary so the exact
+# (zero-tolerance) collision check accepts them with margin far above float
+# noise. Geometrically negligible: ~1 m against 23-63 km inflated radii.
+CONSTRUCTION_CLEARANCE_M = 1.0
 
 # ====== COORDINATE SYSTEM ======
 # Map bounds (meters) for simulation
@@ -69,6 +77,13 @@ MAP_HEIGHT = 500000.0
 MAP_ORIGIN = (0.0, 0.0)
 
 # ====== A* SEARCH ======
+# Number of seeded start-corner states on the start-heading ray. Corner i
+# (i = 1..K, tan-uniform buckets: tan(a_i/2) = (i/K) * tan(alpha_max/2)) sits
+# at d_i = L0 + R*tan(a_i/2) and affords first turns alpha <= a_i while
+# keeping the takeoff straight l1 >= L0 exactly. Bucket K reproduces the
+# legacy worst-case W1, so NUM_START_CORNERS = 1 is exactly legacy behaviour.
+NUM_START_CORNERS = 4
+
 # Maximum iterations for A* search
 MAX_ITERATIONS = 50000
 
@@ -83,7 +98,7 @@ STATE_HEADING_QUANTUM_DEG = 3.0     # degrees
 HEURISTIC_WEIGHT = 1.0
 
 # Threshold for considering a point as reached (meters)
-GOAL_THRESHOLD = 1000.0  # meters; reachable given STATE_POS_QUANTUM
+GOAL_THRESHOLD = 1.0  # meters; reachable given STATE_POS_QUANTUM
 
 # Cost added per radian of heading change at a transition (meters per radian)
 TURN_PENALTY_WEIGHT = 0  # 4000.0

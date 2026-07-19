@@ -82,11 +82,25 @@ open water with valid Strategy-A candidates and no boundary-riding, the fan
 does not fire. `validate_kinodynamics` enforces the max-turn-angle and minimum-straight-segment
 (đoản trình) constraints. `search()` accepts the goal only when both within
 `GOAL_THRESHOLD` **and** the arrival heading is within `α_max` of `goal_heading`
-(so the terminal turn onto the approach is feasible). `smooth_path` re-validates
-the turn at the *following* waypoint before skipping one. Collision checks use
-point-to-line distance for circles (with `CIRCLE_GRAZE_TOL_M`) and a DE-9IM
-interior predicate (`relate_pattern('T********')`) for polygons, which allows
-boundary-following and endpoint-touch but blocks interior penetration.
+(so the terminal turn onto the approach is feasible). `smooth_path` shortcuts
+each kept anchor to the **farthest** reachable waypoint whose direct chord is
+exact-collision-free and kinodynamically valid (turn at the anchor **and** the
+onward turn at the target; the terminal target uses `goal_pos`/`goal_heading`,
+not the offset `goal_state.waypoint`).
+
+Collision checks are **exact** (zero tolerance): a circle is hit iff the
+(inlined) point-to-segment distance is `< radius` — `CIRCLE_GRAZE_TOL_M` is
+deprecated (`0.0`). Feasibility of boundary-riding chords comes from the
+CONSTRUCTION side instead: all tangent / bitangent / arc geometry is built on
+`radius + config.CONSTRUCTION_CLEARANCE_M`, so legitimate chords keep a true
+clearance margin rather than relying on a forgiven intrusion. Polygons use a
+DE-9IM interior predicate (`relate_pattern('T********')`) that allows
+boundary-following and endpoint-touch but blocks interior penetration. Arc-hop
+riding clearance is checked by `_sector_clear` over the true annular sector
+`[r_ride, r_ride/cos(π/8)]` (not just the outer ring — that closed the seed-155
+gap). Note (perf): the circle collision loop is a hand-inlined scalar loop on
+purpose — numpy-vectorising it or adding an STRtree over circles is SLOWER at
+these obstacle counts (N≈6–16); see the memory note.
 
 ### Rendering model (render/trajectory.py)
 

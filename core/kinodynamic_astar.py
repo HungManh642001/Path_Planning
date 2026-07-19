@@ -7,7 +7,9 @@ import heapq
 import math
 from collections import defaultdict
 import numpy as np
-from shapely.geometry import Polygon, LineString
+from shapely.geometry import Polygon, LineString, Point
+from shapely.prepared import prep as shp_prep
+from shapely.ops import unary_union
 from shapely import STRtree
 
 import config
@@ -25,6 +27,10 @@ def _angle_diff(a, b):
 # any expansion step <= 45 deg stay within r / cos(pi/8) of the center.
 _ARC_CLEAR_BULGE = 1.0 / math.cos(math.pi / 8.0)
 
+# Minimum usable straight-flight length (đoản trình) between two waypoints, in
+# metres. Matches the threshold historically used by validate_kinodynamics.
+_MIN_STRAIGHT_M = 10.0
+
 
 class State:
     """Represents an autonomous aircraft state: (waypoint, heading)"""
@@ -36,7 +42,19 @@ class State:
         self.g_cost = float('inf')  # Cost from start
         self.h_cost = 0  # Heuristic to goal
         self.arc_from = None  # (center, radius, arc_start_pt, s) if reached via arc hop
-    
+        # Remaining straight length of the INCOMING segment after its near-end
+        # turn reserve — the budget still available to the far-end (this
+        # waypoint's) turn. Set exactly at creation; the đoản-trình far-end
+        # check is deferred to this state's own expansion, where its outgoing
+        # turn is known (no alpha_max worst-case). inf = no straight constraint
+        # carried in (start state, arc-ride departures).
+        self.straight_budget = float('inf')
+        # Required straight length of the INCOMING segment (đoản-trình
+        # threshold used by the deferred far-end check). Normal states need
+        # the generic minimum; seeded start corners override this with L0 so
+        # the takeoff stabilization leg is enforced exactly.
+        self.min_straight_in = _MIN_STRAIGHT_M
+
     def __hash__(self):
         return hash(su.state_to_tuple(self.waypoint, self.heading))
     
@@ -71,29 +89,118 @@ class KinodynamicAstar:
         for poly in self._polygons:
             self._poly_vertices.extend(poly.convex_hull.exterior.coords[:-1])
 
+        # Operating areas (safezones). When one or more polygons are supplied the
+        # aircraft must stay inside their UNION — both every generated waypoint
+        # (_in_bounds) and every edge/chord (_check_collision) are constrained to
+        # it. The union (a Polygon or MultiPolygon) is prepared once so the
+        # repeated point/segment containment tests on the hot search path are
+        # cheap. When absent, fall back to the rectangle from the scenario's
+        # map_bounds, else the global config.MAP_WIDTH/HEIGHT (unchanged legacy
+        # behaviour).
+        safezones = preprocessed_scenario.get('safezones')
+        self._safezone = unary_union([Polygon(sz) for sz in safezones]) if safezones else None
+        self._safezone_prep = shp_prep(self._safezone) if self._safezone is not None else None
+        map_bounds = preprocessed_scenario.get('map_bounds')
+        # Only enforce a rectangular bound when one is EXPLICITLY supplied. The
+        # global config.MAP_WIDTH/HEIGHT is a legacy 500 km default that is
+        # meaningless for scenarios living elsewhere (e.g. real missions at
+        # y ~ 1.15e6); enforcing it there would reject every waypoint. When
+        # neither a safezone nor an explicit map_bounds is given, _in_bounds is
+        # permissive (the search is still bounded by obstacles, candidates,
+        # MAX_ITERATIONS and the time budget).
+        self._has_explicit_bounds = map_bounds is not None
+        self._bounds_w, self._bounds_h = map_bounds if map_bounds else (config.MAP_WIDTH, config.MAP_HEIGHT)
+
         # Start and goal states
         self.start_state = State(
             preprocessed_scenario['start_state']['waypoint'],
             preprocessed_scenario['start_state']['heading']
         )
         self.start_state.g_cost = 0
-        
+        # The incoming O->W1 leg's straight length (near turn at O is 0). The
+        # far-end (turn at W1) đoản-trình is then deferred to W1's expansion.
+        self.start_state.straight_budget = math.dist(
+            preprocessed_scenario['start_pos'], self.start_state.waypoint)
+
         self.goal_state = State(
             preprocessed_scenario['goal_state']['waypoint'],
             preprocessed_scenario['goal_state']['heading']
         )
-        
-        # Search variables
+
+        # Free terminal approach mode: goal_heading is None. The search then
+        # targets T itself (goal_state.waypoint == goal_pos) and the final edge
+        # into T must be a straight run-in of length >= DSS in a search-chosen
+        # direction (no fixed approach heading, no terminal turn).
+        self._free_goal = preprocessed_scenario.get('goal_heading') is None
+        self._dss = preprocessed_scenario['goal_state'].get('engagement_distance', config.DSS)
+
+        # Search variables. NOTE: there is deliberately NO came_from dict —
+        # State hashing quantises to a coarse lattice (1000 m / 3°), so a
+        # lattice-keyed parent map lets two distinct candidates collide and
+        # splice the reconstruction onto a parent whose transition was never
+        # collision-checked ("phantom edges"). Parents are stored per-object
+        # (State.parent), so every reconstructed edge is exactly a validated
+        # transition.
         self.open_set = []
         self.closed_set = set()
-        self.came_from = {}
         self.g_scores = defaultdict(lambda: float('inf'))
         
         self.iteration_count = 0
         self.max_iterations = config.MAX_ITERATIONS
         self.R = preprocessed_scenario['turn_radius']
         self.alpha_max_rad = preprocessed_scenario['alpha_max_rad']
-        
+
+        # Seeded start corners: instead of rooting the search at the single
+        # worst-case W1 (L0 + R*tan(alpha_max/2) along the takeoff ray), seed
+        # K corner states at d_i = L0 + R*tan(a_i/2) with tan-uniform buckets
+        # tan(a_i/2) = (i/K)*tan(alpha_max/2), i = 1..K (bucket K == legacy
+        # W1, so NUM_START_CORNERS = 1 is exactly legacy). A corner seeded for
+        # a_i affords any first turn alpha <= a_i while keeping the takeoff
+        # straight l1 >= L0 EXACTLY (straight_budget + min_straight_in = L0).
+        # Corners that leave the operating area or whose takeoff leg O->corner
+        # collides are NOT seeded — feasibility recovery near obstacles and
+        # safezone edges, where the old fixed W1 could land inside an inflated
+        # zone and kill the whole plan.
+        O = preprocessed_scenario['start_pos']
+        u_start = preprocessed_scenario['start_state']['heading']
+        L0_start = preprocessed_scenario['start_state'].get('straight_length', config.L0)
+        K = max(1, int(config.NUM_START_CORNERS))
+        tan_max = math.tan(self.alpha_max_rad / 2.0)
+        self.start_corners = []
+        for i in range(1, K + 1):
+            d_i = L0_start + self.R * (i / K) * tan_max
+            corner = (O[0] + d_i * math.cos(u_start),
+                      O[1] + d_i * math.sin(u_start))
+            if not self._in_bounds(corner):
+                continue
+            if not self._check_collision(O, corner):
+                continue
+            st = State(corner, u_start)
+            # True along-ray cost from O. All corners share the same O origin,
+            # so relative costs between corners are exact (the legacy single
+            # root could use g=0 because its offset was a common constant).
+            st.g_cost = d_i
+            st.straight_budget = d_i
+            st.min_straight_in = L0_start
+            self.start_corners.append(st)
+
+        # Pre-computed constants (depend only on R / alpha_max / config, all
+        # fixed for the planner's lifetime) hoisted out of the per-expansion
+        # hot loops. Values are byte-identical to computing them inline.
+        # Only the NEAR-end turn (at the current point) is reserved here; the
+        # far-end turn at the fan point is deferred to that point's own
+        # expansion (via straight_budget), so a single R*tan(alpha_max/2)
+        # reserve suffices instead of the old worst-case 2*R*tan(alpha_max/2).
+        self._fan_distance = (self.R * math.tan(self.alpha_max_rad / 2)
+                              + config.RADIAL_FAN_STEP_M)
+        self._arc_sample_step = math.radians(config.ARC_SAMPLE_STEP_DEG)
+        self._arc_sample_n = int(round(2.0 * math.pi / self._arc_sample_step))
+
+        # Whether the state being expanded rides any circle boundary; set as a
+        # side effect of _arc_hop_successors (which already evaluates
+        # riding_sense per circle) so get_next_states need not recompute it.
+        self._riding = False
+
         # Track if search failed
         self.search_failed = False
 
@@ -126,6 +233,31 @@ class KinodynamicAstar:
         dy = goal_state.waypoint[1] - state.waypoint[1]
         return math.sqrt(dx * dx + dy * dy)
     
+    def _doan_trinh(self, current, seg_len, turn_at_current, far_reserve=0.0):
+        """Exact đoản-trình (min straight-segment) check for the edge
+        current -> new, split across the two events its two turns become known.
+
+        `turn_at_current` (the turn AT `current`, from its incoming heading onto
+        this new segment) eats the incoming segment's far end AND the new
+        segment's near end. `far_reserve` is the new segment's far-end bite when
+        it is already known (terminal turn onto the goal); 0 otherwise, in which
+        case that check is deferred to the new state's own expansion.
+
+        Returns the new state's `straight_budget` (new segment length minus the
+        near reserve) when both ends have room, else None. The deferred
+        far-end check of `current`'s incoming segment uses `current`'s own
+        `min_straight_in` threshold (generic minimum, or L0 for a seeded
+        start corner).
+        """
+        reserve = self.R * math.tan(turn_at_current / 2.0)
+        # Deferred far-end check of `current`'s incoming segment.
+        if current.straight_budget - reserve < current.min_straight_in:
+            return None
+        budget = seg_len - reserve
+        if budget - far_reserve < _MIN_STRAIGHT_M:
+            return None
+        return budget
+
     def get_next_states(self, current_state):
         """Dynamic successors: tangent points to circles + polygon hull vertices +
         the goal; radial fan as a fallback when no graph candidate is valid."""
@@ -134,15 +266,18 @@ class KinodynamicAstar:
         h = current_state.heading
 
         # --- Arc-hop: ride any circle boundary this state is tangent to ---
+        # All riding/tangent geometry is built on r + CONSTRUCTION_CLEARANCE_M
+        # so constructed chords are strictly clear of the exact-checked
+        # inflated boundary (see config.CONSTRUCTION_CLEARANCE_M).
+        delta = config.CONSTRUCTION_CLEARANCE_M
         successors.extend(self._arc_hop_successors(current_state))
-        riding = any(ag.riding_sense(P, h, center, radius) != 0
-                     for center, radius in self.scenario['circle_obstacles'])
+        riding = self._riding      # set as a side effect of _arc_hop_successors
 
         # --- Strategy A: dynamic tangent / vertex / goal candidates ---
         goal_wp = self.goal_state.waypoint
         candidates = []
         for center, radius in self.scenario['circle_obstacles']:
-            candidates.extend(su.circle_tangent_points(P, center, radius))
+            candidates.extend(su.circle_tangent_points(P, center, radius + delta))
         candidates.extend(self._poly_vertices)
         candidates.append(goal_wp)
 
@@ -155,28 +290,46 @@ class KinodynamicAstar:
             turn = abs(_angle_diff(heading_to_node, h))
             if turn > self.alpha_max_rad:
                 continue
-            # At the final waypoint W_{n-1} the autonomous aircraft must turn from the approach
-            # heading onto goal_heading; that terminal turn must also be feasible.
+            # Far-end reserve of this segment: 0 for an interior waypoint (its
+            # turn is unknown here, deferred to that waypoint's expansion); for
+            # the terminal goal the far turn IS known now (onto goal_heading, or
+            # 0 in free mode), so reserve it exactly.
+            far_reserve = 0.0
             if node is goal_wp:
-                final_turn = abs(_angle_diff(self.goal_state.heading, heading_to_node))
-                if final_turn > self.alpha_max_rad:
-                    continue
-            is_valid, _ = prep.validate_kinodynamics(
-                P, h, node, heading_to_node, R=self.R, alpha_max=self.alpha_max_rad)
-            if not is_valid:
+                if self._free_goal:
+                    # Free approach: the edge INTO T is the straight seeker
+                    # run-in. Its USABLE straight length (after the turn fillet
+                    # at P bites R*tan(turn/2)) must be at least DSS — checking
+                    # the raw distance would let the fillet steal into the
+                    # seeker leg. Heading already points at T; _check_collision
+                    # below keeps it clear; no fixed goal_heading terminal turn.
+                    if math.hypot(dx, dy) - self.R * math.tan(turn / 2.0) < self._dss:
+                        continue
+                else:
+                    # At the final waypoint W_{n-1} the autonomous aircraft must
+                    # turn from the approach heading onto goal_heading; that
+                    # terminal turn must also be feasible and reserves its bite.
+                    final_turn = abs(_angle_diff(self.goal_state.heading, heading_to_node))
+                    if final_turn > self.alpha_max_rad:
+                        continue
+                    far_reserve = self.R * math.tan(final_turn / 2.0)
+            budget = self._doan_trinh(current_state, math.hypot(dx, dy), turn, far_reserve)
+            if budget is None:
                 continue
             if not self._check_collision(P, node):
                 continue
             cost = math.hypot(dx, dy) + config.TURN_PENALTY_WEIGHT * turn
-            successors.append((State(node, heading_to_node), cost))
+            nxt = State(node, heading_to_node)
+            nxt.straight_budget = budget
+            successors.append((nxt, cost))
 
-        if successors and not riding:
+        if successors and not riding and not self._check_collision(P, goal_wp):
             # Escape valve: while the goal is occluded, a few budgeted fan
             # expansions provide cheap reorientation moves (e.g. an adverse
             # initial heading) that tangent/vertex candidates cannot express;
             # without this the search can commit to a long detour (seed 319:
             # 978.8 km vs 728.9 km with the valve).
-            if self._check_collision(P, goal_wp) or self.num_strategy_b <= 0:
+            if self.num_strategy_b <= 0:
                 return successors
             self.num_strategy_b -= 1
 
@@ -187,24 +340,29 @@ class KinodynamicAstar:
         # departure points. ---
             
         num_directions = config.RADIAL_FAN_DIRECTIONS
-        distance = 2 * self.R * math.tan(self.alpha_max_rad / 2) + config.RADIAL_FAN_STEP_M
+        distance = self._fan_distance
         for i in range(num_directions):
             heading_offset = -self.alpha_max_rad + 2 * self.alpha_max_rad * i / (num_directions - 1)
             next_heading = h + heading_offset
-            nx = P[0] + distance * math.cos(next_heading)
-            ny = P[1] + distance * math.sin(next_heading)
+            if heading_offset == 0:
+                distance_m = config.WRAP_STEP_M
+            else:
+                distance_m = distance
+            nx = P[0] + distance_m * math.cos(next_heading)
+            ny = P[1] + distance_m * math.sin(next_heading)
             next_waypoint = (nx, ny)
             if not self._in_bounds(next_waypoint):
                 continue
             if not self._check_collision(P, next_waypoint):
                 continue
-            is_valid, _ = prep.validate_kinodynamics(
-                P, h, next_waypoint, next_heading, R=self.R, alpha_max=self.alpha_max_rad)
-            if not is_valid:
-                continue
             turn = abs(_angle_diff(next_heading, h))
-            cost = distance + config.TURN_PENALTY_WEIGHT * turn
-            successors.append((State(next_waypoint, next_heading), cost))
+            budget = self._doan_trinh(current_state, distance_m, turn)
+            if budget is None:
+                continue
+            cost = distance_m + config.TURN_PENALTY_WEIGHT * turn
+            nxt = State(next_waypoint, next_heading)
+            nxt.straight_budget = budget
+            successors.append((nxt, cost))
 
         return successors
 
@@ -222,11 +380,20 @@ class KinodynamicAstar:
         P = current_state.waypoint
         h = current_state.heading
         goal_wp = self.goal_state.waypoint
+        delta = config.CONSTRUCTION_CLEARANCE_M
         successors = []
+        self._riding = False   # recomputed each expansion; read by get_next_states
         for idx, (center, radius) in enumerate(self.scenario['circle_obstacles']):
-            s = ag.riding_sense(P, h, center, radius)
+            # All riding geometry is BUILT on the lifted radius r_ride so
+            # every constructed chord/tangent keeps >= delta true clearance
+            # from the exact-checked inflated boundary.
+            r_ride = radius + delta
+            s = ag.riding_sense(P, h, center, r_ride)
             if s == 0:
                 continue
+            # Riding this circle (regardless of whether it yields a departure
+            # below) — matches the old any(riding_sense != 0) test exactly.
+            self._riding = True
             # A state that is itself an arc-hop departure point of this same
             # circle+sense must not regenerate ride candidates: every departure
             # on this ride was already enumerated from the ride-start state,
@@ -234,10 +401,10 @@ class KinodynamicAstar:
             # near-duplicate states that collide on the dedup lattice (stale
             # arc_from -> self-crossing reconstruction).
             af = current_state.arc_from
-            if af is not None and af[0] == center and af[1] == radius and af[3] == s:
+            if af is not None and af[0] == center and af[1] == r_ride and af[3] == s:
                 continue
             phi0 = math.atan2(P[1] - center[1], P[0] - center[0])
-            max_wrap = self._max_clear_wrap(center, radius, phi0, s)
+            max_wrap = self._max_clear_wrap(center, r_ride, phi0, s)
             if max_wrap <= 1e-6:
                 continue
             cache_key = (idx, s)
@@ -247,13 +414,15 @@ class KinodynamicAstar:
                 for c2, r2 in self.scenario['circle_obstacles']:
                     if c2 == center and r2 == radius:
                         continue
+                    # Both circles lifted: the bitangent segment keeps delta
+                    # clearance from BOTH inflated boundaries.
                     deps.extend(dep for dep, _arr in
-                                ag.bitangent_departures(center, radius, c2, r2, s))
+                                ag.bitangent_departures(center, r_ride, c2, r2 + delta, s))
                 for vertex in self._poly_vertices:
-                    dep = ag.departure_point(vertex, center, radius, s)
+                    dep = ag.departure_point(vertex, center, r_ride, s)
                     if dep is not None:
                         deps.append(dep)
-                dep = ag.departure_point(goal_wp, center, radius, s)
+                dep = ag.departure_point(goal_wp, center, r_ride, s)
                 if dep is not None:
                     deps.append(dep)
                 self._dep_cache[cache_key] = deps
@@ -262,52 +431,101 @@ class KinodynamicAstar:
                 if dphi < 1e-3 or dphi > max_wrap:
                     continue
                 nxt = State(dep, ag.tangent_heading(dep, center, s))
-                nxt.arc_from = (center, radius, P, s)
-                successors.append((nxt, radius * dphi))
+                nxt.arc_from = (center, r_ride, P, s)
+                successors.append((nxt, r_ride * dphi))
         return successors
 
-    def _max_clear_wrap(self, center, radius, phi0, s):
+    def _max_clear_wrap(self, center, r_ride, phi0, s):
         """Maximal angle (rad) the aircraft can ride this boundary from phi0 in
-        direction s before the bulged arc (circumscribed-vertex radius) hits
-        another obstacle or leaves the map. One sweep bounds every arc-hop
-        candidate on this circle, instead of checking each arc separately.
-        Conservative: quantised down to ARC_SAMPLE_STEP_DEG."""
-        r_check = radius * _ARC_CLEAR_BULGE
-        step = math.radians(config.ARC_SAMPLE_STEP_DEG)
-        n = int(round(2.0 * math.pi / step))
-        # Advance the sample point by rotating a unit vector with the fixed
-        # per-step rotation matrix instead of recomputing cos/sin of the full
-        # swept angle (phi0 + s*k*step) at every sample; same angles, same
-        # bulge, same step, just fewer trig calls (2 total instead of 2*n).
-        cs, sn = math.cos(s * step), math.sin(s * step)
-        ux, uy = math.cos(phi0), math.sin(phi0)
-        prev = (center[0] + r_check * ux, center[1] + r_check * uy)
+        direction s before the swept corridor hits another obstacle or leaves
+        the map. Per ARC_SAMPLE_STEP_DEG slice, the checked region is the TRUE
+        annular sector [r_ride, r_ride * _ARC_CLEAR_BULGE] — everything an
+        output arc-expansion chord (any step <= 45 deg) can occupy. The old
+        polyline-at-bulge sweep validated only the thin outer ring and missed
+        obstacles intruding the annulus below it (structural gap, seed 155).
+        The ridden circle itself never reaches the annulus (its disk ends at
+        r_ride - CONSTRUCTION_CLEARANCE_M), so no self-exemption is needed.
+        Conservative: quantised down to ARC_SAMPLE_STEP_DEG; the fixed 45-deg
+        bulge keeps the result independent of ARC_WAYPOINT_STEP_DEG."""
+        r_out = r_ride * _ARC_CLEAR_BULGE
+        step = self._arc_sample_step
+        n = self._arc_sample_n
+        phi_prev = phi0
         for k in range(1, n + 1):
-            ux, uy = ux * cs - uy * sn, ux * sn + uy * cs
-            p = (center[0] + r_check * ux, center[1] + r_check * uy)
+            phi_next = phi0 + s * k * step
+            p = (center[0] + r_out * math.cos(phi_next),
+                 center[1] + r_out * math.sin(phi_next))
             if (not self._in_bounds(p)
-                    or not self._check_collision(prev, p, skip_circle=(center, radius))):
+                    or not self._sector_clear(center, r_ride, r_out, phi_prev, phi_next)):
                 return (k - 1) * step
-            prev = p
+            phi_prev = phi_next
         return 2.0 * math.pi
 
-    def _check_collision(self, p1, p2, skip_circle=None):
+    def _sector_clear(self, center, r_in, r_out, phi_a, phi_b):
+        """True iff the annular sector [r_in, r_out] x [phi_a, phi_b] around
+        `center` is free of obstacles. Exact (zero tolerance) for circles via
+        closed-form radial/angular interval overlap (conservative: the disk's
+        polar bounding box, a superset of the disk); polygons via a padded
+        sector quadrilateral against the STRtree + interior predicate."""
+        lo, hi = (phi_a, phi_b) if phi_a <= phi_b else (phi_b, phi_a)
+        for c2, r2 in self.scenario['circle_obstacles']:
+            dx, dy = c2[0] - center[0], c2[1] - center[1]
+            d = math.hypot(dx, dy)
+            if d - r2 >= r_out or d + r2 <= r_in:
+                continue                     # no radial overlap with the annulus
+            if d <= r2:
+                return False                 # annulus center inside the obstacle
+            theta = math.atan2(dy, dx)
+            half = math.asin(min(1.0, r2 / d))
+            if ag.angular_overlap(theta - half, theta + half, lo, hi):
+                return False
+        if self._poly_tree is not None:
+            quad = Polygon(ag.sector_polygon(center, r_in, r_out, lo, hi))
+            for idx in self._poly_tree.query(quad):
+                if self._polygons[idx].relate_pattern(quad, 'T********'):
+                    return False
+        return True
+
+    def _check_collision(self, p1, p2):
         """
         Check if line segment from p1 to p2 collides with any obstacle.
         Returns True if collision-free, False otherwise.
-        skip_circle=(center, radius) exempts the circle being ridden by an
-        arc-clearance sweep (its own boundary is not an obstacle to itself).
         """
 
-        # Check against circle obstacles. A small grazing tolerance lets tangent /
-        # wrap segments ride the inflated boundary (they dip a few metres inside the
-        # ~13 km inflation band by discretisation but never approach the raw obstacle).
-        for center, radius in self.scenario['circle_obstacles']:
-            if skip_circle is not None and center == skip_circle[0] and radius == skip_circle[1]:
-                continue
-            dist = su.point_to_line_distance(center, p1, p2)
-            if dist < radius - config.CIRCLE_GRAZE_TOL_M:
-                return False
+        # Check against circle obstacles — EXACT: any penetration of the
+        # inflated boundary is a collision, zero tolerance. Boundary-riding
+        # geometry stays acceptable because it is CONSTRUCTED on radius
+        # r + CONSTRUCTION_CLEARANCE_M, so legitimate tangent chords carry a
+        # true clearance margin instead of a forgiven intrusion. Inlined
+        # point-to-SEGMENT distance (squared): the segment length dd is
+        # computed once (not once per circle as point_to_line_distance did),
+        # and each circle costs a few arithmetic ops with no function-call
+        # dispatch. `d² < r²` is exactly the old `dist < r`. Read live from
+        # scenario['circle_obstacles'] (no cache) so the check reflects any
+        # post-construction obstacle change, as before.
+        p1x, p1y = p1
+        sx = p2[0] - p1x
+        sy = p2[1] - p1y
+        dd = sx * sx + sy * sy
+        if dd == 0.0:                              # degenerate segment
+            for (cx, cy), radius in self.scenario['circle_obstacles']:
+                relx = cx - p1x
+                rely = cy - p1y
+                if relx * relx + rely * rely < radius * radius:
+                    return False
+        else:
+            for (cx, cy), radius in self.scenario['circle_obstacles']:
+                relx = cx - p1x
+                rely = cy - p1y
+                t = (relx * sx + rely * sy) / dd
+                if t < 0.0:
+                    t = 0.0
+                elif t > 1.0:
+                    t = 1.0
+                ex = relx - t * sx
+                ey = rely - t * sy
+                if ex * ex + ey * ey < radius * radius:
+                    return False
 
         # Check against polygon obstacles via spatial index. A segment is blocked
         # ONLY when it enters a polygon's INTERIOR (DE-9IM interior/interior
@@ -315,43 +533,50 @@ class KinodynamicAstar:
         # sit on a polygon corner (the corners ARE navigation goals) and lets a
         # segment run ALONG an edge to hug the obstacle boundary. The STRtree gives
         # a bounding-box prefilter; the exact predicate runs only on candidates.
+        line = None
         if self._poly_tree is not None:
             line = LineString([p1, p2])
             for idx in self._poly_tree.query(line):
                 if self._polygons[idx].relate_pattern(line, 'T********'):
                     return False
+
+        # Safezone containment: the WHOLE chord must stay inside the operating
+        # area. Endpoint checks (_in_bounds) are not enough — smoothing shortcuts
+        # a chord to a far waypoint, and for a non-convex safezone that chord can
+        # exit the area even when both endpoints are inside. `covers` allows the
+        # chord to run along the boundary.
+        if self._safezone is not None:
+            if line is None:
+                line = LineString([p1, p2])
+            if not self._safezone.covers(line):
+                return False
         return True
 
-    def _check_fixed_legs(self, path):
-        """Validate the fixed takeoff/approach legs O->W1 and W_{n-1}->T.
-
-        These legs are flown but lie outside the A* search (which runs
-        W1..W_{n-1}); nothing else collision-checks them. They are determined
-        by the mission spec (start/goal points, headings, L0/DSS) and cannot be
-        rerouted, so a blocked leg means the mission is infeasible as posed.
-        Returns (ok, reason) with reason in {'start_leg_blocked',
-        'goal_leg_blocked', None}. Uses the same _check_collision (and thus the
-        same CIRCLE_GRAZE_TOL_M / polygon-interior semantics) as the body.
+    def _check_fixed_legs(self):
+        """Validate the fixed takeoff/approach legs W_{n-1}->T.
+        Returns True if the fixed legs are collision-free, False otherwise.
         """
-        if not path:
-            return True, None
-        O = self.scenario['start_pos']
         T = self.scenario['goal_pos']
-        if not self._check_collision(O, path[0][0]):
-            return False, 'start_leg_blocked'
-        if not self._check_collision(path[-1][0], T):
-            return False, 'goal_leg_blocked'
-        return True, None
+        if not self._check_collision(self.goal_state.waypoint, T):
+            return False
+        return True
 
     def _in_bounds(self, point):
-        """Check if point is within map bounds"""
+        """Check if point is inside the operating area.
+
+        With a safezone polygon: point must be covered by it (`covers`, so a
+        point exactly on the operating-area boundary is allowed). Else, with an
+        EXPLICIT map_bounds: the axis-aligned rectangle [0, w] x [0, h]. Else
+        (no operating area configured): permissive — the legacy 500 km config
+        default is not a real constraint for a scenario that lives elsewhere.
+        """
+        if self._safezone_prep is not None:
+            return self._safezone_prep.covers(Point(*point))
+        if not self._has_explicit_bounds:
+            return True
         x, y = point
-        # bounds = self.scenario['start_state']['waypoint']  # Just a rough bound
-        
-        # Allow some overshoot
-        margin = 0
-        return (-margin < x < config.MAP_WIDTH + margin and
-                -margin < y < config.MAP_HEIGHT + margin)
+        return (0 < x < self._bounds_w and
+                0 < y < self._bounds_h)
     
     def search(self):
         """
@@ -366,13 +591,23 @@ class KinodynamicAstar:
         _budget = config.TIME_BUDGET_S
 
         # Initialize
-        self.start_state.h_cost = self.heuristic(self.start_state, self.goal_state)
-        heapq.heappush(self.open_set, (
-            self.start_state.g_cost + config.HEURISTIC_WEIGHT * self.start_state.h_cost,
-            self.iteration_count,
-            self.start_state
-        ))
-        self.g_scores[self.start_state] = 0
+        # Seed every feasible start corner. If none survived construction
+        # (takeoff ray blocked / outside the operating area), the start is
+        # blocked: fail fast and honestly.
+        if not self.start_corners:
+            self.search_failed = True
+            return None
+        for corner in self.start_corners:
+            corner.h_cost = self.heuristic(corner, self.goal_state)
+            heapq.heappush(self.open_set, (
+                corner.g_cost + config.HEURISTIC_WEIGHT * corner.h_cost,
+                self.iteration_count,
+                corner
+            ))
+            # Two corners can share a lattice cell when the bucket spacing is
+            # below STATE_POS_QUANTUM; keep the cheaper g per cell.
+            if corner.g_cost < self.g_scores[corner]:
+                self.g_scores[corner] = corner.g_cost
 
         while self.open_set and self.iteration_count < self.max_iterations:
             if _budget is not None and (time.perf_counter() - _start) > _budget:
@@ -406,15 +641,32 @@ class KinodynamicAstar:
             )
             
             if dist_to_goal < config.GOAL_THRESHOLD:
-                # Reaching the goal region is not enough: the autonomous aircraft must arrive
-                # able to turn onto the approach heading within alpha_max. A state
-                # that wrap-stepped / flew straight into the region can be close but
-                # badly misaligned; accepting it would force a > alpha_max terminal
-                # turn at W_{n-1}. Require an aligned arrival; otherwise keep
-                # searching (the goal_wp candidate provides an aligned approach).
-                approach_turn = abs(_angle_diff(self.goal_state.heading, current.heading))
-                if approach_turn <= self.alpha_max_rad:
-                    return self._reconstruct_path(current)
+                if self._free_goal:
+                    # Free approach: T is reached via the straight run-in edge.
+                    # Guard that the incoming edge is a valid run-in — its USABLE
+                    # straight length (after the turn fillet at the previous
+                    # waypoint bites R*tan(turn/2)) must be >= DSS, so there is
+                    # room both to bank onto the run-in AND for the full DSS
+                    # seeker leg. Checking only the raw distance would accept an
+                    # edge whose fillet steals into the seeker leg, or a fan/wrap
+                    # successor that lands on T without a proper run-in.
+                    if current.parent is not None:
+                        seg = math.dist(current.parent.waypoint, current.waypoint)
+                        bearing = su.angle_to_heading(current.parent.waypoint, current.waypoint)
+                        turn_at_prev = abs(_angle_diff(bearing, current.parent.heading))
+                        usable = seg - self.R * math.tan(turn_at_prev / 2.0)
+                        if usable >= self._dss - config.EPS:
+                            return self._reconstruct_path(current)
+                else:
+                    # Reaching the goal region is not enough: the autonomous aircraft must arrive
+                    # able to turn onto the approach heading within alpha_max. A state
+                    # that wrap-stepped / flew straight into the region can be close but
+                    # badly misaligned; accepting it would force a > alpha_max terminal
+                    # turn at W_{n-1}. Require an aligned arrival; otherwise keep
+                    # searching (the goal_wp candidate provides an aligned approach).
+                    approach_turn = abs(_angle_diff(self.goal_state.heading, current.heading))
+                    if approach_turn <= self.alpha_max_rad:
+                        return self._reconstruct_path(current)
             
             # Expand neighbors
             successors = self.get_next_states(current)
@@ -426,8 +678,12 @@ class KinodynamicAstar:
                 tentative_g = self.g_scores[current] + transition_cost
                 
                 if tentative_g < self.g_scores.get(next_state, float('inf')):
-                    # Better path found
-                    self.came_from[next_state] = current
+                    # Better path found. The parent is stored on the successor
+                    # OBJECT (written exactly once per object — each successor
+                    # is freshly constructed), so reconstruction follows the
+                    # exact validated transition even when a later, distinct
+                    # candidate wins this lattice cell's g-score.
+                    next_state.parent = current
                     self.g_scores[next_state] = tentative_g
                     next_state.g_cost = tentative_g
                     next_state.h_cost = self.heuristic(next_state, self.goal_state)
@@ -445,11 +701,16 @@ class KinodynamicAstar:
     def _reconstruct_path(self, state):
         """Reconstruct start->state, expanding arc-hop transitions into
         circumscribed-polygon waypoints (output-time discretisation only;
-        the searched route itself is stored in self.raw_route)."""
+        the searched route itself is stored in self.raw_route).
+
+        Walks per-object parent pointers, so every emitted edge is exactly a
+        transition that passed _check_collision / validate_kinodynamics at
+        creation time. In particular, arc_from's frozen arc_start equals the
+        parent's waypoint by object identity — no healing needed."""
         states = [state]
         current = state
-        while current in self.came_from:
-            current = self.came_from[current]
+        while current.parent is not None:
+            current = current.parent
             states.append(current)
         states.reverse()
 
@@ -461,13 +722,6 @@ class KinodynamicAstar:
         for st in states:
             if st.arc_from is not None and prev_wp is not None:
                 center, radius, arc_start, s = st.arc_from
-                # Quantized dedup can rewire came_from so the frozen arc_start
-                # belongs to a different ancestor than the chain's actual
-                # predecessor; the geometric truth is the previous waypoint,
-                # which lies on the circle for any genuine arc transition.
-                d_prev = math.hypot(prev_wp[0] - center[0], prev_wp[1] - center[1])
-                if abs(d_prev - radius) <= 2.0:
-                    arc_start = prev_wp
                 dphi = ag.arc_angle(arc_start, st.waypoint, center, s)
                 path.extend(ag.arc_waypoints(center, radius, arc_start, dphi, s, theta_out))
             path.append((st.waypoint, st.heading))
@@ -476,62 +730,102 @@ class KinodynamicAstar:
     
     def smooth_path(self, path):
         """
-        Smooth the path by removing unnecessary waypoints.
-        
+        Smooth the path by shortcutting to the FARTHEST reachable waypoint.
+
+        The old greedy only tried to skip ONE waypoint at a time (anchor ->
+        path[i+1]) and appended path[i] the moment that single-step shortcut
+        failed — so a clear, feasible long jump anchor -> path[i+k] was never
+        tested once an intermediate onward-turn blocked the one-ahead step,
+        leaving detours in the path. Here, from each kept anchor we scan from
+        the farthest waypoint inward and jump straight to the farthest one whose
+        direct chord is (a) collision-free (exact), (b) kinodynamically valid at
+        the anchor (turn <= alpha_max + đoản trình), and (c) whose onward turn at
+        the target stays feasible (terminal turn onto goal_heading for the last
+        waypoint). Endpoints path[0]/path[-1] are preserved; every kept edge is
+        exact-collision-checked and validated, so the result stays valid.
+
         Args:
             path: List of (waypoint, heading) tuples
-        
+
         Returns:
             Smoothed path
         """
         if len(path) < 3:
             return path
-        
+
+        n = len(path)
         smoothed = [path[0]]
-
-        i = 1
-        while i < len(path) - 1:
-            # Always shortcut FROM the last kept point (smoothed[-1]), not path[i-1].
-            # Using path[i-1] is a bug: after a skip, path[i-1] is a discarded node.
-            prev_wp, prev_h = smoothed[-1]
-            # Geometric inbound heading at prev_wp (the arc there is governed by the
-            # bearing from the previous KEPT waypoint, not the stored A* heading).
+        i = 0
+        while i < n - 1:
+            anchor_wp = smoothed[-1][0]
+            # Geometric inbound heading at the anchor (bearing from the previous
+            # KEPT waypoint); the first anchor uses the start heading.
             if len(smoothed) >= 2:
-                prev_h = su.angle_to_heading(smoothed[-2][0], prev_wp)
-            next_wp, next_h = path[i + 1]
-
-            # Try to shortcut from last-kept to next: skip path[i]
-            heading_to_next = su.angle_to_heading(prev_wp, next_wp)
-            is_valid, _ = prep.validate_kinodynamics(
-                prev_wp, prev_h,
-                next_wp, heading_to_next,
-                R=self.R, alpha_max=self.alpha_max_rad
-            )
-            # Skipping path[i] changes the ARRIVAL direction at the next waypoint,
-            # so its onward turn must be re-checked (the old code only validated the
-            # turn at prev_wp). If next_wp is the last waypoint, its onward turn is
-            # the terminal turn onto goal_heading. Without this check, smoothing can
-            # bend the approach past alpha_max even when the search path was valid.
-            if i + 1 == len(path) - 1:
-                onward_wp, onward_heading = self.goal_state.waypoint, self.goal_state.heading
+                anchor_h = su.angle_to_heading(smoothed[-2][0], anchor_wp)
             else:
-                onward_wp, onward_heading = path[i + 2]
+                anchor_h = path[0][1]
 
-            is_next_valid, _ = prep.validate_kinodynamics(
-                next_wp, heading_to_next,
-                onward_wp, onward_heading,
-                R=self.R, alpha_max=self.alpha_max_rad
-            )
-            if (is_valid and is_next_valid
-                    and self._check_collision(prev_wp, next_wp)):
-                # Can skip current point
-                i += 1
-                continue
+            best = i + 1
+            for j in range(n - 1, i, -1):
+                target_wp = path[j][0]
+                heading_to = su.angle_to_heading(anchor_wp, target_wp)
+                # First-anchor L0 guard: when the anchor is path[0] (the
+                # seeded takeoff corner), a shortcut changes the first turn
+                # alpha_1, and the incoming O->corner leg must still keep
+                # l1 = d(O, corner) - R*tan(alpha_1/2) >= L0. Legacy code was
+                # safe implicitly via the alpha_max reserve in W1's placement;
+                # minimal corners need the guard explicit.
+                if len(smoothed) == 1:
+                    a1_new = abs(_angle_diff(heading_to, anchor_h))
+                    d0 = math.dist(self.scenario['start_pos'], anchor_wp)
+                    l0_req = self.scenario['start_state']['straight_length']
+                    if d0 - self.R * math.tan(a1_new / 2.0) < l0_req - config.EPS:
+                        continue
+                # Onward waypoint after target = the far-end turn of the
+                # anchor->target chord. Known here (path[j+1], or the goal leg),
+                # so pass it to validate BOTH ends of the chord exactly instead
+                # of the alpha_max worst case. For the free-goal terminal there
+                # is no onward turn (the chord is the straight run-in into T).
+                if j == n - 1 and self._free_goal:
+                    onward_wp = onward_h = None
+                elif j == n - 1:
+                    # The flown leg is path[-1] -> T = goal_pos at goal_heading;
+                    # use those, not the offset goal_state.waypoint which sits up
+                    # to GOAL_THRESHOLD away and would spuriously fail the length.
+                    onward_wp = self.scenario['goal_pos']
+                    onward_h = self.scenario['goal_heading']
+                else:
+                    onward_wp = path[j + 1][0]
+                    onward_h = su.angle_to_heading(target_wp, onward_wp)
 
-            smoothed.append(path[i])
-            i += 1
+                is_valid, _ = prep.validate_kinodynamics(
+                    anchor_wp, anchor_h, target_wp, heading_to,
+                    w_next_next=onward_wp, heading_next_next=onward_h,
+                    R=self.R, alpha_max=self.alpha_max_rad)
+                if not is_valid:
+                    continue
 
-        smoothed.append(path[-1])
+                # Onward feasibility: the terminal run-in must stay >= DSS in
+                # free mode; otherwise the target->onward turn must be flyable.
+                if j == n - 1 and self._free_goal:
+                    # Free run-in: USABLE straight length (after the turn fillet
+                    # at the anchor) must stay >= DSS, matching the search's
+                    # goal-candidate rule, so a shortcut cannot steal the fillet
+                    # bite out of the seeker leg.
+                    turn_anchor = abs(_angle_diff(heading_to, anchor_h))
+                    usable = math.dist(anchor_wp, target_wp) - self.R * math.tan(turn_anchor / 2.0)
+                    is_next_valid = usable >= self._dss - config.EPS
+                else:
+                    is_next_valid, _ = prep.validate_kinodynamics(
+                        target_wp, heading_to, onward_wp, onward_h,
+                        R=self.R, alpha_max=self.alpha_max_rad)
+                if is_next_valid and self._check_collision(anchor_wp, target_wp):
+                    best = j
+                    break
+
+            smoothed.append(path[best])
+            i = best
+
         return smoothed
     
     def get_search_stats(self):
@@ -570,20 +864,23 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
 
     # Run A* search (dynamic successors)
     planner = KinodynamicAstar(preprocessed_scenario)
-    
-    if verbose:
-        print("Starting A* search...")
-    
-    path = planner.search()
-    
-    if verbose:
-        stats = planner.get_search_stats()
-        print(f"Search completed: {stats['iterations']}/{stats['max_iterations']} iterations")
-        if path:
-            print(f"Path found with {len(path)} waypoints")
-            print(path)
-        else:
-            print("No path found")
+
+    legs_ok = planner._check_fixed_legs()
+    path = None
+    if legs_ok:
+        if verbose:
+            print("Starting A* search...")
+        
+        path = planner.search()
+        
+        if verbose:
+            stats = planner.get_search_stats()
+            print(f"Search completed: {stats['iterations']}/{stats['max_iterations']} iterations")
+            if path:
+                print(f"Path found with {len(path)} waypoints")
+                print(path)
+            else:
+                print("No path found")
     
     # Smooth path if found
     if path:
@@ -592,25 +889,11 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
     # Final self-validation: a plan is only a success if the returned path is
     # actually flyable. Search checks segments as it goes, but arc expansion,
     # smoothing, and the fixed O->W1 / W_{n-1}->T legs (added outside the
-    # search) can carry collisions that were never verified in final form.
-    if not path:
-        success, failure_reason = False, 'no_path'
-    else:
-        legs_ok, reason = planner._check_fixed_legs(path)
-        body_ok = all(planner._check_collision(path[i][0], path[i + 1][0])
-                      for i in range(len(path) - 1))
-        if legs_ok and body_ok:
-            success, failure_reason = True, None
-        else:
-            success, failure_reason = False, (reason or 'path_self_collision')
-
-    if verbose and failure_reason:
-        print(f"Plan rejected: {failure_reason}")
+    # search) can carry collisions that were never verified in final form. 
 
     return {
         'path': path,
-        'success': success,
-        'failure_reason': failure_reason,
+        'success': path is not None and legs_ok,
         'stats': planner.get_search_stats(),
         'planner': planner,
     }

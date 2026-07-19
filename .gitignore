@@ -1,6 +1,9 @@
 results*/
 cases/*
 logs/*
+docs/
+tests/
+cases/
 .superpowers/
 .pytest_cache/
 .codegraph/
@@ -10,3 +13,4 @@ __pycache__/
 *.pyo   
 *.pyd
 Screenshot/
+CLAUDE.md

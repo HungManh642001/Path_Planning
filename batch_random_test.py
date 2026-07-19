@@ -110,7 +110,7 @@ def run_scenario(scenario_func, scenario_name, seed=42, output_dir="results"):
         # Plan trajectory
         print("  Planning trajectory...")
         metrics.start_timer('planning')
-        result = astar.plan_trajectory(preprocessed, verbose=True)
+        result = astar.plan_trajectory(preprocessed, verbose=False)
         planning_time = metrics.end_timer('planning')
         
         # Record search statistics
@@ -182,7 +182,8 @@ def run_batch_random_tests(num_tests=1000, output_dir="results1"):
     
     # for i in range(num_tests):
     # for i in [125, 319, 338, 426, 485, 532, 544, 581, 625, 641, 674, 686, 904, 923, 963, 981, 996, 998]:
-    for i in [125, 319, 338, 426, 532, 544, 581, 641, 674, 686, 904, 923, 963, 981, 998]:    
+    # for i in [125, 319, 338, 426, 532, 544, 581, 641, 674, 686, 904, 923, 963, 981, 998]:    
+    for i in [86, 125, 366, 485]:
         seed = i  # Different seed for each test
         scenario_name = f"Random Scenario {i+1}"
 
@@ -222,7 +223,7 @@ def run_batch_random_tests(num_tests=1000, output_dir="results1"):
         else:
             obstacles = "N/A"
 
-        logger.info(f"{i+1:<4} {res['scenario_name']:<30} {status:<10} {res['elapsed_time']:<15.2f}s | {res['preprocessing_time']:<15.2f}s | {res['planning_time']:<15.2f}s | {waypoints:<10} | {dist:<10.2f}| {iterations:<10} | {obstacles:>10}")
+        logger.info(f"{i+1:<4} {res['scenario_name']:<30} {status:<10} {res['elapsed_time']:<13.2f}s | {res['preprocessing_time']:<13.2f}s | {res['planning_time']:<13.2f}s | {waypoints:<10} | {dist:<10.2f}| {iterations:<10} | {obstacles:>10}")
         summary_results.append({
             'scenario_name': scenario_name,
             'status': status,
@@ -252,7 +253,7 @@ def main():
     plt.switch_backend('Agg')
 
     # Run all scenarios in batch mode
-    output_dir = "results1_fail_v1"  # Directory to save results
+    output_dir = "results1_v1"  # Directory to save results
     num_tests = 1000  # Number of random scenarios to run
     run_batch_random_tests(num_tests=num_tests, output_dir=output_dir)
 
