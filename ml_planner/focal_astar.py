@@ -109,7 +109,14 @@ class FocalKinodynamicAstar(KinodynamicAstar):
             heapq.heappush(open_heap, (corner.g_cost + corner.h_cost, next(counter), corner))
 
         def _is_live(state):
-            return (state not in self.closed_set and
+            # edge_dead: set by the lazy subclass when a deferred edge fails
+            # its real collision check. The g_scores test alone cannot retire
+            # such a state — its entry is deleted to keep the lattice cell
+            # re-discoverable, which makes `g_cost <= inf` vacuously true and
+            # would leave the corpse re-admittable (and re-paying the real
+            # check) forever. Never set in eager mode.
+            return (not getattr(state, 'edge_dead', False) and
+                    state not in self.closed_set and
                     state.g_cost <= self.g_scores.get(state, float('inf')))
 
         def _clean_open_top():

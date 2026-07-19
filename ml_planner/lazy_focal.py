@@ -60,7 +60,11 @@ class LazyFocalKinodynamicAstar(FocalKinodynamicAstar):
             state.edge_validated = True
             return True
         # Dead edge: forget this g so the lattice cell stays re-discoverable
-        # through other (possibly valid) incoming edges.
+        # through other (possibly valid) incoming edges, and kill THIS state
+        # object so _is_live retires it from OPEN/FOCAL — without the flag the
+        # deleted g_scores entry makes the liveness test vacuously true and
+        # the corpse is re-admitted (re-paying the real check) every refill.
+        state.edge_dead = True
         if self.g_scores.get(state) == state.g_cost:
             del self.g_scores[state]
         return False

@@ -167,3 +167,36 @@ def test_plan_trajectory_lazy_stats_contract():
     assert res['success']
     assert res['stats']['collision_checks'] > 0
     assert res['path'] is not None
+
+
+def test_invalidated_states_die_no_revalidation_churn():
+    # Regression (LC-T6 benchmark collapse, seeds 6001/6002/7005...): a state
+    # whose deferred edge fails validation must be DEAD, not merely dropped
+    # from g_scores — the liveness predicate `g_cost <= g_scores.get(st, inf)`
+    # is vacuously true after the deletion, so the corpse stayed "live" in
+    # OPEN, was re-admitted to FOCAL on every refill and re-paid the real
+    # collision check on every pop (observed: 98k rejected re-validations in
+    # 321 iterations, wall-clock budget exhausted -> spurious no-path on maps
+    # the eager planner solves in ~150 iterations).
+    from batch_random_test import generate_random_scenario
+    scen = generate_random_scenario(7005)
+    pre = prep.prepare_scenario(scen)
+    lazy = LazyFocalKinodynamicAstar(pre, focal_eps=0.05)
+
+    # id(state) -> [state, attempts]; the state ref pins the object so a
+    # garbage-collected corpse can't recycle its id into a false double-count.
+    validations = {}
+    orig = lazy._validate_on_pop
+
+    def counting_vop(state):
+        if not getattr(state, 'edge_validated', True):
+            entry = validations.setdefault(id(state), [state, 0])
+            entry[1] += 1
+        return orig(state)
+
+    lazy._validate_on_pop = counting_vop
+    path = lazy.search()
+    assert path is not None, "lazy must solve the map the eager planner solves"
+    assert validations, "map must actually exercise deferred validation"
+    assert max(n for _, n in validations.values()) == 1, (
+        "each deferred edge must pay its real collision check at most once")
