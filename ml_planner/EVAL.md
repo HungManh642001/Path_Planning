@@ -100,3 +100,18 @@ Acceptance (spec §2): on hard held-out maps vs hand-crafted, the GNN must win
 speed (total iterations AND net wall-time) or quality (mean cost-ratio), and
 must not lose the other axis (time within +5%, cost-ratio within +0.002).
 With no `models/graph_guidance.npz` the gnn columns fall back to hand-crafted.
+
+### Prototype result (2026-07-19, models/graph_guidance.npz, train seeds 0..2399)
+
+Offline gate PASSED (Spearman mean 0.896–0.907 on held-out hard maps) but the
+end-to-end acceptance FAILED: on 23 hard held-out maps solved by all four
+planners, the GNN won the quality axis vs hand-crafted (mean cost-ratio
+1.0067 vs 1.0089) but lost wall-time by +38% (52.1 s vs 37.8 s; iterations
+26 252 vs 16 711) — far outside the +5% not-worse margin. Structure: median
+iterations are near parity (617 vs 554); the totals are dominated by a few
+tail blowups where the model buys a cheaper homotopy class with extra
+expansions (e.g. seed 6018: 2 088 -> 9 317 iters for cost 1.0085 -> 0.9807),
+plus a fixed ~0.16 s/problem graph-build+forward cost and a ~100 µs/call kNN
+lookup (+0.11 s/scenario at iso-iterations). Qualitatively the same behavior
+as the CNN. Hand-crafted stays the default; the GNN (like the CNN) is a
+quality-mode option, not an accelerator, in its current form.
