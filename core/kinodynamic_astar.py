@@ -54,6 +54,11 @@ class State:
         # the generic minimum; seeded start corners override this with L0 so
         # the takeoff stabilization leg is enforced exactly.
         self.min_straight_in = _MIN_STRAIGHT_M
+        # Seeded start corner? Corner expansions are exempt from the global
+        # Strategy-B valve budget: all K corners expand while the goal is
+        # still occluded, so K > NUM_STRATEGY_B would drain the valve at
+        # takeoff and starve mid-course reorientation for the whole search.
+        self.is_start_corner = False
 
     def __hash__(self):
         return hash(su.state_to_tuple(self.waypoint, self.heading))
@@ -182,17 +187,26 @@ class KinodynamicAstar:
             st.g_cost = d_i
             st.straight_budget = d_i
             st.min_straight_in = L0_start
+            st.is_start_corner = True
             self.start_corners.append(st)
 
         # Pre-computed constants (depend only on R / alpha_max / config, all
         # fixed for the planner's lifetime) hoisted out of the per-expansion
         # hot loops. Values are byte-identical to computing them inline.
-        # Only the NEAR-end turn (at the current point) is reserved here; the
-        # far-end turn at the fan point is deferred to that point's own
-        # expansion (via straight_budget), so a single R*tan(alpha_max/2)
-        # reserve suffices instead of the old worst-case 2*R*tan(alpha_max/2).
-        self._fan_distance = (self.R * math.tan(self.alpha_max_rad / 2)
-                              + config.RADIAL_FAN_STEP_M)
+        # Fan distance rungs, as the part of a fan leg BEYOND its near reserve:
+        # rung j = far reserve for a next turn beta_j + the straight pad, with
+        # tan(beta_j/2) = (j/M)*tan(alpha_max/2) (tan-uniform, exactly like the
+        # start corners above). Rung j is the shortest leg that still affords a
+        # next turn beta <= beta_j, so the search can pick a tight pivot when it
+        # only needs a gentle turn instead of always paying the worst case.
+        # The last rung (j = M) is the full alpha_max reserve, i.e. the legacy
+        # single distance — a pivot that can bridge a constrained goal-approach
+        # slot (seed 4: a halved reach forced an 88 km detour there).
+        M = max(1, int(config.NUM_FAN_DISTANCES))
+        tan_half_max = math.tan(self.alpha_max_rad / 2)
+        self._fan_rungs = [self.R * (j / M) * tan_half_max
+                           + config.RADIAL_FAN_STEP_M
+                           for j in range(1, M + 1)]
         self._arc_sample_step = math.radians(config.ARC_SAMPLE_STEP_DEG)
         self._arc_sample_n = int(round(2.0 * math.pi / self._arc_sample_step))
 
@@ -323,15 +337,28 @@ class KinodynamicAstar:
             nxt.straight_budget = budget
             successors.append((nxt, cost))
 
+        # NOTE: it is tempting to skip the fan entirely when the goal is
+        # already a valid successor ("the fan is only branching noise in open
+        # water" — tests/kinodynamic_arc_hop_test.py::test_no_radial_fan_in_
+        # open_water). Measured: that costs seed 4 88 km (534.9 vs 446.9).
+        # The search de-duplicates on a coarse lattice (STATE_POS_QUANTUM,
+        # STATE_HEADING_QUANTUM_DEG), so it is NOT exactly optimal, and the
+        # fan's "redundant" pivots act as lattice diversity rather than noise.
+        # Gate the BUDGET here, not whether the fan fires.
         if successors and not riding and not self._check_collision(P, goal_wp):
             # Escape valve: while the goal is occluded, a few budgeted fan
             # expansions provide cheap reorientation moves (e.g. an adverse
             # initial heading) that tangent/vertex candidates cannot express;
             # without this the search can commit to a long detour (seed 319:
-            # 978.8 km vs 728.9 km with the valve).
-            if self.num_strategy_b <= 0:
-                return successors
-            self.num_strategy_b -= 1
+            # 978.8 km vs 728.9 km with the valve). Start corners are exempt
+            # from the budget: all K corners expand while the goal is still
+            # occluded, so with K > budget they would drain the valve at
+            # takeoff and starve mid-course reorientation (seed 964: 546.9 km
+            # vs 481.2 km with the exemption).
+            if not current_state.is_start_corner:
+                if self.num_strategy_b <= 0:
+                    return successors
+                self.num_strategy_b -= 1
 
         # --- Strategy B: radial fan — pure fallback when no candidate is
         # valid, PLUS extra leave-the-boundary options while riding a circle:
@@ -340,29 +367,32 @@ class KinodynamicAstar:
         # departure points. ---
             
         num_directions = config.RADIAL_FAN_DIRECTIONS
-        distance = self._fan_distance
         for i in range(num_directions):
             heading_offset = -self.alpha_max_rad + 2 * self.alpha_max_rad * i / (num_directions - 1)
             next_heading = h + heading_offset
-            if heading_offset == 0:
-                distance_m = config.WRAP_STEP_M
-            else:
-                distance_m = distance
-            nx = P[0] + distance_m * math.cos(next_heading)
-            ny = P[1] + distance_m * math.sin(next_heading)
-            next_waypoint = (nx, ny)
-            if not self._in_bounds(next_waypoint):
-                continue
-            if not self._check_collision(P, next_waypoint):
-                continue
+            # Near reserve of this direction — the bite the turn AT P takes out
+            # of the new leg. Depends only on the direction, so it is hoisted
+            # out of the rung loop. The straight-ahead direction reserves
+            # nothing, which is what retired the old WRAP_STEP_M special case.
+            near_reserve = math.tan(abs(heading_offset) / 2.0) * self.R
             turn = abs(_angle_diff(next_heading, h))
-            budget = self._doan_trinh(current_state, distance_m, turn)
-            if budget is None:
-                continue
-            cost = distance_m + config.TURN_PENALTY_WEIGHT * turn
-            nxt = State(next_waypoint, next_heading)
-            nxt.straight_budget = budget
-            successors.append((nxt, cost))
+            cos_h = math.cos(next_heading)
+            sin_h = math.sin(next_heading)
+            for rung in self._fan_rungs:
+                distance_m = near_reserve + rung
+                next_waypoint = (P[0] + distance_m * cos_h,
+                                 P[1] + distance_m * sin_h)
+                if not self._in_bounds(next_waypoint):
+                    continue
+                if not self._check_collision(P, next_waypoint):
+                    continue
+                budget = self._doan_trinh(current_state, distance_m, turn)
+                if budget is None:
+                    continue
+                cost = distance_m + config.TURN_PENALTY_WEIGHT * turn
+                nxt = State(next_waypoint, next_heading)
+                nxt.straight_budget = budget
+                successors.append((nxt, cost))
 
         return successors
 
