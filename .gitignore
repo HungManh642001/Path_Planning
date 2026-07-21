@@ -10,3 +10,4 @@ __pycache__/
 *.pyo   
 *.pyd
 Screenshot/
+compare_results*
