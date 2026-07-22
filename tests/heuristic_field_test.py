@@ -95,6 +95,51 @@ def test_corridor_field_prices_the_safezone_detour():
     assert q <= l_true + 1.0
 
 
+import core.kinodynamic_astar as astar
+
+
+def open_water_scenario():
+    return {
+        'start': (50000.0, 250000.0), 'start_heading': 0.0,
+        'goal': (450000.0, 250000.0), 'goal_heading': 0.0,
+        'islands': [], 'dynamic_obstacles': [], 'obstacles': [],
+        'map_bounds': (500000.0, 500000.0),
+    }
+
+
+def test_gating_open_water_builds_no_field():
+    planner = astar.KinodynamicAstar(prep.prepare_scenario(open_water_scenario()))
+    assert planner._goal_field is None
+
+
+def test_gating_occluded_goal_builds_field():
+    # circle dead-center: every corner chord to the engage point is blocked
+    planner = astar.KinodynamicAstar(prep.prepare_scenario(circle_scenario()))
+    assert planner._goal_field is not None
+
+
+def test_heuristic_is_max_of_euclid_and_field():
+    planner = astar.KinodynamicAstar(prep.prepare_scenario(circle_scenario()))
+    gs = planner.goal_state
+    p = (150000.0, 250000.0)          # in the circle's shadow
+    st = astar.State(p, 0.0)
+    h = planner.heuristic(st, gs)
+    assert h >= math.dist(p, gs.waypoint) - 1e-6
+    assert h >= planner._goal_field.query(p) - 1e-6
+
+
+def test_field_failure_falls_back_to_euclid(monkeypatch):
+    class _Boom:
+        def __init__(self, pre):
+            raise RuntimeError("boom")
+    monkeypatch.setattr(astar, 'GoalDistanceField', _Boom)
+    pre = prep.prepare_scenario(circle_scenario())
+    planner = astar.KinodynamicAstar(pre)
+    assert planner._goal_field is None
+    res = astar.plan_trajectory(prep.prepare_scenario(circle_scenario()), verbose=False)
+    assert res['success']
+
+
 def test_permissive_world_border_seeding_is_sound():
     """No safezone, no map_bounds: a path may leave the gridded area, so the
     field must never exceed Euclid-through-the-border alternatives."""

@@ -16,6 +16,7 @@ import config
 import core.spatial_utils as su
 import core.preprocessing as prep
 import core.arc_geometry as ag
+from core.heuristic_field import GoalDistanceField
 
 
 def _angle_diff(a, b):
@@ -190,6 +191,20 @@ class KinodynamicAstar:
             st.is_start_corner = True
             self.start_corners.append(st)
 
+        # Admissible goal-distance field (heuristic tightening). Built only
+        # when EVERY surviving corner's straight chord to the goal is
+        # blocked — open scenarios keep zero overhead, and any build failure
+        # degrades to the plain Euclid heuristic (the field must never be
+        # able to fail a plan).
+        self._goal_field = None
+        if self.start_corners and all(
+                not self._check_collision(c.waypoint, self.goal_state.waypoint)
+                for c in self.start_corners):
+            try:
+                self._goal_field = GoalDistanceField(preprocessed_scenario)
+            except Exception:
+                self._goal_field = None
+
         # Pre-computed constants (depend only on R / alpha_max / config, all
         # fixed for the planner's lifetime) hoisted out of the per-expansion
         # hot loops. Values are byte-identical to computing them inline.
@@ -237,15 +252,21 @@ class KinodynamicAstar:
 
     def heuristic(self, state, goal_state):
         """
-        Admissible Euclidean lower-bound heuristic.
-        Returns straight-line distance to the goal waypoint.
-        The old `dist + R * heading_diff` term was inadmissible because heading
-        is corrected gradually while travelling, so it over-estimated remaining
+        Admissible lower-bound heuristic: straight-line distance to the goal
+        waypoint, tightened by the goal-distance field (max of two lower
+        bounds is a lower bound) when one was built. The old
+        `dist + R * heading_diff` term was inadmissible because heading is
+        corrected gradually while travelling, so it over-estimated remaining
         cost and could cause A* to return suboptimal paths.
         """
         dx = goal_state.waypoint[0] - state.waypoint[0]
         dy = goal_state.waypoint[1] - state.waypoint[1]
-        return math.sqrt(dx * dx + dy * dy)
+        h = math.sqrt(dx * dx + dy * dy)
+        if self._goal_field is not None:
+            hf = self._goal_field.query(state.waypoint)
+            if hf > h:
+                return hf
+        return h
     
     def _doan_trinh(self, current, seg_len, turn_at_current, far_reserve=0.0):
         """Exact đoản-trình (min straight-segment) check for the edge
