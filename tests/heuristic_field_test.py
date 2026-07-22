@@ -124,8 +124,12 @@ def test_oracle_witness_and_no_regression(seed, no_time_budget):
     assert res['success']
     assert _mission_km(pre, res) <= BASELINE_KM[seed] + 5.0
     # admissibility witness: h at the path's first state must not exceed the
-    # cost actually flown from there (body polyline + snap to goal waypoint)
-    probe = astar.KinodynamicAstar(pre)          # fresh: builds field per gating
+    # cost actually flown from there (body polyline + snap to goal waypoint).
+    # Force-build the field so the witness exercises the tightened h, not
+    # the trivial Euclid bound (lazy build would leave it None here).
+    probe = astar.KinodynamicAstar(pre)
+    if probe._field_pending:
+        probe._build_goal_field()
     first = astar.State(res['path'][0][0], res['path'][0][1])
     body = [p for p, _h in res['path']]
     flown = sum(math.dist(a, b) for a, b in zip(body, body[1:]))
@@ -168,19 +172,44 @@ def open_water_scenario():
     }
 
 
-def test_gating_open_water_builds_no_field():
+def test_gating_open_water_field_never_pending():
     planner = astar.KinodynamicAstar(prep.prepare_scenario(open_water_scenario()))
     assert planner._goal_field is None
+    assert planner._field_pending is False
 
 
-def test_gating_occluded_goal_builds_field():
-    # circle dead-center: every corner chord to the engage point is blocked
+def test_gating_occluded_goal_field_pending_not_eager():
+    # circle dead-center: every corner chord to the engage point is blocked,
+    # so the field is ARMED — but not built until the search proves it needs
+    # it (HEURISTIC_FIELD_LAZY_ITERS iterations without finishing).
     planner = astar.KinodynamicAstar(prep.prepare_scenario(circle_scenario()))
+    assert planner._goal_field is None
+    assert planner._field_pending is True
+
+
+def test_lazy_build_fires_at_threshold(monkeypatch):
+    # force the threshold low so the tiny circle map crosses it
+    monkeypatch.setattr(config, 'HEURISTIC_FIELD_LAZY_ITERS', 1)
+    planner = astar.KinodynamicAstar(prep.prepare_scenario(circle_scenario()))
+    planner.search()
     assert planner._goal_field is not None
+    assert planner._field_pending is False
+
+
+def test_easy_search_never_builds_field():
+    # the circle map solves in well under the default threshold, so the
+    # armed field must never actually be built (zero overhead on easy maps)
+    planner = astar.KinodynamicAstar(prep.prepare_scenario(circle_scenario()))
+    path = planner.search()
+    assert path is not None
+    assert planner.iteration_count < config.HEURISTIC_FIELD_LAZY_ITERS
+    assert planner._goal_field is None
 
 
 def test_heuristic_is_max_of_euclid_and_field():
     planner = astar.KinodynamicAstar(prep.prepare_scenario(circle_scenario()))
+    planner._build_goal_field()
+    assert planner._goal_field is not None
     gs = planner.goal_state
     p = (150000.0, 250000.0)          # in the circle's shadow
     st = astar.State(p, 0.0)
@@ -194,8 +223,10 @@ def test_field_failure_falls_back_to_euclid(monkeypatch):
         def __init__(self, pre):
             raise RuntimeError("boom")
     monkeypatch.setattr(astar, 'GoalDistanceField', _Boom)
+    monkeypatch.setattr(config, 'HEURISTIC_FIELD_LAZY_ITERS', 1)
     pre = prep.prepare_scenario(circle_scenario())
     planner = astar.KinodynamicAstar(pre)
+    planner._build_goal_field()
     assert planner._goal_field is None
     res = astar.plan_trajectory(prep.prepare_scenario(circle_scenario()), verbose=False)
     assert res['success']
