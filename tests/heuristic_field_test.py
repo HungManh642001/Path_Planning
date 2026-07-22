@@ -62,3 +62,53 @@ def test_query_outside_grid_returns_neg_inf():
     pre = prep.prepare_scenario(circle_scenario())
     field = GoalDistanceField(pre)
     assert field.query((-1e6, -1e6)) == -math.inf
+
+
+def corridor_scenario():
+    """L-shaped safezone; no map_bounds (production-style unbounded world).
+    True paths must follow the L: ~490 km vs ~346 km Euclid."""
+    r1 = [(0.0, 0.0), (300000.0, 0.0), (300000.0, 60000.0), (0.0, 60000.0)]
+    r2 = [(240000.0, 0.0), (300000.0, 0.0), (300000.0, 300000.0), (240000.0, 300000.0)]
+    return {
+        'start': (30000.0, 30000.0), 'start_heading': 0.0,
+        'goal': (270000.0, 280000.0), 'goal_heading': math.pi / 2,
+        'islands': [], 'dynamic_obstacles': [], 'obstacles': [],
+        'safezones': [r1, r2],
+    }
+
+
+def test_corridor_field_prices_the_safezone_detour():
+    pre = prep.prepare_scenario(corridor_scenario())
+    field = GoalDistanceField(pre)
+    goal = pre['goal_state']['waypoint']
+    p = (30000.0, 30000.0)
+    euclid = math.dist(p, goal)
+    q = field.query(p)
+    # adds value: the corridor forces a detour Euclid cannot see. Observed
+    # q = 387.3 km vs euclid 324.9 km (ratio 1.192) vs continuous truth
+    # ~403.5 km via the inner corner (240k, 60k) — 96% tight after the
+    # stretch discount and 2-cell slack.
+    assert q >= 1.15 * euclid
+    # stays admissible: the exact shortest L-path through the inner corner
+    l_true = (math.dist(p, (240000.0, 60000.0))
+              + math.dist((240000.0, 60000.0), goal))
+    assert q <= l_true + 1.0
+
+
+def test_permissive_world_border_seeding_is_sound():
+    """No safezone, no map_bounds: a path may leave the gridded area, so the
+    field must never exceed Euclid-through-the-border alternatives."""
+    scn = circle_scenario()
+    del scn['map_bounds']
+    pre = prep.prepare_scenario(scn)
+    field = GoalDistanceField(pre)
+    goal = pre['goal_state']['waypoint']
+    (c, r_inf), = pre['circle_obstacles']
+    import random
+    rng = random.Random(11)
+    for _ in range(200):
+        p = (rng.uniform(-100000, 600000), rng.uniform(-100000, 600000))
+        if math.dist(p, c) < r_inf + 1.0:
+            continue
+        true_d = shortest_around_circle(p, goal, c, r_inf)
+        assert field.query(p) <= true_d + 1.0

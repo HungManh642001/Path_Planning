@@ -38,7 +38,12 @@ class GoalDistanceField:
     def __init__(self, pre):
         gx, gy = pre['goal_state']['waypoint']
         self._goal = (float(gx), float(gy))
-        x0, y0, w, h = self._extent(pre)
+        x0, y0, w, h, bounded = self._extent(pre)
+        # bounded: the grid covers the ENTIRE feasible world (safezone or
+        # explicit map_bounds), so no true path can leave it and the border
+        # needs no Euclid seeding. Permissive worlds get border seeds so a
+        # path exiting the gridded area is still lower-bounded.
+        self._bounded = bounded
         cell = max(w, h) / int(config.HEURISTIC_GRID_N)
         self._x0, self._y0, self._cell = x0, y0, cell
         self._nx = max(4, int(math.ceil(w / cell)))
@@ -51,18 +56,20 @@ class GoalDistanceField:
 
     # ------------------------------------------------------------------
     def _extent(self, pre):
-        """(x0, y0, width, height) of the gridded area. Safezone bbox wins;
-        else the explicit map_bounds rectangle; else (permissive world) the
-        obstacle/start/goal bbox padded 10% of its diagonal."""
+        """(x0, y0, width, height, bounded) of the gridded area. Safezone
+        bbox wins; else the explicit map_bounds rectangle; else (permissive
+        world) the obstacle/start/goal bbox padded 10% of its diagonal.
+        `bounded` is True when the grid provably contains every feasible
+        path (safezone / map_bounds modes)."""
         szs = pre.get('safezones')
         if szs:
             u = unary_union([Polygon(s) for s in szs])
             x0, y0, x1, y1 = u.bounds
             pad = max(x1 - x0, y1 - y0) / config.HEURISTIC_GRID_N
-            return x0 - pad, y0 - pad, (x1 - x0) + 2 * pad, (y1 - y0) + 2 * pad
+            return x0 - pad, y0 - pad, (x1 - x0) + 2 * pad, (y1 - y0) + 2 * pad, True
         mb = pre.get('map_bounds')
         if mb is not None:
-            return 0.0, 0.0, float(mb[0]), float(mb[1])
+            return 0.0, 0.0, float(mb[0]), float(mb[1]), True
         xs = [self._goal[0], pre['start_pos'][0]]
         ys = [self._goal[1], pre['start_pos'][1]]
         for (c, r) in pre['circle_obstacles']:
@@ -75,7 +82,7 @@ class GoalDistanceField:
         x0, x1 = min(xs), max(xs)
         y0, y1 = min(ys), max(ys)
         pad = 0.10 * math.hypot(x1 - x0, y1 - y0) + 1.0
-        return x0 - pad, y0 - pad, (x1 - x0) + 2 * pad, (y1 - y0) + 2 * pad
+        return x0 - pad, y0 - pad, (x1 - x0) + 2 * pad, (y1 - y0) + 2 * pad, False
 
     def _block_cells(self, pre, X, Y, cell):
         """Under-blocked occupancy: a cell is blocked only when its center is
@@ -120,8 +127,15 @@ class GoalDistanceField:
             wts.append(np.full(rows[-1].shape, wstep))
         gx, gy = self._goal
         seeds = np.zeros(blocked.shape, dtype=bool)
-        seeds[0, :] = seeds[-1, :] = True
-        seeds[:, 0] = seeds[:, -1] = True
+        if not self._bounded:
+            # Permissive world: a true path may leave the gridded area, so
+            # every border cell is a portal seeded with plain Euclid (a
+            # universal lower bound on the remainder). In bounded modes
+            # (safezone / map_bounds) no feasible path can leave the grid,
+            # and border seeding would wrongly re-admit the Euclid shortcut
+            # through forbidden space (caught by the corridor test).
+            seeds[0, :] = seeds[-1, :] = True
+            seeds[:, 0] = seeds[:, -1] = True
         gix = int((gx - self._x0) / cell)
         giy = int((gy - self._y0) / cell)
         seeds[max(0, giy - 2):giy + 3, max(0, gix - 2):gix + 3] = True
