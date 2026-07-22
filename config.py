@@ -38,11 +38,6 @@ SAFE_MARGIN = 0.0
 # (preserving the arc-clearance guarantee) for the convex-ish islands here.
 POLYGON_MITRE_LIMIT = 5.0
 
-# DEPRECATED: the planner no longer reads this (arc-hop successors replaced
-# the wrap step). Kept only because gui/params.py still exposes a slider that
-# writes it; delete together with the GUI panel update.
-WRAP_STEP_M = 10000.0
-
 # Angular step (deg) for expanding a circle-boundary arc into waypoint
 # vertices (circumscribed polygon) at OUTPUT time. Max supported 45. Search
 # connectivity does NOT depend on it: arc clearance is checked at the fixed
@@ -88,7 +83,7 @@ NUM_START_CORNERS = 4
 MAX_ITERATIONS = 50000
 
 # Wall-clock budget for a single search (seconds). None = no time limit.
-TIME_BUDGET_S = 5  # 0.9
+TIME_BUDGET_S = 10  # 0.9
 
 # State-lattice quantisation for A* de-duplication
 STATE_POS_QUANTUM = 1000.0          # meters
@@ -96,6 +91,11 @@ STATE_HEADING_QUANTUM_DEG = 3.0     # degrees
 
 # Heuristic weight (1.0 = Dijkstra, > 1.0 = more greedy)
 HEURISTIC_WEIGHT = 1.0
+
+# Grid resolution (cells on the long side) for the admissible goal-distance
+# field heuristic (core/heuristic_field.py). The field only ever tightens h
+# via max(euclid, field), so a coarser grid degrades toward plain Euclid.
+HEURISTIC_GRID_N = 256
 
 # Threshold for considering a point as reached (meters)
 GOAL_THRESHOLD = 1.0  # meters; reachable given STATE_POS_QUANTUM
@@ -105,13 +105,56 @@ TURN_PENALTY_WEIGHT = 0  # 4000.0
 
 # Fallback strategy for A* when no valid successors are found: radial fan of directions
 RADIAL_FAN_DIRECTIONS = 3  # number of directions in the fan
-RADIAL_FAN_STEP_M = 1000.0  # step size for the radial fan
+
+# Number of DISTANCE rungs emitted per fan direction. A fan leg must cover
+# near reserve + far reserve + the doan-trinh minimum:
+#
+#     d_j = R*tan(theta/2) + R*tan(beta_j/2) + RADIAL_FAN_STEP_M
+#
+# where theta is the fan's own turn (known) and beta_j the NEXT turn at the
+# pivot (deferred by _doan_trinh). The old code hardcoded beta = alpha_max, so
+# every leg paid the worst-case far reserve even when the pivot barely turns —
+# an unconditional bulge on fan-routed paths in open water.
+#
+# Rung j is instead "the shortest leg that still affords a next turn
+# beta <= beta_j", tan-uniform exactly like NUM_START_CORNERS:
+# tan(beta_j/2) = (j/M)*tan(alpha_max/2), so the far reserve is simply
+# R*(j/M)*tan(alpha_max/2) — linear in j, no trig in the loop.
+#
+# Rung spacing is R*tan(alpha_max/2)/M, which must stay above
+# STATE_POS_QUANTUM or adjacent rungs collapse onto the same dedup cell
+# => M <= 8 at the default R / alpha_max / quantum. M = 2 gives 4 km.
+#
+# M = 2 is MEASURED, not assumed. Obstacle-free adverse-heading missions
+# (the case the ladder targets), legacy vs M, 22 start/goal heading pairs:
+#
+#     M=2  0 fails, 12 better, net -49.6 km   <- best
+#     M=3  4 fails,  7 better, net  +2.1 km
+#     M=4  4 fails, 12 better, net -23.5 km
+#
+# M >= 3 pushes hard cases past MAX_ITERATIONS (branching x3-x4), losing
+# missions that legacy solved — and the lost cases are where the ladder wins
+# biggest (start 90 / goal 90: 458.4 -> 410.6 km at M=2, FAIL at M=3+).
+# The relation is NOT monotone in M: the coarse dedup lattice makes M=3 worse
+# than both neighbours. Re-measure before changing this.
+#
+# A/B knob: NUM_FAN_DISTANCES = 1 together with RADIAL_FAN_STEP_M = 1000.0
+# reproduces the legacy single worst-case leg exactly.
+NUM_FAN_DISTANCES = 2
+
+# Straight pad added to every fan rung on top of the two turn reserves. The
+# theoretical minimum is the planner's _MIN_STRAIGHT_M (10 m), but _doan_trinh
+# recomputes R*tan(turn/2) from an angle that has round-tripped through
+# _angle_diff, so a rung built to land exactly on the threshold can be
+# rejected by float noise. 100 m clears that by ~10 orders of magnitude while
+# still shedding 90% of the old 1000 m pad.
+RADIAL_FAN_STEP_M = 100.0
 
 # Escape-valve budget: number of expansions that may ALSO get the radial fan
 # while the goal is line-of-sight blocked (cheap reorientation moves, e.g.
 # recovering from an adverse initial heading). Fallback/riding fans are not
 # budgeted.
-NUM_STRATEGY_B = 3
+NUM_STRATEGY_B = 5
 
 # ====== VISUALIZATION ======
 PLOT_BUFFER_ZONES = True
