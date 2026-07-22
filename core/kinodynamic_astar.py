@@ -10,8 +10,6 @@ import numpy as np
 from shapely.geometry import Polygon, LineString, Point
 from shapely.prepared import prep as shp_prep
 from shapely.ops import unary_union
-from shapely import STRtree
-
 import config
 import core.spatial_utils as su
 import core.preprocessing as prep
@@ -55,6 +53,12 @@ class State:
         # the generic minimum; seeded start corners override this with L0 so
         # the takeoff stabilization leg is enforced exactly.
         self.min_straight_in = _MIN_STRAIGHT_M
+        # Dedup key cache: waypoint/heading never change after construction,
+        # and the search hashes/compares each state hundreds of times
+        # (measured ~1M state_to_tuple calls on 5 hard seeds). Computed
+        # LAZILY on first hash/eq — a free-goal goal_state carries
+        # heading=None and must stay constructible (it is never hashed).
+        self._key = None
         # Seeded start corner? Corner expansions are exempt from the global
         # Strategy-B valve budget: all K corners expand while the goal is
         # still occluded, so K > NUM_STRATEGY_B would drain the valve at
@@ -62,11 +66,19 @@ class State:
         self.is_start_corner = False
 
     def __hash__(self):
-        return hash(su.state_to_tuple(self.waypoint, self.heading))
-    
+        k = self._key
+        if k is None:
+            k = self._key = su.state_to_tuple(self.waypoint, self.heading)
+        return hash(k)
+
     def __eq__(self, other):
-        return (su.state_to_tuple(self.waypoint, self.heading) ==
-                su.state_to_tuple(other.waypoint, other.heading))
+        k = self._key
+        if k is None:
+            k = self._key = su.state_to_tuple(self.waypoint, self.heading)
+        ko = other._key
+        if ko is None:
+            ko = other._key = su.state_to_tuple(other.waypoint, other.heading)
+        return k == ko
     
     def __lt__(self, other):
         """For priority queue comparison"""
@@ -90,7 +102,13 @@ class KinodynamicAstar:
 
         self.scenario = preprocessed_scenario
         self._polygons = [Polygon(coords) for coords in preprocessed_scenario['polygon_obstacles']]
-        self._poly_tree = STRtree(self._polygons) if self._polygons else None
+        # Plain-float bboxes for the manual prefilter in _check_collision /
+        # _sector_clear. At N <= ~20 polygons a scalar bbox loop beats the
+        # STRtree python dispatch, and — the real win — the query geometry
+        # (LineString / sector quad) is only CONSTRUCTED when some bbox
+        # overlaps: measured ~50% of hard-seed wall time was shapely object
+        # construction on queries that hit nothing.
+        self._poly_bboxes = [p.bounds for p in self._polygons]
         self._poly_vertices = []
         for poly in self._polygons:
             self._poly_vertices.extend(poly.convex_hull.exterior.coords[:-1])
@@ -542,7 +560,7 @@ class KinodynamicAstar:
         `center` is free of obstacles. Exact (zero tolerance) for circles via
         closed-form radial/angular interval overlap (conservative: the disk's
         polar bounding box, a superset of the disk); polygons via a padded
-        sector quadrilateral against the STRtree + interior predicate."""
+        sector quadrilateral (bbox prefilter, then the interior predicate)."""
         lo, hi = (phi_a, phi_b) if phi_a <= phi_b else (phi_b, phi_a)
         for c2, r2 in self.scenario['circle_obstacles']:
             dx, dy = c2[0] - center[0], c2[1] - center[1]
@@ -555,10 +573,19 @@ class KinodynamicAstar:
             half = math.asin(min(1.0, r2 / d))
             if ag.angular_overlap(theta - half, theta + half, lo, hi):
                 return False
-        if self._poly_tree is not None:
-            quad = Polygon(ag.sector_polygon(center, r_in, r_out, lo, hi))
-            for idx in self._poly_tree.query(quad):
-                if self._polygons[idx].relate_pattern(quad, 'T********'):
+        if self._poly_bboxes:
+            pts = ag.sector_polygon(center, r_in, r_out, lo, hi)
+            qx0 = min(p[0] for p in pts)
+            qx1 = max(p[0] for p in pts)
+            qy0 = min(p[1] for p in pts)
+            qy1 = max(p[1] for p in pts)
+            quad = None
+            for i, (bx0, by0, bx1, by1) in enumerate(self._poly_bboxes):
+                if qx1 < bx0 or bx1 < qx0 or qy1 < by0 or by1 < qy0:
+                    continue        # bbox-disjoint: exactly what STRtree skipped
+                if quad is None:
+                    quad = Polygon(pts)
+                if self._polygons[i].relate_pattern(quad, 'T********'):
                     return False
         return True
 
@@ -603,17 +630,24 @@ class KinodynamicAstar:
                 if ex * ex + ey * ey < radius * radius:
                     return False
 
-        # Check against polygon obstacles via spatial index. A segment is blocked
-        # ONLY when it enters a polygon's INTERIOR (DE-9IM interior/interior
-        # overlap). Merely touching the boundary is allowed: this lets a waypoint
-        # sit on a polygon corner (the corners ARE navigation goals) and lets a
-        # segment run ALONG an edge to hug the obstacle boundary. The STRtree gives
-        # a bounding-box prefilter; the exact predicate runs only on candidates.
+        # Check against polygon obstacles. A segment is blocked ONLY when it
+        # enters a polygon's INTERIOR (DE-9IM interior/interior overlap).
+        # Merely touching the boundary is allowed: this lets a waypoint sit on
+        # a polygon corner (the corners ARE navigation goals) and lets a
+        # segment run ALONG an edge to hug the obstacle boundary. The manual
+        # bbox loop is the same prefilter STRtree.query performed, minus its
+        # per-call dispatch — and the LineString is only constructed when a
+        # bbox overlaps, which on open water is almost never.
         line = None
-        if self._poly_tree is not None:
-            line = LineString([p1, p2])
-            for idx in self._poly_tree.query(line):
-                if self._polygons[idx].relate_pattern(line, 'T********'):
+        if self._poly_bboxes:
+            gx0, gx1 = (p1x, p2[0]) if p1x <= p2[0] else (p2[0], p1x)
+            gy0, gy1 = (p1y, p2[1]) if p1y <= p2[1] else (p2[1], p1y)
+            for i, (bx0, by0, bx1, by1) in enumerate(self._poly_bboxes):
+                if gx1 < bx0 or bx1 < gx0 or gy1 < by0 or by1 < gy0:
+                    continue
+                if line is None:
+                    line = LineString([p1, p2])
+                if self._polygons[i].relate_pattern(line, 'T********'):
                     return False
 
         # Safezone containment: the WHOLE chord must stay inside the operating
