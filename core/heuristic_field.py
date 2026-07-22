@@ -27,9 +27,13 @@ from shapely.ops import unary_union
 
 import config
 
-# An 8-connected grid path exceeds the continuous shortest by <= this factor
-# (away from cell-scale narrow passages; the query slack absorbs the rest).
-_STRETCH = 1.0 / math.cos(math.pi / 8.0)
+# A 16-connected grid path (axis + diagonal + knight moves) exceeds the
+# continuous shortest by <= this factor: the largest angular gap between
+# available directions is atan(1/2) (0 -> 26.57deg), so the worst detour is
+# 1/cos(gap/2) ~ 1.0275 — 3x tighter than 8-connectivity's 1.0824, which
+# mattered: an 8.2% discount exceeded the typical 5-8% real detours and
+# collapsed the field below Euclid almost everywhere.
+_STRETCH = 1.0 / math.cos(math.atan(0.5) / 2.0)
 
 
 class GoalDistanceField:
@@ -114,9 +118,19 @@ class GoalDistanceField:
         idx = np.arange(M).reshape(ny, nx)
         free = ~blocked
         rows, cols, wts = [], [], []
+        # 16-neighborhood: axis, diagonal, and knight moves. Knight edges are
+        # deliberately NOT checked against the two cells they pass over:
+        # dropping that check can only SHORTEN grid distances (still a lower
+        # bound, so admissible) while guaranteeing any free-cell chain can be
+        # knight-approximated (which the _STRETCH bound requires). Obstacles
+        # here are inflated tens of km thick (>> 2 cells), so no real wall
+        # can be jumped.
+        sq2 = cell * math.sqrt(2.0)
+        sq5 = cell * math.sqrt(5.0)
         for dy, dx, wstep in ((0, 1, cell), (1, 0, cell),
-                              (1, 1, cell * math.sqrt(2.0)),
-                              (1, -1, cell * math.sqrt(2.0))):
+                              (1, 1, sq2), (1, -1, sq2),
+                              (1, 2, sq5), (2, 1, sq5),
+                              (2, -1, sq5), (1, -2, sq5)):
             a_iy = slice(max(0, -dy), ny - max(0, dy))
             a_ix = slice(max(0, -dx), nx - max(0, dx))
             b_iy = slice(max(0, dy), ny - max(0, -dy))

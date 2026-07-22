@@ -96,6 +96,67 @@ def test_corridor_field_prices_the_safezone_detour():
 
 
 import core.kinodynamic_astar as astar
+from batch_random_test import generate_random_scenario
+
+# Mission lengths (km) with the pure-Euclid heuristic, re-measured 2026-07-22
+# on the current tree (post valve/fan-rung work, TIME_BUDGET_S=None). The
+# field may only match or shorten, +5 km slack for tie-break noise (same
+# threshold as the 1000-seed A/B protocol).
+BASELINE_KM = {4: 446.1, 79: 502.3, 92: 521.4, 123: 445.3, 155: 472.2,
+               187: 438.7, 242: 480.1, 272: 457.7, 496: 479.4, 612: 442.6,
+               964: 480.8}
+
+
+@pytest.fixture
+def no_time_budget(monkeypatch):
+    monkeypatch.setattr(config, 'TIME_BUDGET_S', None)
+
+
+def _mission_km(pre, res):
+    pts = [pre['start_pos']] + [p for p, _h in res['path']] + [pre['goal_pos']]
+    return sum(math.dist(a, b) for a, b in zip(pts, pts[1:])) / 1000.0
+
+
+@pytest.mark.parametrize('seed', sorted(BASELINE_KM))
+def test_oracle_witness_and_no_regression(seed, no_time_budget):
+    pre = prep.prepare_scenario(generate_random_scenario(seed=seed))
+    res = astar.plan_trajectory(pre, verbose=False)
+    assert res['success']
+    assert _mission_km(pre, res) <= BASELINE_KM[seed] + 5.0
+    # admissibility witness: h at the path's first state must not exceed the
+    # cost actually flown from there (body polyline + snap to goal waypoint)
+    probe = astar.KinodynamicAstar(pre)          # fresh: builds field per gating
+    first = astar.State(res['path'][0][0], res['path'][0][1])
+    body = [p for p, _h in res['path']]
+    flown = sum(math.dist(a, b) for a, b in zip(body, body[1:]))
+    flown += math.dist(body[-1], probe.goal_state.waypoint)
+    assert probe.heuristic(first, probe.goal_state) <= flown + 1.0
+
+
+def test_field_cuts_expansions_on_occluded_seed(no_time_budget, monkeypatch):
+    """Seed 187: the real detour (+8.3% over straight-line) exceeds the
+    field's stretch discount, so the Euclid-optimistic basin gets pruned.
+    Measured 2026-07-22 with the 16-connected field: 265 vs 832 iterations
+    (ratio 0.32); the 0.6 gate leaves margin for lattice noise. A synthetic
+    single-wall map is NOT a substitute: Strategy A jumps straight to its
+    hull vertices (46 iterations either way), so no basin ever floods.
+    """
+    pre = prep.prepare_scenario(generate_random_scenario(seed=187))
+    res_field = astar.plan_trajectory(pre, verbose=False)
+
+    class _Boom:
+        def __init__(self, pre):
+            raise RuntimeError("disabled")
+    monkeypatch.setattr(astar, 'GoalDistanceField', _Boom)
+    pre_e = prep.prepare_scenario(generate_random_scenario(seed=187))
+    res_euclid = astar.plan_trajectory(pre_e, verbose=False)
+
+    assert res_field['success'] and res_euclid['success']
+    it_f = res_field['stats']['iterations']
+    it_e = res_euclid['stats']['iterations']
+    assert it_f < 0.6 * it_e, f"field {it_f} vs euclid {it_e}: expected >40% cut"
+    # equal-quality guard on the same map
+    assert abs(_mission_km(pre, res_field) - _mission_km(pre_e, res_euclid)) <= 5.0
 
 
 def open_water_scenario():
