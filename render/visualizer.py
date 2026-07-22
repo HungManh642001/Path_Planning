@@ -106,6 +106,20 @@ def _content_extents(scenario, preprocessed=None, result=None,
     return (minx - pad, maxx + pad), (miny - pad, maxy + pad)
 
 
+def _point_at_arclength(pts, s):
+    """Point at arc-length `s` along the polyline `pts` (clamped to its ends)."""
+    if s <= 0:
+        return pts[0]
+    acc = 0.0
+    for a, b in zip(pts, pts[1:]):
+        d = math.dist(a, b)
+        if acc + d >= s:
+            t = (s - acc) / d if d > 0 else 0.0
+            return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+        acc += d
+    return pts[-1]
+
+
 def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
                  save_path=None, figsize=(14, 12), trajectory_mode='dubins', fit='map'):
     """
@@ -189,34 +203,21 @@ def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
         # Original takeoff point O
         O = preprocessed['start_pos']
         ax.plot(O[0], O[1], 'go', markersize=12, label='Takeoff Point O', zorder=5)
-        
-        # W1 (first waypoint after stabilization)
+
+        # Takeoff direction (towards W1)
         W1 = preprocessed['start_state']['waypoint']
-        ax.plot(W1[0], W1[1], 'g^', markersize=10, label='W1 (Stabilized)', zorder=5)
-        ax.arrow(O[0], O[1], W1[0]-O[0], W1[1]-O[1], 
+        ax.arrow(O[0], O[1], W1[0]-O[0], W1[1]-O[1],
                 head_width=500, head_length=500, fc='green', ec='green', alpha=0.3)
-        
+
         # Original goal T
         T = preprocessed['goal_pos']
         ax.plot(T[0], T[1], 'r*', markersize=20, label='Goal T', zorder=5)
-        
-        # W_{n-1} (final waypoint before engagement)
+
+        # Engagement direction (from W_{n-1} into T)
         W_n_minus_1 = preprocessed['goal_state']['waypoint']
-        ax.plot(W_n_minus_1[0], W_n_minus_1[1], 'rs', markersize=10, 
-               label='W_{n-1} (Engage)', zorder=5)
         ax.arrow(W_n_minus_1[0], W_n_minus_1[1], T[0]-W_n_minus_1[0], T[1]-W_n_minus_1[1],
                 head_width=500, head_length=500, fc='red', ec='red', alpha=0.3)
-        
-        # Annotate segments
-        l0 = preprocessed['start_state']['straight_length']
-        dss = preprocessed['goal_state']['engagement_distance']
-        
-        # Add text annotations
-        ax.text(O[0]-500, O[1]-500, f"L₀={l0/1000:.1f}km", fontsize=9, 
-               bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.7))
-        ax.text(W_n_minus_1[0]-500, W_n_minus_1[1]+500, f"d_ss={dss/1000:.1f}km", 
-               fontsize=9, bbox=dict(boxstyle='round', facecolor='lightcoral', alpha=0.7))
-    
+
     # ====== DRAW PLANNED TRAJECTORY ======
     if result and result.get('path'):
         path = result['path']
@@ -255,6 +256,17 @@ def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
                                 label='Turn start' if j == 0 else None)
                         ax.plot(*t['end'], 'o', color='magenta', markersize=4, zorder=5,
                                 label='Turn end' if j == 0 else None)
+
+                # Mark the mandatory-straight endpoints ON the flown path:
+                # L0 after O (end of the takeoff straight) and d_ss before T
+                # (start of the engagement run-in), both by arc-length.
+                l0 = preprocessed['start_state']['straight_length']
+                dss = preprocessed['goal_state']['engagement_distance']
+                flown_len = sum(math.dist(a, b) for a, b in zip(samples, samples[1:]))
+                p_l0 = _point_at_arclength(samples, l0)
+                p_dss = _point_at_arclength(samples, flown_len - dss)
+                ax.plot(*p_l0, 'g^', markersize=10, zorder=5, label='L₀ point')
+                ax.plot(*p_dss, 'rs', markersize=10, zorder=5, label='d_ss point')
             else:
                 # Fallback: draw straight lines if trajectory sampling fails
                 for i in range(len(waypoints) - 1):
@@ -281,30 +293,43 @@ def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
     ax.set_ylabel('North (m)', fontsize=11)
     ax.set_title(title, fontsize=13, fontweight='bold')
     
-    # Legend
+    # Legend (kept inside the axes, upper-left; the info box lives below the
+    # axes as a figure footer so the two never overlap).
     handles, labels = ax.get_legend_handles_labels()
     by_label = dict(zip(labels, handles))
-    ax.legend(by_label.values(), by_label.keys(), loc='upper left', fontsize=10)
-    
-    # Add info box
-    info_text = f"""Autonomous Aircraft Path Planning System
-    R = {config.R}m | α_max = {config.ALPHA_MAX}° | L₀ = {config.L0}m
-    Dynamic Obstacles: {len(scenario.get('dynamic_obstacles', []))} | Islands: {len(scenario.get('islands', []))}"""
-        
+    ax.legend(by_label.values(), by_label.keys(), loc='upper left', fontsize=9,
+              framealpha=0.9)
+
+    # Info footer (below the map, outside the axes). Parameters come from the
+    # preprocessed scenario (the values the planner actually used), not config.
+    R_used = preprocessed.get('turn_radius', config.R)
+    alpha_deg = math.degrees(preprocessed.get('alpha_max_rad', config.ALPHA_MAX_RAD))
+    l0 = preprocessed['start_state']['straight_length']
+    dss = preprocessed['goal_state']['engagement_distance']
+    info_text = (f"R = {R_used:.0f}m | α_max = {alpha_deg:.1f}° | L₀ = {l0:.0f}m"
+                 f" | d_ss = {dss:.0f}m"
+                 f" | Islands: {len(scenario.get('islands', []))}"
+                 f" | Dynamic Obstacles: {len(scenario.get('dynamic_obstacles', []))}")
+
     if result:
         stats = result.get('stats', {})
         success = result.get('success', False)
         status = "✓ SUCCESS" if success else "✗ FAILED"
         info_text += f"\n{status} | Iter: {stats.get('iterations', 0)}/{config.MAX_ITERATIONS}"
         if result.get('path'):
-            info_text += f" | Waypoints: {len(result['path'])}"
-    
-    ax.text(0.02, 0.98, info_text, transform=ax.transAxes, fontsize=9,
-           verticalalignment='top', bbox=dict(boxstyle='round', 
-                                             facecolor='wheat', alpha=0.8),
-           family='monospace')
-    
-    plt.tight_layout()
+            # Total flown distance over the FULL mission O -> W1 ... W_{n-1} -> T
+            # (straight chords, same measure as performance_eval.record_path_stats).
+            full_mission = tr.build_full_path(result['path'], preprocessed)
+            total_km = sum(math.dist(full_mission[i][0], full_mission[i + 1][0])
+                           for i in range(len(full_mission) - 1)) / 1000.0
+            info_text += (f" | Waypoints: {len(result['path'])}"
+                          f" | Total distance: {total_km:.1f} km")
+
+    fig.text(0.5, 0.01, info_text, ha='center', va='bottom', fontsize=9,
+             family='monospace',
+             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+
+    plt.tight_layout(rect=[0, 0.06, 1, 1])
     
     if save_path:
         plt.savefig(save_path, dpi=config.FIGURE_DPI, bbox_inches='tight')
