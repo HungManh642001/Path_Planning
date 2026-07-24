@@ -83,7 +83,7 @@ NUM_START_CORNERS = 4
 MAX_ITERATIONS = 50000
 
 # Wall-clock budget for a single search (seconds). None = no time limit.
-TIME_BUDGET_S = 10  # 0.9
+TIME_BUDGET_S = 15  # 0.9
 
 # State-lattice quantisation for A* de-duplication
 STATE_POS_QUANTUM = 1000.0          # meters

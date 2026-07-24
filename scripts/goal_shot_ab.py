@@ -92,7 +92,7 @@ def main():
     print("\n=== OVERALL SUMMARY ===")
     print(f"  OFF: solved {n_off}/{len(SEEDS)}, mean iters (solved) = {mean_it_off:.1f}")
     print(f"  ON : solved {n_on}/{len(SEEDS)}, mean iters (solved) = {mean_it_on:.1f}")
-    if mean_it_off and mean_it_on:
+    if solved_off and solved_on:
         print(f"  Mean iters speedup (OFF/ON, over each side's own solved set) = "
               f"{mean_it_off / mean_it_on:.2f}x")
 
