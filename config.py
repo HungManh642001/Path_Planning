@@ -182,9 +182,21 @@ GOAL_SHOT_ENABLED = True
 GOAL_SHOT_EVERY_N = 1
 
 # Candidate scan resolution: turn-at-P directions across [h ± alpha_max] and
-# arrival headings across [goal_heading ± alpha_max]. 9x9 measured sufficient.
-GOAL_SHOT_DIRS = 9
-GOAL_SHOT_CONE = 9
+# arrival headings across [goal_heading ± alpha_max]. The grid brackets the
+# shortest 2-corner maneuver; a finer grid finds a shorter (and sometimes a
+# VALID where the coarse grid only found an đoản-trình-violating) one.
+# MEASURED on 40 open-water adverse seeds (oracle-validated, so invalid
+# re-selections count as failures, not silent successes):
+#   9x9   -> 38/40 valid, mean length gap vs Dubins-LB 6.8%
+#   25x25 -> 40/40 valid, 5.3%  (fixes seeds 15,35 that 9x9 could only reach
+#            with an unflyable path; -1.5 pts on seeds valid at both)
+# 15x15 is non-monotone (fixes 15,35 but breaks 2,10) and 19x19 fails the
+# full-reversal synthetic — 25x25 is the sweet spot. Per-pop cost is flat
+# (the shot returns early via inject); raise GOAL_SHOT_EVERY_N if an
+# obstacle-dense map ever makes the every-pop 25x25 scan bite. A/B before
+# changing — quality is non-monotone in successor density here.
+GOAL_SHOT_DIRS = 25
+GOAL_SHOT_CONE = 25
 
 # ====== VISUALIZATION ======
 PLOT_BUFFER_ZONES = True
