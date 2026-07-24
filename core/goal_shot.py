@@ -35,8 +35,9 @@ def two_corner_candidates(P, h, goal_wp, goal_heading, R, alpha_max,
             min_straight_in after P's turn reserve).
         min_straight_in: đoản-trình threshold for P's incoming leg.
         num_dir: number of turn-at-P directions sampled across [h ± alpha_max].
+            Must be >= 2 (the sampler divides by num_dir - 1).
         num_cone: number of arrival headings sampled across
-            [goal_heading ± alpha_max].
+            [goal_heading ± alpha_max]. Must be >= 2 (divides by num_cone - 1).
 
     Returns:
         list of (total_len, C, d1, phi, budget_C, budget_W), sorted by
