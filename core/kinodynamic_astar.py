@@ -15,6 +15,7 @@ import core.spatial_utils as su
 import core.preprocessing as prep
 import core.arc_geometry as ag
 import core.goal_shot as gshot
+import core.path_validation as pv
 from core.heuristic_field import GoalDistanceField
 
 
@@ -1020,6 +1021,32 @@ class KinodynamicAstar:
         }
 
 
+def _full_mission_path(path, preprocessed):
+    """Prepend takeoff O and append goal T so the path spans the whole mission
+    O..T (the search only produces the interior W_1..W_{n-1} waypoints).
+
+    Mirrors render.trajectory.build_full_path exactly so the final oracle here
+    validates the SAME path the render layer / oracle tests build; the two are
+    kept consistent by tests/oracle_validity_test.py (which builds its full
+    path via render.trajectory.build_full_path and asserts this function's
+    verdict). Kept here rather than imported to avoid a core->render dependency.
+    """
+    wps = list(path)
+    O = preprocessed.get('start_pos')
+    T = preprocessed.get('goal_pos')
+    sh = preprocessed.get('start_heading', 0.0)
+    gh = preprocessed.get('goal_heading', 0.0)
+    if O is not None and (not wps or math.dist(O, wps[0][0]) > 1.0):
+        wps = [(tuple(O), sh)] + wps
+    if T is not None and (not wps or math.dist(T, wps[-1][0]) > 1.0):
+        # Free-goal mode leaves goal_heading None; the arrival heading is then
+        # the bearing of the final leg into T.
+        if gh is None:
+            gh = math.atan2(T[1] - wps[-1][0][1], T[0] - wps[-1][0][0]) if wps else 0.0
+        wps = wps + [(tuple(T), gh)]
+    return wps
+
+
 def plan_trajectory(preprocessed_scenario, verbose=False):
     """
     High-level function to plan a autonomous aircraft trajectory.
@@ -1043,38 +1070,60 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
     if verbose:
         print("Initializing Kinodynamic A*...")
 
-    # Run A* search (dynamic successors)
     planner = KinodynamicAstar(preprocessed_scenario)
 
-    legs_ok = planner._check_fixed_legs()
-    path = None
-    if legs_ok:
-        if verbose:
-            print("Starting A* search...")
-        
-        path = planner.search()
-        
-        if verbose:
-            stats = planner.get_search_stats()
-            print(f"Search completed: {stats['iterations']}/{stats['max_iterations']} iterations")
-            if path:
-                print(f"Path found with {len(path)} waypoints")
-                print(path)
-            else:
-                print("No path found")
-    
-    # Smooth path if found
-    if path:
-        path = planner.smooth_path(path)
+    def _result(path, success, reason):
+        return {
+            'path': path,
+            'success': success,
+            'failure_reason': reason,
+            'stats': planner.get_search_stats(),
+            'planner': planner,
+        }
 
-    # Final self-validation: a plan is only a success if the returned path is
-    # actually flyable. Search checks segments as it goes, but arc expansion,
-    # smoothing, and the fixed O->W1 / W_{n-1}->T legs (added outside the
-    # search) can carry collisions that were never verified in final form. 
+    # Feasibility gates first, each with its own honest reason:
+    # - start blocked: every seeded takeoff corner was infeasible (O inside an
+    #   inflated obstacle, or the whole takeoff ray collides / leaves the area).
+    # - goal leg blocked: the mandatory W_{n-1}->T seeker run-in hits an obstacle.
+    if not planner.start_corners:
+        return _result(None, False, 'start_leg_blocked')
+    if not planner._check_fixed_legs():
+        return _result(None, False, 'goal_leg_blocked')
 
-    return {
-        'path': path,
-        'success': path is not None and legs_ok,
-        'stats': planner.get_search_stats(),
-        'planner': planner,
-    }
+    if verbose:
+        print("Starting A* search...")
+    path = planner.search()
+    if verbose:
+        stats = planner.get_search_stats()
+        print(f"Search completed: {stats['iterations']}/{stats['max_iterations']} iterations")
+    if path is None:
+        return _result(None, False, 'no_path')
+
+    path = planner.smooth_path(path)
+
+    # Final whole-path oracle. The search validates each edge as it goes, but
+    # arc expansion, smoothing, and the fixed O->W1 / W_{n-1}->T legs (added
+    # outside the search) can still leave a full O..T path that violates
+    # collision OR the đoản-trình (min-straight) constraint — e.g. two turns
+    # ending up too close, so a middle segment's usable straight goes negative.
+    # Re-validate the whole path with the INDEPENDENT oracle so success really
+    # means oracle-valid; a path that fails is reported as an honest failure,
+    # not returned as a silent bad plan. This is exactly the invariant asserted
+    # by tests/oracle_validity_test.py. Straight legs are checked against the
+    # inflated obstacles (full margin); turn arcs against the raw obstacles
+    # (arcs are designed to bulge into the inflation band).
+    full = _full_mission_path(path, preprocessed_scenario)
+    valid = pv.path_is_valid(
+        full,
+        preprocessed_scenario['circle_obstacles'],
+        preprocessed_scenario['polygon_obstacles'],
+        planner.R, planner.alpha_max_rad, config.L0, config.DSS,
+        raw_circle_obstacles=preprocessed_scenario.get('raw_circle_obstacles'),
+        raw_polygon_obstacles=preprocessed_scenario.get('raw_polygon_obstacles'),
+        circle_tol=config.CIRCLE_GRAZE_TOL_M)
+    if not valid:
+        return _result(path, False, 'path_self_collision')
+
+    if verbose:
+        print(f"Path found with {len(path)} waypoints")
+    return _result(path, True, None)

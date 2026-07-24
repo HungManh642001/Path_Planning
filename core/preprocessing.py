@@ -263,7 +263,16 @@ def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS, safe_ma
     
     # Process obstacles
     inflated_data = compute_inflated_obstacles(scenario['obstacles'], R, safe_margin, alpha_max_rad)
-    
+
+    # Raw (uninflated) obstacle sets. The final-path oracle validates turn
+    # ARCS against the raw obstacles (arcs are designed to bulge into the
+    # inflation band by up to R*(1/cos(alpha_max/2)-1)), while straight legs
+    # keep the full inflated margin — see path_validation.path_is_valid.
+    raw_circle_obstacles = [(o['center'], o['radius'])
+                            for o in scenario['obstacles'] if o['type'] == 'circle']
+    raw_polygon_obstacles = [o['polygon']
+                             for o in scenario['obstacles'] if o['type'] == 'polygon']
+
     return {
         'start_state': start_state,
         'goal_state': goal_state,
@@ -277,6 +286,8 @@ def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS, safe_ma
         'obstacles': inflated_data['inflated_obstacles'],
         'circle_obstacles': inflated_data['circle_obstacles'],
         'polygon_obstacles': inflated_data['polygon_obstacles'],
+        'raw_circle_obstacles': raw_circle_obstacles,
+        'raw_polygon_obstacles': raw_polygon_obstacles,
         'islands': scenario.get('islands', []),
         'dynamic_obstacles': scenario.get('dynamic_obstacles', []),
         # Per-scenario operating area / bounds. `safezones` is an optional list
