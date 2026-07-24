@@ -14,6 +14,7 @@ import config
 import core.spatial_utils as su
 import core.preprocessing as prep
 import core.arc_geometry as ag
+import core.goal_shot as gshot
 from core.heuristic_field import GoalDistanceField
 
 
@@ -750,6 +751,24 @@ class KinodynamicAstar:
             if len(self.open_set) <= 1 and self.num_strategy_b <= 0:
                 self.num_strategy_b = config.NUM_STRATEGY_B
 
+            # Analytic terminal shot: analytically construct a 2-corner maneuver
+            # straight to the aligned goal and INJECT it into OPEN with its true
+            # g (h = 0). A* accepts it via the normal goal-accept block only when
+            # it is the cheapest frontier node, so the shot prunes the
+            # adverse-heading flood WITHOUT regressing path quality. Fixed-goal
+            # mode only.
+            if (config.GOAL_SHOT_ENABLED and not self._free_goal
+                    and (self.iteration_count % config.GOAL_SHOT_EVERY_N) == 0):
+                shot = self._try_goal_shot(current)
+                if shot is not None:
+                    tentative_g = shot.g_cost
+                    if tentative_g < self.g_scores.get(shot, float('inf')):
+                        self.g_scores[shot] = tentative_g
+                        shot.h_cost = 0.0
+                        heapq.heappush(self.open_set, (
+                            shot.g_cost + config.HEURISTIC_WEIGHT * shot.h_cost,
+                            self.iteration_count, shot))
+
             # Check if reached goal
             dist_to_goal = math.sqrt(
                 (current.waypoint[0] - self.goal_state.waypoint[0])**2 +
@@ -814,6 +833,52 @@ class KinodynamicAstar:
         self.search_failed = True
         return None
     
+    def _try_goal_shot(self, current):
+        """Analytic 2-corner connect from `current` to the aligned goal.
+
+        Fixed-goal mode only. Scans 2-corner candidates (turn <= alpha_max at
+        current -> straight -> corner C -> turn <= alpha_max -> arrive at the
+        goal waypoint within alpha_max of goal_heading), exact-collision-checks
+        the two straight legs, and on the first valid candidate builds the
+        corner + goal States with parent pointers linked back to `current`.
+        Returns the goal State (ready for _reconstruct_path) or None.
+
+        The emitted maneuver is validated identically to any search edge:
+        each leg passes _check_collision and the đoản-trình reserves are
+        enforced inside two_corner_candidates, so the returned path is valid.
+        """
+        if self._free_goal:
+            return None
+        gw = self.goal_state.waypoint
+        gh = self.goal_state.heading
+        cands = gshot.two_corner_candidates(
+            current.waypoint, current.heading, gw, gh,
+            self.R, self.alpha_max_rad, _MIN_STRAIGHT_M,
+            current.straight_budget, current.min_straight_in,
+            num_dir=config.GOAL_SHOT_DIRS, num_cone=config.GOAL_SHOT_CONE)
+        base_g = self.g_scores[current]
+        for _total, C, d1, phi, budget_C, budget_W in cands:
+            if not self._check_collision(current.waypoint, C):
+                continue
+            if not self._check_collision(C, gw):
+                continue
+            # Leg 1: current -> C (stored heading = leg bearing d1).
+            c_state = State(C, d1)
+            c_state.parent = current
+            a1 = abs(_angle_diff(d1, current.heading))
+            c_state.g_cost = (base_g + math.dist(current.waypoint, C)
+                              + config.TURN_PENALTY_WEIGHT * a1)
+            c_state.straight_budget = budget_C
+            # Leg 2: C -> goal (stored heading = arrival bearing phi).
+            w_state = State(gw, phi)
+            w_state.parent = c_state
+            a2 = abs(_angle_diff(phi, d1))
+            w_state.g_cost = (c_state.g_cost + math.dist(C, gw)
+                              + config.TURN_PENALTY_WEIGHT * a2)
+            w_state.straight_budget = budget_W
+            return w_state
+        return None
+
     def _reconstruct_path(self, state):
         """Reconstruct start->state, expanding arc-hop transitions into
         circumscribed-polygon waypoints (output-time discretisation only;

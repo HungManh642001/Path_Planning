@@ -163,6 +163,29 @@ RADIAL_FAN_STEP_M = 100.0
 # budgeted.
 NUM_STRATEGY_B = 5
 
+# ====== GOAL SHOT (analytic terminal connect) ======
+# Hybrid-A*-style analytic expansion. From each popped state the planner tries
+# a 2-corner vehicle-legal maneuver straight to the goal, arriving within
+# alpha_max of goal_heading; a collision-free valid one is INJECTED into OPEN
+# with its true g (h=0), not returned immediately — the normal goal-accept
+# block only takes it once it surfaces as the cheapest frontier node, so the
+# shot prunes the adverse-approach flood (the Euclid heuristic is blind to
+# the terminal heading, so misaligned states pile up near the goal) WITHOUT
+# regressing path quality against a plain A* run. Fixed-goal mode only —
+# free-goal is already fast.
+GOAL_SHOT_ENABLED = True
+
+# Attempt the shot every N popped states. The check is cheap (angle filter,
+# then at most a few 2-segment collision checks), so 1 (every pop) is fine;
+# raise it only to cap per-pop cost on ultra-dense maps where the shot rarely
+# connects.
+GOAL_SHOT_EVERY_N = 1
+
+# Candidate scan resolution: turn-at-P directions across [h ± alpha_max] and
+# arrival headings across [goal_heading ± alpha_max]. 9x9 measured sufficient.
+GOAL_SHOT_DIRS = 9
+GOAL_SHOT_CONE = 9
+
 # ====== VISUALIZATION ======
 PLOT_BUFFER_ZONES = True
 PLOT_START_END_MARKERS = True
