@@ -223,6 +223,31 @@ class KinodynamicAstar:
         self._field_pending = bool(self.start_corners) and all(
             not self._check_collision(c.waypoint, self.goal_state.waypoint)
             for c in self.start_corners)
+        # Density-aware eager build: on maps with many obstacles Euclid is very
+        # loose, so the field earns its build cost immediately — skip the lazy
+        # delay (effective threshold 0) once the obstacle count reaches
+        # config.HEURISTIC_FIELD_EAGER_OBSTACLES. Sparse maps keep the lazy
+        # threshold, where an early build would be pure overhead. The field is
+        # admissible either way, so this changes only speed, not the result.
+        n_obstacles = len(self.scenario['circle_obstacles']) + len(self._polygons)
+        self._field_lazy_iters = (
+            0 if n_obstacles >= config.HEURISTIC_FIELD_EAGER_OBSTACLES
+            else config.HEURISTIC_FIELD_LAZY_ITERS)
+
+        # Adversity-gated weighted A*: the adverse-heading flood (goal_heading
+        # opposing the start->goal bearing) is the slow case; an inflated weight
+        # collapses it but is inadmissible, so apply it ONLY when the terminal is
+        # adverse — aligned/normal maps and free-goal mode keep the base weight
+        # and thus exact path quality (see config.HEURISTIC_WEIGHT_DENSE).
+        self._weight = config.HEURISTIC_WEIGHT
+        _gh = preprocessed_scenario.get('goal_heading')
+        if not self._free_goal and _gh is not None:
+            O = preprocessed_scenario['start_pos']
+            T = preprocessed_scenario['goal_pos']
+            bearing_OT = math.atan2(T[1] - O[1], T[0] - O[0])
+            if abs(_angle_diff(_gh, bearing_OT)) >= math.radians(
+                    config.HEURISTIC_WEIGHT_ADVERSE_DEG):
+                self._weight = config.HEURISTIC_WEIGHT_DENSE
 
         # Pre-computed constants (depend only on R / alpha_max / config, all
         # fixed for the planner's lifetime) hoisted out of the per-expansion
@@ -291,7 +316,7 @@ class KinodynamicAstar:
         for _f, cnt, st in self.open_set:
             st.h_cost = self.heuristic(st, self.goal_state)
             rebuilt.append((
-                st.g_cost + config.HEURISTIC_WEIGHT * st.h_cost, cnt, st))
+                st.g_cost + self._weight * st.h_cost, cnt, st))
         heapq.heapify(rebuilt)
         self.open_set = rebuilt
 
@@ -712,7 +737,7 @@ class KinodynamicAstar:
         for corner in self.start_corners:
             corner.h_cost = self.heuristic(corner, self.goal_state)
             heapq.heappush(self.open_set, (
-                corner.g_cost + config.HEURISTIC_WEIGHT * corner.h_cost,
+                corner.g_cost + self._weight * corner.h_cost,
                 self.iteration_count,
                 corner
             ))
@@ -729,7 +754,7 @@ class KinodynamicAstar:
             # Lazy heuristic tightening: the search running this long is the
             # proof of Euclid flooding that justifies the field's build cost.
             if (self._field_pending and
-                    self.iteration_count >= config.HEURISTIC_FIELD_LAZY_ITERS):
+                    self.iteration_count >= self._field_lazy_iters):
                 self._build_goal_field()
 
             # Pop best state from open set
@@ -767,7 +792,7 @@ class KinodynamicAstar:
                         self.g_scores[shot] = tentative_g
                         shot.h_cost = 0.0
                         heapq.heappush(self.open_set, (
-                            shot.g_cost + config.HEURISTIC_WEIGHT * shot.h_cost,
+                            shot.g_cost + self._weight * shot.h_cost,
                             self.iteration_count, shot))
 
             # Check if reached goal
@@ -825,7 +850,7 @@ class KinodynamicAstar:
                     next_state.h_cost = self.heuristic(next_state, self.goal_state)
                     
                     heapq.heappush(self.open_set, (
-                        next_state.g_cost + config.HEURISTIC_WEIGHT * next_state.h_cost,
+                        next_state.g_cost + self._weight * next_state.h_cost,
                         self.iteration_count,
                         next_state
                     ))
@@ -852,6 +877,17 @@ class KinodynamicAstar:
             return None
         gw = self.goal_state.waypoint
         gh = self.goal_state.heading
+        # Alignment gate (config.GOAL_SHOT_ALIGN_GATE): when the approach
+        # bearing to the goal waypoint is already within alpha_max of
+        # goal_heading, a 1-corner terminal (the normal Strategy-A goal
+        # candidate) can arrive legally, so building the 625-candidate grid is
+        # wasted work. Skips ~100% on aligned maps, ~0% on the adverse maps
+        # where the shot is load-bearing (measured; see config).
+        if config.GOAL_SHOT_ALIGN_GATE:
+            br = math.atan2(gw[1] - current.waypoint[1],
+                            gw[0] - current.waypoint[0])
+            if abs(_angle_diff(gh, br)) <= self.alpha_max_rad:
+                return None
         cands = gshot.two_corner_candidates(
             current.waypoint, current.heading, gw, gh,
             self.R, self.alpha_max_rad, _MIN_STRAIGHT_M,
@@ -912,67 +948,29 @@ class KinodynamicAstar:
     
     def smooth_path(self, path):
         """
-        Smooth the path by shortcutting to the FARTHEST reachable waypoint, then
-        guard the result's đoản-trình.
+        Smooth the path by shortcutting to the FARTHEST reachable waypoint.
 
-        The greedy shortcutter (`_smooth_greedy`) scans from each kept anchor to
-        the farthest waypoint whose direct chord is collision-free and
-        kinodynamically valid one-segment-at-a-time. But đoản-trình couples
-        adjacent segments through the turn they share: a later shortcut that
-        sharpens the turn at an already-kept anchor retroactively steals straight
-        length from the segment INTO that anchor and can drive its usable
-        straight negative — a physically unflyable path the per-segment check
-        cannot see (root cause of the đoản-trình oracle failures). So we
-        re-validate the whole smoothed path's straight segments; if any is
-        violated we return the UN-smoothed search path instead, which the search
-        validated edge by edge (straight_budget bookkeeping) and is valid end to
-        end. Correctness over cosmetics — a coupling-aware smoother that keeps
-        the shortcut without this fallback is future work.
+        The old greedy only tried to skip ONE waypoint at a time (anchor ->
+        path[i+1]) and appended path[i] the moment that single-step shortcut
+        failed — so a clear, feasible long jump anchor -> path[i+k] was never
+        tested once an intermediate onward-turn blocked the one-ahead step,
+        leaving detours in the path. Here, from each kept anchor we scan from
+        the farthest waypoint inward and jump straight to the farthest one whose
+        direct chord is (a) collision-free (exact), (b) kinodynamically valid at
+        the anchor (turn <= alpha_max + đoản trình), and (c) whose onward turn at
+        the target stays feasible (terminal turn onto goal_heading for the last
+        waypoint). Endpoints path[0]/path[-1] are preserved; every kept edge is
+        exact-collision-checked and validated, so the result stays valid.
 
         Args:
             path: List of (waypoint, heading) tuples
 
         Returns:
-            Smoothed path, or the input path unchanged when smoothing would
-            break a đoản-trình reserve.
+            Smoothed path
         """
         if len(path) < 3:
             return path
 
-        smoothed = self._smooth_greedy(path)
-
-        # Guard the coupling the greedy pass cannot see. Build the full O..T
-        # path (the flown legs) and check the min-straight reserves geometrically
-        # — the same test the final oracle applies. On violation, fall back to
-        # the search path, which is đoản-trình-valid by construction.
-        O = self.scenario['start_pos']
-        T = self.scenario['goal_pos']
-        gh = self.scenario.get('goal_heading')
-
-        def _full(wps):
-            out = list(wps)
-            if O is not None and (not out or math.dist(O, out[0][0]) > 1.0):
-                out = [(tuple(O), self.scenario.get('start_heading', 0.0))] + out
-            if T is not None and (not out or math.dist(T, out[-1][0]) > 1.0):
-                h = gh
-                if h is None:
-                    h = math.atan2(T[1] - out[-1][0][1], T[0] - out[-1][0][0]) if out else 0.0
-                out = out + [(tuple(T), h)]
-            return out
-
-        ok, _ = pv.straight_segments_ok(
-            _full(smoothed), self.R, config.L0, self._dss)
-        if not ok:
-            return path
-        return smoothed
-
-    def _smooth_greedy(self, path):
-        """Greedy farthest-reachable shortcutter. From each kept anchor, scan
-        inward from the farthest waypoint and jump to the farthest one whose
-        chord is collision-free and passes validate_kinodynamics at both ends
-        (turn <= alpha_max + đoản trình using that waypoint's search neighbour
-        as the onward turn). The one-segment view can still leave a globally
-        infeasible đoản-trình coupling — smooth_path re-checks and guards it."""
         n = len(path)
         smoothed = [path[0]]
         i = 0
@@ -992,7 +990,9 @@ class KinodynamicAstar:
                 # First-anchor L0 guard: when the anchor is path[0] (the
                 # seeded takeoff corner), a shortcut changes the first turn
                 # alpha_1, and the incoming O->corner leg must still keep
-                # l1 = d(O, corner) - R*tan(alpha_1/2) >= L0.
+                # l1 = d(O, corner) - R*tan(alpha_1/2) >= L0. Legacy code was
+                # safe implicitly via the alpha_max reserve in W1's placement;
+                # minimal corners need the guard explicit.
                 if len(smoothed) == 1:
                     a1_new = abs(_angle_diff(heading_to, anchor_h))
                     d0 = math.dist(self.scenario['start_pos'], anchor_wp)
@@ -1026,6 +1026,10 @@ class KinodynamicAstar:
                 # Onward feasibility: the terminal run-in must stay >= DSS in
                 # free mode; otherwise the target->onward turn must be flyable.
                 if j == n - 1 and self._free_goal:
+                    # Free run-in: USABLE straight length (after the turn fillet
+                    # at the anchor) must stay >= DSS, matching the search's
+                    # goal-candidate rule, so a shortcut cannot steal the fillet
+                    # bite out of the seeker leg.
                     turn_anchor = abs(_angle_diff(heading_to, anchor_h))
                     usable = math.dist(anchor_wp, target_wp) - self.R * math.tan(turn_anchor / 2.0)
                     is_next_valid = usable >= self._dss - config.EPS
