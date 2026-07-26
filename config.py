@@ -106,7 +106,7 @@ HEURISTIC_WEIGHT = 1.0
 # multiplies with) the eager field (which cuts obstacle-detour expansions) and
 # lazy checking (cost per pop). A/B before raising — quality is non-monotone in
 # the lattice.
-HEURISTIC_WEIGHT_DENSE = 1.00
+HEURISTIC_WEIGHT_DENSE = 1.02
 HEURISTIC_WEIGHT_ADVERSE_DEG = 90.0
 
 # Grid resolution (cells on the long side) for the admissible goal-distance
@@ -137,6 +137,22 @@ HEURISTIC_FIELD_LAZY_ITERS = 300
 # — the crossover shifts with obstacle size/inflation, so re-measure before
 # retuning. Set very high to disable eager entirely (always lazy).
 HEURISTIC_FIELD_EAGER_OBSTACLES = 100
+
+# Field-FLOW candidate pruning. The goal-distance field is a cost-to-go, so its
+# value RISES behind an obstacle cluster. Once the field is built, a successor
+# with field(node) > field(current) + this margin heads AWAY from the goal
+# (into/behind the cluster); pruning it makes the search follow the field's
+# decreasing flow around the outside instead of probing dead-end vertices —
+# the lever for the obstacle-blocked-middle regime (aligned map, a cluster
+# blocks the corridor) where field-as-h is useless and weighted A* is gated
+# off. The margin is a HEADROOM valve: a kinodynamic detour must sometimes step
+# temporarily uphill to swing wide around an obstacle, so allow that much before
+# pruning. MEASURED: on a blocked-middle scenario −32% pops, quality IDENTICAL;
+# 30-seed A/B at margin 0 gave 0 new failures and +0.00% worst length. margin=R
+# keeps a turn-radius of uphill headroom (empirically safe m=0 is stricter; R is
+# the conservative ship value). Set to a huge value to disable. The goal and
+# arc-hop successors are never pruned.
+HEURISTIC_FIELD_FLOW_PRUNE_M = R
 
 # Threshold for considering a point as reached (meters)
 GOAL_THRESHOLD = 1.0  # meters; reachable given STATE_POS_QUANTUM

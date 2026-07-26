@@ -233,6 +233,8 @@ class KinodynamicAstar:
         self._field_lazy_iters = (
             0 if n_obstacles >= config.HEURISTIC_FIELD_EAGER_OBSTACLES
             else config.HEURISTIC_FIELD_LAZY_ITERS)
+        # Field-flow candidate pruning margin (see config). Cached once.
+        self._flow_prune_m = config.HEURISTIC_FIELD_FLOW_PRUNE_M
 
         # Adversity-gated weighted A*: the adverse-heading flood (goal_heading
         # opposing the start->goal bearing) is the slow case; an inflated weight
@@ -448,7 +450,7 @@ class KinodynamicAstar:
             # vs 481.2 km with the exemption).
             if not current_state.is_start_corner:
                 if self.num_strategy_b <= 0:
-                    return successors
+                    return self._flow_prune(successors, P)
                 self.num_strategy_b -= 1
 
         # --- Strategy B: radial fan — pure fallback when no candidate is
@@ -485,7 +487,31 @@ class KinodynamicAstar:
                 nxt.straight_budget = budget
                 successors.append((nxt, cost))
 
-        return successors
+        return self._flow_prune(successors, P)
+
+    def _flow_prune(self, successors, P):
+        """Field-flow candidate pruning: once the goal-distance field is built,
+        drop successors whose cost-to-go RISES by more than
+        self._flow_prune_m over the current state's — they head into/behind the
+        obstacle cluster (away from the goal), so following the field's
+        decreasing flow around the outside skips those dead-end probes. The
+        goal and arc-hop successors are never pruned; an infinite margin (or an
+        unbuilt field) is a no-op. See config.HEURISTIC_FIELD_FLOW_PRUNE_M."""
+        field = self._goal_field
+        if field is None or self._flow_prune_m == float('inf'):
+            return successors
+        f_here = field.query(P)
+        limit = f_here + self._flow_prune_m
+        gw = self.goal_state.waypoint
+        kept = []
+        for nxt, cost in successors:
+            if nxt.waypoint is gw or nxt.arc_from is not None:
+                kept.append((nxt, cost))
+                continue
+            if field.query(nxt.waypoint) > limit:
+                continue
+            kept.append((nxt, cost))
+        return kept
 
     def _arc_hop_successors(self, current_state):
         """Successors that ride an inflated circle's boundary.
