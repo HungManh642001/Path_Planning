@@ -14,6 +14,7 @@ import config
 import core.spatial_utils as su
 import core.preprocessing as prep
 import core.arc_geometry as ag
+import core.loiter as loiter
 import core.goal_shot as gshot
 import core.path_validation as pv
 from core.heuristic_field import GoalDistanceField
@@ -114,6 +115,19 @@ class KinodynamicAstar:
         self._poly_vertices = []
         for poly in self._polygons:
             self._poly_vertices.extend(poly.convex_hull.exterior.coords[:-1])
+
+        # RAW (un-inflated) obstacle sets, used ONLY by the search-time turn-arc
+        # clearance check (_corner_arc_clear): the fillet arc is designed to
+        # bulge into the inflation band and need clear only the raw obstacle,
+        # exactly as path_validation.arcs_clear checks it. Fall back to the
+        # inflated sets when a scenario predates preprocessing's raw keys (the
+        # check is then merely conservative, never wrong).
+        self._raw_circles = preprocessed_scenario.get(
+            'raw_circle_obstacles', self.scenario['circle_obstacles'])
+        self._raw_polygons = [Polygon(c) for c in
+                              preprocessed_scenario.get('raw_polygon_obstacles', [])]
+        self._raw_poly_bboxes = [p.bounds for p in self._raw_polygons]
+        self._arc_check_n = max(2, int(config.ARC_CHECK_SAMPLES))
 
         # Operating areas (safezones). When one or more polygons are supplied the
         # aircraft must stay inside their UNION — both every generated waypoint
@@ -258,6 +272,11 @@ class KinodynamicAstar:
 
         self.num_strategy_b = config.NUM_STRATEGY_B
 
+        # Loiter (turn-around macro) budget for mid-course states. Start
+        # corners are exempt (see _loiter_successors); this bounds firings from
+        # deeper adverse states so the macro cannot itself flood the frontier.
+        self.num_loiter = config.LOITER_BUDGET
+
         # Lazy memo of arc-hop departure candidates, keyed by
         # (circle_index, sense). The candidate list (bitangent departures to
         # every other circle + departure points to every polygon vertex and
@@ -398,6 +417,8 @@ class KinodynamicAstar:
                 continue
             if not self._check_collision(P, node):
                 continue
+            if config.ARC_CLEARANCE_CHECK and not self._corner_arc_clear(h, P, node):
+                continue
             cost = math.hypot(dx, dy) + config.TURN_PENALTY_WEIGHT * turn
             nxt = State(node, heading_to_node)
             nxt.straight_budget = budget
@@ -452,6 +473,8 @@ class KinodynamicAstar:
                     continue
                 if not self._check_collision(P, next_waypoint):
                     continue
+                if config.ARC_CLEARANCE_CHECK and not self._corner_arc_clear(h, P, next_waypoint):
+                    continue
                 budget = self._doan_trinh(current_state, distance_m, turn)
                 if budget is None:
                     continue
@@ -460,6 +483,79 @@ class KinodynamicAstar:
                 nxt.straight_budget = budget
                 successors.append((nxt, cost))
 
+        # --- Loiter (turn-around macro): ride a VIRTUAL radius-(factor*R)
+        # turning circle and depart tangentially toward the goal. Fires only
+        # when the goal bearing is un-turnable in one legal move; collapses a
+        # heading reversal into a single arc_from successor per side, so the
+        # search finds a compact turn-around without a finer global fan. ---
+        if config.LOITER_ENABLED:
+            successors.extend(self._loiter_successors(current_state))
+
+        return successors
+
+    def _loiter_successors(self, current_state):
+        """Turn-around macro successors.
+
+        The state (P, h) has two minimum-radius turning circles tangent to it
+        (left/CCW s=+1, right/CW s=-1), each of radius factor*R. Ride one and
+        depart tangentially toward the goal: a heading reversal in one move.
+        The emitted state carries arc_from = (virtual_center, r_v, P, s) so
+        _reconstruct_path expands it into the same circumscribed-polygon corners
+        as an obstacle arc-hop; the first output edge P->v0 runs along the
+        tangent (heading h), so there is NO turn at P (entry is
+        tangent-continuous), and with factor > 1 every expanded corner clears
+        its đoản-trình reserve.
+
+        Fires only when the goal bearing is more than alpha_max from h (no
+        single legal turn reaches the goal). Start corners always loiter (the
+        turn-around is a takeoff maneuver); deeper adverse states draw from
+        LOITER_BUDGET so the macro cannot itself flood the frontier.
+        """
+        P = current_state.waypoint
+        h = current_state.heading
+        goal_wp = self.goal_state.waypoint
+
+        # Adverse gate: only reverse when the goal cannot be turned onto directly.
+        bearing = su.angle_to_heading(P, goal_wp)
+        if abs(_angle_diff(bearing, h)) <= self.alpha_max_rad:
+            return []
+        if not current_state.is_start_corner and self.num_loiter <= 0:
+            return []
+
+        r_v = config.LOITER_RADIUS_FACTOR * self.R
+        min_sweep = math.radians(config.LOITER_MIN_SWEEP_DEG)
+        successors = []
+        for s in (1, -1):
+            center = loiter.virtual_center(P, h, r_v, s)
+            phi0 = math.atan2(P[1] - center[1], P[0] - center[0])
+            max_wrap = self._max_clear_wrap(center, r_v, phi0, s)
+            if max_wrap <= min_sweep:
+                continue
+            dep = ag.departure_point(goal_wp, center, r_v, s)
+            if dep is None:
+                continue
+            dphi = ag.arc_angle(P, dep, center, s)
+            if dphi < min_sweep or dphi > max_wrap:
+                continue
+            nxt = State(dep, ag.tangent_heading(dep, center, s))
+            nxt.arc_from = (center, r_v, P, s)
+            # Exit đoản-trình. The loiter is a CONTINUOUS radius-r_v arc tangent
+            # to the outgoing direction at dep, so in the flown limit there is no
+            # straight buffer before a turn AT dep — the aircraft is still
+            # turning there. Model that exactly: budget 0 with a small float
+            # slack, which lets _doan_trinh accept the tangent-continuous
+            # continuation (departure_point aims dep's tangent AT the goal, turn
+            # ~0) while rejecting any real turn at the exit (whose only apparent
+            # room is the circumscribed-polygon exit chord — a discretisation
+            # artifact that shrinks with the output step). Keeping this
+            # step-independent preserves the "search route independent of
+            # ARC_WAYPOINT_STEP_DEG" invariant that a step-scaled budget breaks.
+            nxt.straight_budget = 0.0
+            nxt.min_straight_in = -_MIN_STRAIGHT_M
+            successors.append((nxt, r_v * dphi))
+
+        if successors and not current_state.is_start_corner:
+            self.num_loiter -= 1
         return successors
 
     def _arc_hop_successors(self, current_state):
@@ -662,6 +758,84 @@ class KinodynamicAstar:
                 line = LineString([p1, p2])
             if not self._safezone.covers(line):
                 return False
+        return True
+
+    def _seg_clear_raw(self, p1, p2):
+        """Segment p1->p2 clear of RAW obstacles (zero tolerance). Same inlined
+        point-to-segment / polygon-interior logic as _check_collision, but on
+        the un-inflated sets and with no safezone test — used for turn-arc
+        clearance, where the arc may legitimately ride the inflation band."""
+        p1x, p1y = p1
+        sx = p2[0] - p1x
+        sy = p2[1] - p1y
+        dd = sx * sx + sy * sy
+        if dd == 0.0:
+            for (cx, cy), radius in self._raw_circles:
+                relx = cx - p1x
+                rely = cy - p1y
+                if relx * relx + rely * rely < radius * radius:
+                    return False
+        else:
+            for (cx, cy), radius in self._raw_circles:
+                relx = cx - p1x
+                rely = cy - p1y
+                t = (relx * sx + rely * sy) / dd
+                if t < 0.0:
+                    t = 0.0
+                elif t > 1.0:
+                    t = 1.0
+                ex = relx - t * sx
+                ey = rely - t * sy
+                if ex * ex + ey * ey < radius * radius:
+                    return False
+        if self._raw_poly_bboxes:
+            gx0, gx1 = (p1x, p2[0]) if p1x <= p2[0] else (p2[0], p1x)
+            gy0, gy1 = (p1y, p2[1]) if p1y <= p2[1] else (p2[1], p1y)
+            line = None
+            for i, (bx0, by0, bx1, by1) in enumerate(self._raw_poly_bboxes):
+                if gx1 < bx0 or bx1 < gx0 or gy1 < by0 or by1 < gy0:
+                    continue
+                if line is None:
+                    line = LineString([p1, p2])
+                if self._raw_polygons[i].relate_pattern(line, 'T********'):
+                    return False
+        return True
+
+    def _corner_arc_clear(self, h_in, w, w_next):
+        """True iff the radius-R fillet arc rounding corner `w` clears all RAW
+        obstacles. `h_in` is the incoming heading (the arc is tangent to it),
+        `w_next` the next waypoint (the arc is tangent to w->w_next). Mirrors
+        path_validation._arc_points geometry so the search rejects exactly the
+        corners the final oracle would (path_self_collision), instead of
+        committing to them. No-op turn (collinear) => trivially clear."""
+        ux, uy = math.cos(h_in), math.sin(h_in)
+        vx = w_next[0] - w[0]
+        vy = w_next[1] - w[1]
+        dv = math.hypot(vx, vy)
+        if dv < 1e-9:
+            return True
+        vx /= dv
+        vy /= dv
+        cross = ux * vy - uy * vx
+        dot = ux * vx + uy * vy
+        alpha = abs(math.atan2(cross, dot))
+        if alpha < 1e-6:
+            return True
+        R = self.R
+        t = R * math.tan(alpha / 2.0)
+        A = (w[0] - ux * t, w[1] - uy * t)          # tangent point on incoming leg
+        s = 1.0 if cross > 0 else -1.0
+        n_in = (-uy * s, ux * s)
+        C = (A[0] + R * n_in[0], A[1] + R * n_in[1])  # arc centre
+        start = math.atan2(A[1] - C[1], A[0] - C[0])
+        n = self._arc_check_n
+        prev = A
+        for k in range(1, n + 1):
+            ang = start + s * alpha * (k / n)
+            pt = (C[0] + R * math.cos(ang), C[1] + R * math.sin(ang))
+            if not self._seg_clear_raw(prev, pt):
+                return False
+            prev = pt
         return True
 
     def _check_fixed_legs(self):

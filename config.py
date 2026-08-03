@@ -198,6 +198,55 @@ GOAL_SHOT_EVERY_N = 1
 GOAL_SHOT_DIRS = 25
 GOAL_SHOT_CONE = 25
 
+# ====== LOITER (turn-around macro) ======
+# Adverse-heading recovery. When a popped state's bearing to the goal is more
+# than alpha_max away (the goal cannot be reached by any single legal turn),
+# the planner rides a VIRTUAL turning circle of radius LOITER_RADIUS_FACTOR*R
+# tangent to the state (one per side, left/right) and departs tangentially
+# toward the goal - a compact "loiter"/turn-around expressed, at output time,
+# as the same circumscribed-polygon corners arc-hop already emits (each turn
+# = ARC_WAYPOINT_STEP_DEG, doan-trinh satisfied iff the factor > 1). This
+# collapses a heading reversal into ONE search move, so the search finds the
+# tight turn-around WITHOUT the branching blow-up of a finer global radial fan
+# (RADIAL_FAN_DIRECTIONS=5 finds the loop but times out on dense batches).
+# LOITER_ENABLED = False is exactly legacy behaviour (the A/B knob).
+LOITER_ENABLED = True
+
+# Virtual turning-circle radius as a multiple of R. Must be > 1.0: the doan
+# trinh margin on each expanded corner is 2*(factor-1)*R*tan(step/2), so
+# factor = 1.0 is marginal (side == reserve) and fails; 1.2 clears by ~0.9 km
+# at the 30 deg output step. Larger = safer margin but a wider (longer) loop.
+LOITER_RADIUS_FACTOR = 1.2
+
+# Budget: mid-course states (NOT start corners, which are exempt) that may
+# fire the loiter while the goal is un-turnable. Bounds the per-search cost;
+# the adverse gate already limits firing to states that genuinely need to
+# reverse. Start corners always loiter (the turn-around is a takeoff maneuver).
+LOITER_BUDGET = 8
+
+# Minimum sweep (deg) for a loiter departure to be emitted. Smaller reversals
+# are already reachable by ordinary tangent/fan turns; only emit the macro
+# when it buys a real reorientation.
+LOITER_MIN_SWEEP_DEG = 30.0
+
+# ====== TURN-ARC CLEARANCE (search-time) ======
+# During expansion the search only collision-checks the STRAIGHT leg of each
+# successor; the radius-R fillet arc that rounds the corner AT the current
+# waypoint is left to the final oracle. A free corner's arc bulges inward by
+# R*(1/cos(alpha/2)-1) and can penetrate a nearby obstacle the straight legs
+# cleared, so the search commits to a path only the oracle then rejects
+# (path_self_collision) - no amount of successor diversity fixes it. With this
+# on, each successor's corner arc is checked against the RAW obstacles (the arc
+# is designed to bulge into the inflation band, so raw is the correct set, same
+# as path_validation.arcs_clear). ARC_CLEARANCE_CHECK = False is legacy.
+ARC_CLEARANCE_CHECK = True
+
+# Arc sample count for the search-time corner-arc check. The oracle samples 24;
+# 12 is enough to catch the shallow (tens-of-metres) bulges seen in practice
+# while halving the per-corner cost. Segments (not just points) are checked, so
+# a thin obstacle between samples is still caught along the chord.
+ARC_CHECK_SAMPLES = 12
+
 # ====== VISUALIZATION ======
 PLOT_BUFFER_ZONES = True
 PLOT_START_END_MARKERS = True
