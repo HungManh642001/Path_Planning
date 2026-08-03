@@ -67,8 +67,8 @@ CONSTRUCTION_CLEARANCE_M = 1.0
 
 # ====== COORDINATE SYSTEM ======
 # Map bounds (meters) for simulation
-MAP_WIDTH = 1000000.0
-MAP_HEIGHT = 1000000.0
+MAP_WIDTH = 500000.0
+MAP_HEIGHT = 500000.0
 MAP_ORIGIN = (0.0, 0.0)
 
 # ====== A* SEARCH ======
@@ -83,7 +83,7 @@ NUM_START_CORNERS = 4
 MAX_ITERATIONS = 50000
 
 # Wall-clock budget for a single search (seconds). None = no time limit.
-TIME_BUDGET_S = 20  # 0.9
+TIME_BUDGET_S = 15  # 0.9
 
 # State-lattice quantisation for A* de-duplication
 STATE_POS_QUANTUM = 1000.0          # meters
@@ -91,23 +91,6 @@ STATE_HEADING_QUANTUM_DEG = 3.0     # degrees
 
 # Heuristic weight (1.0 = Dijkstra, > 1.0 = more greedy)
 HEURISTIC_WEIGHT = 1.0
-
-# Adversity-gated weighted A*. The adverse-heading flood (goal_heading opposing
-# the start->goal bearing) is the slow case (the 2D field is heading-blind, so
-# misaligned states pile up near the goal). An inflated weight collapses it —
-# MEASURED on the dense adverse generator: w=1.02 −34% total time, path length
-# worst +0.03% on the successes (one hard seed flips to an honest đoản-trình
-# failure — the inadmissible search grabs an invalid terminal). Weighted A* is
-# inadmissible, so it must NOT touch aligned/normal maps: this weight is applied
-# ONLY when the terminal is adverse — goal_heading at least
-# HEURISTIC_WEIGHT_ADVERSE_DEG from the start->goal bearing. Aligned maps and
-# free-goal mode keep HEURISTIC_WEIGHT (exact quality). Set == HEURISTIC_WEIGHT
-# to disable the lever. It cuts the NUMBER of pops; orthogonal to (and
-# multiplies with) the eager field (which cuts obstacle-detour expansions) and
-# lazy checking (cost per pop). A/B before raising — quality is non-monotone in
-# the lattice.
-HEURISTIC_WEIGHT_DENSE = 1.02
-HEURISTIC_WEIGHT_ADVERSE_DEG = 90.0
 
 # Grid resolution (cells on the long side) for the admissible goal-distance
 # field heuristic (core/heuristic_field.py). The field only ever tightens h
@@ -120,39 +103,6 @@ HEURISTIC_GRID_N = 256
 # and would pay the ~0.3 s build for nothing (measured +185 s over a
 # 1000-seed sweep when building eagerly at init).
 HEURISTIC_FIELD_LAZY_ITERS = 300
-
-# Density-aware EAGER build: when the scenario has at least this many obstacles
-# (circles + polygons), build the goal-distance field immediately (effective
-# lazy threshold 0) instead of waiting HEURISTIC_FIELD_LAZY_ITERS. On dense
-# maps Euclid is very loose (obstacles force detours the field can see), so the
-# ~0.1-0.16 s build pays for itself many times over — MEASURED 13-18x total
-# speedup at N=200-400 (N=400: 2723 -> 42 iterations), and lazy@300 there just
-# wastes its 300-iteration delay flooding before it builds. The crossover is
-# N~=75-100 (below it the field does not earn its build); the build cost is
-# flat in N (fixed 256^2 grid). Sparse maps stay on the lazy path (this gate
-# is off), preserving the reason lazy exists — eager on the fast-solving sparse
-# seeds (<300 iters, ~0 s) is pure overhead (the +185 s/1000-seed that
-# motivated lazy). The field is ADMISSIBLE, so eager never changes the result
-# (same success, same length); only the expansion count/time changes. A/B knob
-# — the crossover shifts with obstacle size/inflation, so re-measure before
-# retuning. Set very high to disable eager entirely (always lazy).
-HEURISTIC_FIELD_EAGER_OBSTACLES = 100
-
-# Field-FLOW candidate pruning. The goal-distance field is a cost-to-go, so its
-# value RISES behind an obstacle cluster. Once the field is built, a successor
-# with field(node) > field(current) + this margin heads AWAY from the goal
-# (into/behind the cluster); pruning it makes the search follow the field's
-# decreasing flow around the outside instead of probing dead-end vertices —
-# the lever for the obstacle-blocked-middle regime (aligned map, a cluster
-# blocks the corridor) where field-as-h is useless and weighted A* is gated
-# off. The margin is a HEADROOM valve: a kinodynamic detour must sometimes step
-# temporarily uphill to swing wide around an obstacle, so allow that much before
-# pruning. MEASURED: on a blocked-middle scenario −32% pops, quality IDENTICAL;
-# 30-seed A/B at margin 0 gave 0 new failures and +0.00% worst length. margin=R
-# keeps a turn-radius of uphill headroom (empirically safe m=0 is stricter; R is
-# the conservative ship value). Set to a huge value to disable. The goal and
-# arc-hop successors are never pruned.
-HEURISTIC_FIELD_FLOW_PRUNE_M = R
 
 # Threshold for considering a point as reached (meters)
 GOAL_THRESHOLD = 1.0  # meters; reachable given STATE_POS_QUANTUM
@@ -247,21 +197,6 @@ GOAL_SHOT_EVERY_N = 1
 # changing — quality is non-monotone in successor density here.
 GOAL_SHOT_DIRS = 25
 GOAL_SHOT_CONE = 25
-
-# Alignment gate: skip the 625-candidate shot grid at a popped state when the
-# approach bearing to the goal waypoint is already within alpha_max of
-# goal_heading — a 1-corner terminal (the normal Strategy-A goal candidate)
-# can then arrive legally, so the 2-corner shot is redundant there. Keys on
-# TERMINAL ALIGNMENT, not N or a fixed period: it fires ~100% on aligned
-# (favorable) maps and ~0% on adverse maps where the shot is load-bearing.
-# MEASURED: 40-seed open-water adverse benchmark unchanged (40/40 valid,
-# 5.31% gap, gate skips 0.1%); favorable-dense N=150 skips 100% for
-# -33..-44% wall time; adverse-dense N=150 skips 0% (zero regression). This
-# is the correctness-preserving replacement for raising GOAL_SHOT_EVERY_N,
-# which regressed the benchmark 40->27/40 because the shot is load-bearing for
-# terminal validity, not just an anti-flood accelerator — a fixed period skips
-# the load-bearing pops, this gate never does.
-GOAL_SHOT_ALIGN_GATE = True
 
 # ====== VISUALIZATION ======
 PLOT_BUFFER_ZONES = True
