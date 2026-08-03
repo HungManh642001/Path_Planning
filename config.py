@@ -163,6 +163,40 @@ RADIAL_FAN_STEP_M = 100.0
 # budgeted.
 NUM_STRATEGY_B = 5
 
+# Interpretation of NUM_STRATEGY_B:
+#   False (legacy) = a GLOBAL budget: at most NUM_STRATEGY_B occluded-reorient
+#     fan expansions in the WHOLE search (start corners exempt), re-armed when
+#     the frontier nearly dies.
+#   True (HYBRID) = PER-PATH cap of NUM_STRATEGY_B fan waypoints IN A ROW on any
+#     single path (each State carries the running consecutive-B count; a non-fan
+#     step resets it — the original intent, Wi..Wi+k all Strategy-B) PLUS a
+#     global safety valve of STRATEGY_B_GLOBAL_CAP TOTAL occluded-reorient fan
+#     firings. The per-path cap governs normal maps (better adverse quality);
+#     the global valve (NO re-arm) stops the frontier blow-up the pure per-path
+#     rule causes on pathological maps (e.g. a valid seed that otherwise times
+#     out). Start corners are NOT exempt (consec_b starts at 0).
+#
+# DEFAULT False (global) — the hybrid is OPT-IN, not the default. Validated on
+# 40 random adverse seeds (per-path NUM_STRATEGY_B=3, GLOBAL_CAP=50) vs global5:
+# +6 seeds shorter (net -33.9 km, none longer) and it fixes the scenario_3
+# wide-loop (307.8 -> 291.7 km, 17 -> 7 wp), BUT it is NOT a strict win — one
+# seed regresses valid -> path_self_collision (the extra fan exploration
+# surfaces a shorter path whose FINAL oracle validation fails; search-time
+# checks do not yet perfectly match the oracle). Losing a solve to shorten
+# others is usually the wrong trade for a planner, so the default stays global
+# until the search/oracle mismatch is closed. Flip to True (with NUM_STRATEGY_B
+# = 3) to A/B the quality-vs-one-regression trade.
+STRATEGY_B_CONSECUTIVE = False
+
+# Global safety valve for the HYBRID Strategy-B mode: the maximum TOTAL number
+# of occluded-reorient fan firings in one search before the fan is cut off
+# (hard cap, no re-arm). Large enough that adverse missions (which solve in a
+# few hundred expansions) keep their per-path fan chains; small enough to stop
+# a per-path blow-up before the time budget. Only consulted when
+# STRATEGY_B_CONSECUTIVE is True. 50 is the validated value (fixes seed32/seed18
+# where lower caps still failed/were-longer, no worse than 150 on the rest).
+STRATEGY_B_GLOBAL_CAP = 50
+
 # ====== GOAL SHOT (analytic terminal connect) ======
 # Hybrid-A*-style analytic expansion. From each popped state the planner tries
 # a 2-corner vehicle-legal maneuver straight to the goal, arriving within

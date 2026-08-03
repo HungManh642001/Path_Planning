@@ -67,6 +67,12 @@ class State:
         # still occluded, so K > NUM_STRATEGY_B would drain the valve at
         # takeoff and starve mid-course reorientation for the whole search.
         self.is_start_corner = False
+        # Consecutive Strategy-B (radial fan) count on the path that reached
+        # this state: 0 if the incoming edge was NOT a fan expansion, else
+        # parent.consec_b + 1. Used only when STRATEGY_B_CONSECUTIVE gates the
+        # fan by "no more than NUM_STRATEGY_B fan waypoints in a row on one
+        # path" (the per-path semantics) instead of the global valve budget.
+        self.consec_b = 0
 
     def __hash__(self):
         k = self._key
@@ -271,6 +277,9 @@ class KinodynamicAstar:
         self.raw_route = None
 
         self.num_strategy_b = config.NUM_STRATEGY_B
+        # Global safety valve for the HYBRID (consecutive) Strategy-B mode:
+        # TOTAL occluded-reorient fan firings allowed before a hard cut-off.
+        self._sb_global = config.STRATEGY_B_GLOBAL_CAP
 
         # Loiter (turn-around macro) budget for mid-course states. Start
         # corners are exempt (see _loiter_successors); this bounds firings from
@@ -442,7 +451,18 @@ class KinodynamicAstar:
             # occluded, so with K > budget they would drain the valve at
             # takeoff and starve mid-course reorientation (seed 964: 546.9 km
             # vs 481.2 km with the exemption).
-            if not current_state.is_start_corner:
+            if config.STRATEGY_B_CONSECUTIVE:
+                # HYBRID: per-path cap (at most NUM_STRATEGY_B fan waypoints in a
+                # row on one path — every path independent, a non-fan step
+                # resets consec_b) AND a global safety valve on TOTAL fan firings
+                # (hard cap, no re-arm) so the per-path rule cannot blow up the
+                # frontier on pathological maps.
+                if current_state.consec_b >= config.NUM_STRATEGY_B:
+                    return successors
+                if self._sb_global <= 0:
+                    return successors
+                self._sb_global -= 1
+            elif not current_state.is_start_corner:
                 if self.num_strategy_b <= 0:
                     return successors
                 self.num_strategy_b -= 1
@@ -481,6 +501,10 @@ class KinodynamicAstar:
                 cost = distance_m + config.TURN_PENALTY_WEIGHT * turn
                 nxt = State(next_waypoint, next_heading)
                 nxt.straight_budget = budget
+                # This successor was reached by a fan (Strategy B) expansion:
+                # extend the consecutive-B chain (other successor types leave
+                # nxt.consec_b at its 0 default, resetting the chain).
+                nxt.consec_b = current_state.consec_b + 1
                 successors.append((nxt, cost))
 
         # --- Loiter (turn-around macro): ride a VIRTUAL radius-(factor*R)
