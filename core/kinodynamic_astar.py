@@ -519,23 +519,33 @@ class KinodynamicAstar:
         bearing = su.angle_to_heading(P, goal_wp)
         if abs(_angle_diff(bearing, h)) <= self.alpha_max_rad:
             return []
-        if not current_state.is_start_corner and self.num_loiter <= 0:
-            return []
+        # Budget is spent on the ATTEMPT, not on success: the cost is the two
+        # _max_clear_wrap sector sweeps below, paid whether or not a departure
+        # is found. Charging only successful loiters let every occluded adverse
+        # state (a whole flood) re-pay the sweeps with the budget never
+        # decrementing — the dominant slowdown. Start corners stay exempt (the
+        # turn-around is a takeoff maneuver and there are only K of them).
+        if not current_state.is_start_corner:
+            if self.num_loiter <= 0:
+                return []
+            self.num_loiter -= 1
 
         r_v = config.LOITER_RADIUS_FACTOR * self.R
         min_sweep = math.radians(config.LOITER_MIN_SWEEP_DEG)
         successors = []
         for s in (1, -1):
             center = loiter.virtual_center(P, h, r_v, s)
-            phi0 = math.atan2(P[1] - center[1], P[0] - center[0])
-            max_wrap = self._max_clear_wrap(center, r_v, phi0, s)
-            if max_wrap <= min_sweep:
-                continue
+            # Compute the goal-ward departure FIRST (cheap), then clear only the
+            # arc actually flown [phi0, phi0 + s*dphi] — not the full 2π sweep
+            # _max_clear_wrap would do (the dominant loiter cost).
             dep = ag.departure_point(goal_wp, center, r_v, s)
             if dep is None:
                 continue
+            phi0 = math.atan2(P[1] - center[1], P[0] - center[0])
             dphi = ag.arc_angle(P, dep, center, s)
-            if dphi < min_sweep or dphi > max_wrap:
+            if dphi < min_sweep:
+                continue
+            if not self._arc_clear_upto(center, r_v, phi0, s, dphi):
                 continue
             nxt = State(dep, ag.tangent_heading(dep, center, s))
             nxt.arc_from = (center, r_v, P, s)
@@ -554,8 +564,6 @@ class KinodynamicAstar:
             nxt.min_straight_in = -_MIN_STRAIGHT_M
             successors.append((nxt, r_v * dphi))
 
-        if successors and not current_state.is_start_corner:
-            self.num_loiter -= 1
         return successors
 
     def _arc_hop_successors(self, current_state):
@@ -652,6 +660,29 @@ class KinodynamicAstar:
                 return (k - 1) * step
             phi_prev = phi_next
         return 2.0 * math.pi
+
+    def _arc_clear_upto(self, center, r_ride, phi0, s, dphi):
+        """True iff riding (center, r_ride) from phi0 in direction s is clear
+        over exactly the swept arc [0, dphi] (rad). Same per-slice annular
+        sector test as _max_clear_wrap, but bounded to the arc actually flown
+        instead of sweeping the full circle — used by the loiter macro, whose
+        departure angle dphi is known up front."""
+        r_out = r_ride * _ARC_CLEAR_BULGE
+        step = self._arc_sample_step
+        n = int(math.ceil(dphi / step))
+        phi_prev = phi0
+        for k in range(1, n + 1):
+            swept = k * step
+            if swept > dphi:
+                swept = dphi
+            phi_next = phi0 + s * swept
+            p = (center[0] + r_out * math.cos(phi_next),
+                 center[1] + r_out * math.sin(phi_next))
+            if (not self._in_bounds(p)
+                    or not self._sector_clear(center, r_ride, r_out, phi_prev, phi_next)):
+                return False
+            phi_prev = phi_next
+        return True
 
     def _sector_clear(self, center, r_in, r_out, phi_a, phi_b):
         """True iff the annular sector [r_in, r_out] x [phi_a, phi_b] around
@@ -760,54 +791,19 @@ class KinodynamicAstar:
                 return False
         return True
 
-    def _seg_clear_raw(self, p1, p2):
-        """Segment p1->p2 clear of RAW obstacles (zero tolerance). Same inlined
-        point-to-segment / polygon-interior logic as _check_collision, but on
-        the un-inflated sets and with no safezone test — used for turn-arc
-        clearance, where the arc may legitimately ride the inflation band."""
-        p1x, p1y = p1
-        sx = p2[0] - p1x
-        sy = p2[1] - p1y
-        dd = sx * sx + sy * sy
-        if dd == 0.0:
-            for (cx, cy), radius in self._raw_circles:
-                relx = cx - p1x
-                rely = cy - p1y
-                if relx * relx + rely * rely < radius * radius:
-                    return False
-        else:
-            for (cx, cy), radius in self._raw_circles:
-                relx = cx - p1x
-                rely = cy - p1y
-                t = (relx * sx + rely * sy) / dd
-                if t < 0.0:
-                    t = 0.0
-                elif t > 1.0:
-                    t = 1.0
-                ex = relx - t * sx
-                ey = rely - t * sy
-                if ex * ex + ey * ey < radius * radius:
-                    return False
-        if self._raw_poly_bboxes:
-            gx0, gx1 = (p1x, p2[0]) if p1x <= p2[0] else (p2[0], p1x)
-            gy0, gy1 = (p1y, p2[1]) if p1y <= p2[1] else (p2[1], p1y)
-            line = None
-            for i, (bx0, by0, bx1, by1) in enumerate(self._raw_poly_bboxes):
-                if gx1 < bx0 or bx1 < gx0 or gy1 < by0 or by1 < gy0:
-                    continue
-                if line is None:
-                    line = LineString([p1, p2])
-                if self._raw_polygons[i].relate_pattern(line, 'T********'):
-                    return False
-        return True
-
     def _corner_arc_clear(self, h_in, w, w_next):
         """True iff the radius-R fillet arc rounding corner `w` clears all RAW
         obstacles. `h_in` is the incoming heading (the arc is tangent to it),
         `w_next` the next waypoint (the arc is tangent to w->w_next). Mirrors
         path_validation._arc_points geometry so the search rejects exactly the
         corners the final oracle would (path_self_collision), instead of
-        committing to them. No-op turn (collinear) => trivially clear."""
+        committing to them. No-op turn (collinear) => trivially clear.
+
+        Hot path — same prefilter economy as _check_collision: the whole arc is
+        sampled once, its bbox computed, and an obstacle is only tested when its
+        bbox overlaps the arc's; polygons get ONE LineString for the entire arc
+        polyline (not one per segment). An open-water corner therefore costs
+        just the sample loop + bbox compares, no shapely construction."""
         ux, uy = math.cos(h_in), math.sin(h_in)
         vx = w_next[0] - w[0]
         vy = w_next[1] - w[1]
@@ -829,13 +825,62 @@ class KinodynamicAstar:
         C = (A[0] + R * n_in[0], A[1] + R * n_in[1])  # arc centre
         start = math.atan2(A[1] - C[1], A[0] - C[0])
         n = self._arc_check_n
-        prev = A
+        pts = [A]
+        ax0 = ax1 = A[0]
+        ay0 = ay1 = A[1]
         for k in range(1, n + 1):
             ang = start + s * alpha * (k / n)
-            pt = (C[0] + R * math.cos(ang), C[1] + R * math.sin(ang))
-            if not self._seg_clear_raw(prev, pt):
-                return False
-            prev = pt
+            px = C[0] + R * math.cos(ang)
+            py = C[1] + R * math.sin(ang)
+            pts.append((px, py))
+            if px < ax0:
+                ax0 = px
+            elif px > ax1:
+                ax1 = px
+            if py < ay0:
+                ay0 = py
+            elif py > ay1:
+                ay1 = py
+
+        # Circles: inline point-to-segment, only for a circle whose bbox meets
+        # the arc bbox (grown by its radius).
+        for (cx, cy), radius in self._raw_circles:
+            if cx + radius < ax0 or cx - radius > ax1 or \
+                    cy + radius < ay0 or cy - radius > ay1:
+                continue
+            r2 = radius * radius
+            for j in range(n):
+                p1x, p1y = pts[j]
+                sx = pts[j + 1][0] - p1x
+                sy = pts[j + 1][1] - p1y
+                dd = sx * sx + sy * sy
+                relx = cx - p1x
+                rely = cy - p1y
+                if dd == 0.0:
+                    if relx * relx + rely * rely < r2:
+                        return False
+                    continue
+                tt = (relx * sx + rely * sy) / dd
+                if tt < 0.0:
+                    tt = 0.0
+                elif tt > 1.0:
+                    tt = 1.0
+                ex = relx - tt * sx
+                ey = rely - tt * sy
+                if ex * ex + ey * ey < r2:
+                    return False
+
+        # Polygons: one LineString for the whole arc polyline, tested only
+        # against polygons whose bbox overlaps the arc bbox.
+        if self._raw_poly_bboxes:
+            line = None
+            for i, (bx0, by0, bx1, by1) in enumerate(self._raw_poly_bboxes):
+                if ax1 < bx0 or bx1 < ax0 or ay1 < by0 or by1 < ay0:
+                    continue
+                if line is None:
+                    line = LineString(pts)
+                if self._raw_polygons[i].relate_pattern(line, 'T********'):
+                    return False
         return True
 
     def _check_fixed_legs(self):

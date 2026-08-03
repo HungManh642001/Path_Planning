@@ -214,9 +214,13 @@ LOITER_ENABLED = True
 
 # Virtual turning-circle radius as a multiple of R. Must be > 1.0: the doan
 # trinh margin on each expanded corner is 2*(factor-1)*R*tan(step/2), so
-# factor = 1.0 is marginal (side == reserve) and fails; 1.2 clears by ~0.9 km
-# at the 30 deg output step. Larger = safer margin but a wider (longer) loop.
-LOITER_RADIUS_FACTOR = 1.2
+# factor = 1.0 is marginal (side == reserve) and fails. It also sets how TIGHT
+# the turn-around loop is, hence path length: measured on the two named
+# scenarios, factor 1.2 -> +5.0% / +0.9% vs the reference planner, 1.1 ->
+# +2.4% / -0.3%, 1.05 -> +1.0% / -0.9%. 1.1 is the default (nearly optimal, and
+# its ~0.43 km margin stays 5 orders of magnitude above float noise); go lower
+# only to chase the last ~1% at a slimmer margin.
+LOITER_RADIUS_FACTOR = 1.1
 
 # Budget: mid-course states (NOT start corners, which are exempt) that may
 # fire the loiter while the goal is un-turnable. Bounds the per-search cost;
