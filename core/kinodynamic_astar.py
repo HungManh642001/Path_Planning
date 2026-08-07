@@ -14,7 +14,6 @@ import config
 import core.spatial_utils as su
 import core.preprocessing as prep
 import core.arc_geometry as ag
-import core.loiter as loiter
 import core.goal_shot as gshot
 import core.path_validation as pv
 from core.heuristic_field import GoalDistanceField
@@ -281,11 +280,6 @@ class KinodynamicAstar:
         # TOTAL occluded-reorient fan firings allowed before a hard cut-off.
         self._sb_global = config.STRATEGY_B_GLOBAL_CAP
 
-        # Loiter (turn-around macro) budget for mid-course states. Start
-        # corners are exempt (see _loiter_successors); this bounds firings from
-        # deeper adverse states so the macro cannot itself flood the frontier.
-        self.num_loiter = config.LOITER_BUDGET
-
         # Lazy memo of arc-hop departure candidates, keyed by
         # (circle_index, sense). The candidate list (bitangent departures to
         # every other circle + departure points to every polygon vertex and
@@ -507,87 +501,6 @@ class KinodynamicAstar:
                 nxt.consec_b = current_state.consec_b + 1
                 successors.append((nxt, cost))
 
-        # --- Loiter (turn-around macro): ride a VIRTUAL radius-(factor*R)
-        # turning circle and depart tangentially toward the goal. Fires only
-        # when the goal bearing is un-turnable in one legal move; collapses a
-        # heading reversal into a single arc_from successor per side, so the
-        # search finds a compact turn-around without a finer global fan. ---
-        if config.LOITER_ENABLED:
-            successors.extend(self._loiter_successors(current_state))
-
-        return successors
-
-    def _loiter_successors(self, current_state):
-        """Turn-around macro successors.
-
-        The state (P, h) has two minimum-radius turning circles tangent to it
-        (left/CCW s=+1, right/CW s=-1), each of radius factor*R. Ride one and
-        depart tangentially toward the goal: a heading reversal in one move.
-        The emitted state carries arc_from = (virtual_center, r_v, P, s) so
-        _reconstruct_path expands it into the same circumscribed-polygon corners
-        as an obstacle arc-hop; the first output edge P->v0 runs along the
-        tangent (heading h), so there is NO turn at P (entry is
-        tangent-continuous), and with factor > 1 every expanded corner clears
-        its đoản-trình reserve.
-
-        Fires only when the goal bearing is more than alpha_max from h (no
-        single legal turn reaches the goal). Start corners always loiter (the
-        turn-around is a takeoff maneuver); deeper adverse states draw from
-        LOITER_BUDGET so the macro cannot itself flood the frontier.
-        """
-        P = current_state.waypoint
-        h = current_state.heading
-        goal_wp = self.goal_state.waypoint
-
-        # Adverse gate: only reverse when the goal cannot be turned onto directly.
-        bearing = su.angle_to_heading(P, goal_wp)
-        if abs(_angle_diff(bearing, h)) <= self.alpha_max_rad:
-            return []
-        # Budget is spent on the ATTEMPT, not on success: the cost is the two
-        # _max_clear_wrap sector sweeps below, paid whether or not a departure
-        # is found. Charging only successful loiters let every occluded adverse
-        # state (a whole flood) re-pay the sweeps with the budget never
-        # decrementing — the dominant slowdown. Start corners stay exempt (the
-        # turn-around is a takeoff maneuver and there are only K of them).
-        if not current_state.is_start_corner:
-            if self.num_loiter <= 0:
-                return []
-            self.num_loiter -= 1
-
-        r_v = config.LOITER_RADIUS_FACTOR * self.R
-        min_sweep = math.radians(config.LOITER_MIN_SWEEP_DEG)
-        successors = []
-        for s in (1, -1):
-            center = loiter.virtual_center(P, h, r_v, s)
-            # Compute the goal-ward departure FIRST (cheap), then clear only the
-            # arc actually flown [phi0, phi0 + s*dphi] — not the full 2π sweep
-            # _max_clear_wrap would do (the dominant loiter cost).
-            dep = ag.departure_point(goal_wp, center, r_v, s)
-            if dep is None:
-                continue
-            phi0 = math.atan2(P[1] - center[1], P[0] - center[0])
-            dphi = ag.arc_angle(P, dep, center, s)
-            if dphi < min_sweep:
-                continue
-            if not self._arc_clear_upto(center, r_v, phi0, s, dphi):
-                continue
-            nxt = State(dep, ag.tangent_heading(dep, center, s))
-            nxt.arc_from = (center, r_v, P, s)
-            # Exit đoản-trình. The loiter is a CONTINUOUS radius-r_v arc tangent
-            # to the outgoing direction at dep, so in the flown limit there is no
-            # straight buffer before a turn AT dep — the aircraft is still
-            # turning there. Model that exactly: budget 0 with a small float
-            # slack, which lets _doan_trinh accept the tangent-continuous
-            # continuation (departure_point aims dep's tangent AT the goal, turn
-            # ~0) while rejecting any real turn at the exit (whose only apparent
-            # room is the circumscribed-polygon exit chord — a discretisation
-            # artifact that shrinks with the output step). Keeping this
-            # step-independent preserves the "search route independent of
-            # ARC_WAYPOINT_STEP_DEG" invariant that a step-scaled budget breaks.
-            nxt.straight_budget = 0.0
-            nxt.min_straight_in = -_MIN_STRAIGHT_M
-            successors.append((nxt, r_v * dphi))
-
         return successors
 
     def _arc_hop_successors(self, current_state):
@@ -684,29 +597,6 @@ class KinodynamicAstar:
                 return (k - 1) * step
             phi_prev = phi_next
         return 2.0 * math.pi
-
-    def _arc_clear_upto(self, center, r_ride, phi0, s, dphi):
-        """True iff riding (center, r_ride) from phi0 in direction s is clear
-        over exactly the swept arc [0, dphi] (rad). Same per-slice annular
-        sector test as _max_clear_wrap, but bounded to the arc actually flown
-        instead of sweeping the full circle — used by the loiter macro, whose
-        departure angle dphi is known up front."""
-        r_out = r_ride * _ARC_CLEAR_BULGE
-        step = self._arc_sample_step
-        n = int(math.ceil(dphi / step))
-        phi_prev = phi0
-        for k in range(1, n + 1):
-            swept = k * step
-            if swept > dphi:
-                swept = dphi
-            phi_next = phi0 + s * swept
-            p = (center[0] + r_out * math.cos(phi_next),
-                 center[1] + r_out * math.sin(phi_next))
-            if (not self._in_bounds(p)
-                    or not self._sector_clear(center, r_ride, r_out, phi_prev, phi_next)):
-                return False
-            phi_prev = phi_next
-        return True
 
     def _sector_clear(self, center, r_in, r_out, phi_a, phi_b):
         """True iff the annular sector [r_in, r_out] x [phi_a, phi_b] around

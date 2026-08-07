@@ -161,7 +161,7 @@ RADIAL_FAN_STEP_M = 100.0
 # while the goal is line-of-sight blocked (cheap reorientation moves, e.g.
 # recovering from an adverse initial heading). Fallback/riding fans are not
 # budgeted.
-NUM_STRATEGY_B = 5
+NUM_STRATEGY_B = 3
 
 # Interpretation of NUM_STRATEGY_B:
 #   False (legacy) = a GLOBAL budget: at most NUM_STRATEGY_B occluded-reorient
@@ -186,7 +186,7 @@ NUM_STRATEGY_B = 5
 # others is usually the wrong trade for a planner, so the default stays global
 # until the search/oracle mismatch is closed. Flip to True (with NUM_STRATEGY_B
 # = 3) to A/B the quality-vs-one-regression trade.
-STRATEGY_B_CONSECUTIVE = False
+STRATEGY_B_CONSECUTIVE = True
 
 # Global safety valve for the HYBRID Strategy-B mode: the maximum TOTAL number
 # of occluded-reorient fan firings in one search before the fan is cut off
@@ -195,7 +195,7 @@ STRATEGY_B_CONSECUTIVE = False
 # a per-path blow-up before the time budget. Only consulted when
 # STRATEGY_B_CONSECUTIVE is True. 50 is the validated value (fixes seed32/seed18
 # where lower caps still failed/were-longer, no worse than 150 on the rest).
-STRATEGY_B_GLOBAL_CAP = 50
+STRATEGY_B_GLOBAL_CAP = 500
 
 # ====== GOAL SHOT (analytic terminal connect) ======
 # Hybrid-A*-style analytic expansion. From each popped state the planner tries
@@ -231,41 +231,6 @@ GOAL_SHOT_EVERY_N = 1
 # changing — quality is non-monotone in successor density here.
 GOAL_SHOT_DIRS = 25
 GOAL_SHOT_CONE = 25
-
-# ====== LOITER (turn-around macro) ======
-# Adverse-heading recovery. When a popped state's bearing to the goal is more
-# than alpha_max away (the goal cannot be reached by any single legal turn),
-# the planner rides a VIRTUAL turning circle of radius LOITER_RADIUS_FACTOR*R
-# tangent to the state (one per side, left/right) and departs tangentially
-# toward the goal - a compact "loiter"/turn-around expressed, at output time,
-# as the same circumscribed-polygon corners arc-hop already emits (each turn
-# = ARC_WAYPOINT_STEP_DEG, doan-trinh satisfied iff the factor > 1). This
-# collapses a heading reversal into ONE search move, so the search finds the
-# tight turn-around WITHOUT the branching blow-up of a finer global radial fan
-# (RADIAL_FAN_DIRECTIONS=5 finds the loop but times out on dense batches).
-# LOITER_ENABLED = False is exactly legacy behaviour (the A/B knob).
-LOITER_ENABLED = True
-
-# Virtual turning-circle radius as a multiple of R. Must be > 1.0: the doan
-# trinh margin on each expanded corner is 2*(factor-1)*R*tan(step/2), so
-# factor = 1.0 is marginal (side == reserve) and fails. It also sets how TIGHT
-# the turn-around loop is, hence path length: measured on the two named
-# scenarios, factor 1.2 -> +5.0% / +0.9% vs the reference planner, 1.1 ->
-# +2.4% / -0.3%, 1.05 -> +1.0% / -0.9%. 1.1 is the default (nearly optimal, and
-# its ~0.43 km margin stays 5 orders of magnitude above float noise); go lower
-# only to chase the last ~1% at a slimmer margin.
-LOITER_RADIUS_FACTOR = 1.1
-
-# Budget: mid-course states (NOT start corners, which are exempt) that may
-# fire the loiter while the goal is un-turnable. Bounds the per-search cost;
-# the adverse gate already limits firing to states that genuinely need to
-# reverse. Start corners always loiter (the turn-around is a takeoff maneuver).
-LOITER_BUDGET = 8
-
-# Minimum sweep (deg) for a loiter departure to be emitted. Smaller reversals
-# are already reachable by ordinary tangent/fan turns; only emit the macro
-# when it buys a real reorientation.
-LOITER_MIN_SWEEP_DEG = 30.0
 
 # ====== TURN-ARC CLEARANCE (search-time) ======
 # During expansion the search only collision-checks the STRAIGHT leg of each
