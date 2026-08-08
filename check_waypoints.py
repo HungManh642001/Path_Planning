@@ -124,13 +124,12 @@ def report(states, obstacles=None):
     else:
         inf_c, inf_p, raw_c, raw_p = obstacles
         seg_ok = pv.segments_clear(path, inf_c, inf_p)
-        arc_ok = pv.arcs_clear(path, R, raw_c, raw_p)
+        arc_ok = pv.arcs_clear(path, R, inf_c, inf_p)
         print(f"\n--- Va chạm ---")
-        print(f"  Đoạn thẳng vs chướng ngại đã inflate: {'OK' if seg_ok else 'FAIL'}")
-        print(f"  Cung lượn vs chướng ngại gốc:         {'OK' if arc_ok else 'FAIL'}")
+        print(f"  Đoạn thẳng vs chướng ngại + SAFE_MARGIN: {'OK' if seg_ok else 'FAIL'}")
+        print(f"  Cung lượn vs chướng ngại + SAFE_MARGIN:  {'OK' if arc_ok else 'FAIL'}")
         # Cổng tổng hợp một-lời-gọi của dự án (giống gui/summary.py dùng).
-        ok_all = pv.path_is_valid(path, inf_c, inf_p, R, a_max, L0, dss,
-                                  raw_circle_obstacles=raw_c, raw_polygon_obstacles=raw_p)
+        ok_all = pv.path_is_valid(path, inf_c, inf_p, R, a_max, L0, dss)
 
     print("\n" + ("KẾT LUẬN: đường bay HỢP LỆ" if ok_all
                   else "KẾT LUẬN: đường bay KHÔNG hợp lệ"))

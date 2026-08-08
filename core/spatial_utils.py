@@ -39,6 +39,12 @@ def inflate_polygon(polygon_coords, inflation):
     Mitre join keeps sharp corners (few real vertices for navigation) and the
     result contains the round Minkowski buffer, so arc-clearance is preserved.
     """
+    # buffer(0) is a CLEANING operation in shapely, not a no-op: a self-touching
+    # ring splits into a MultiPolygon and the branch below would silently keep
+    # only the largest piece, shrinking the obstacle. Reachable now that
+    # inflation is just SAFE_MARGIN, which may legitimately be 0.
+    if inflation <= 0.0:
+        return list(polygon_coords)
     expanded = Polygon(polygon_coords).buffer(
         inflation, join_style='mitre', mitre_limit=config.POLYGON_MITRE_LIMIT)
     if expanded.geom_type == 'Polygon':

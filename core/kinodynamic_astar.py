@@ -121,17 +121,20 @@ class KinodynamicAstar:
         for poly in self._polygons:
             self._poly_vertices.extend(poly.convex_hull.exterior.coords[:-1])
 
-        # RAW (un-inflated) obstacle sets, used ONLY by the search-time turn-arc
-        # clearance check (_corner_arc_clear): the fillet arc is designed to
-        # bulge into the inflation band and need clear only the raw obstacle,
-        # exactly as path_validation.arcs_clear checks it. Fall back to the
-        # inflated sets when a scenario predates preprocessing's raw keys (the
-        # check is then merely conservative, never wrong).
-        self._raw_circles = preprocessed_scenario.get(
-            'raw_circle_obstacles', self.scenario['circle_obstacles'])
-        self._raw_polygons = [Polygon(c) for c in
-                              preprocessed_scenario.get('raw_polygon_obstacles', [])]
-        self._raw_poly_bboxes = [p.bounds for p in self._raw_polygons]
+        # Obstacle sets for the search-time turn-arc clearance check
+        # (_corner_arc_clear). These are the INFLATED sets, i.e. raw +
+        # SAFE_MARGIN — the same ones the straight-leg check uses.
+        #
+        # They used to be the RAW sets, because inflation carried a
+        # `R*(1/cos(alpha_max/2)-1)` turn term and a fillet arc was designed to
+        # bulge into exactly that band. With the turn term gone there is no band
+        # to bulge into, and checking arcs against raw would let a turn dip
+        # inside the operator's minimum stand-off (measured: 97.9 m of true
+        # clearance on a run configured for 500 m). Arcs and straights now both
+        # honour SAFE_MARGIN.
+        self._arc_circles = self.scenario['circle_obstacles']
+        self._arc_polygons = self._polygons
+        self._arc_poly_bboxes = self._poly_bboxes
         self._arc_check_n = max(2, int(config.ARC_CHECK_SAMPLES))
 
         # Operating areas (safezones). When one or more polygons are supplied the
@@ -758,7 +761,7 @@ class KinodynamicAstar:
 
         # Circles: inline point-to-segment, only for a circle whose bbox meets
         # the arc bbox (grown by its radius).
-        for (cx, cy), radius in self._raw_circles:
+        for (cx, cy), radius in self._arc_circles:
             if cx + radius < ax0 or cx - radius > ax1 or \
                     cy + radius < ay0 or cy - radius > ay1:
                 continue
@@ -786,14 +789,14 @@ class KinodynamicAstar:
 
         # Polygons: one LineString for the whole arc polyline, tested only
         # against polygons whose bbox overlaps the arc bbox.
-        if self._raw_poly_bboxes:
+        if self._arc_poly_bboxes:
             line = None
-            for i, (bx0, by0, bx1, by1) in enumerate(self._raw_poly_bboxes):
+            for i, (bx0, by0, bx1, by1) in enumerate(self._arc_poly_bboxes):
                 if ax1 < bx0 or bx1 < ax0 or ay1 < by0 or by1 < ay0:
                     continue
                 if line is None:
                     line = LineString(pts)
-                if self._raw_polygons[i].relate_pattern(line, 'T********'):
+                if self._arc_polygons[i].relate_pattern(line, 'T********'):
                     return False
         return True
 
@@ -996,6 +999,22 @@ class KinodynamicAstar:
                 continue
             if not self._check_collision(C, gw):
                 continue
+            # The shot SYNTHESISES two corners — at `current` and at C — that
+            # never pass through get_next_states, so nothing else arc-checks
+            # them. That was harmless while inflation carried the alpha_max turn
+            # term (it proved every fillet for free); with inflation reduced to
+            # SAFE_MARGIN an unchecked corner reaches the final path and the
+            # oracle rejects the whole plan (seed 964: path_self_collision).
+            # The third corner, at gw turning onto goal_heading, is checked too:
+            # the flown leg gw -> T is part of the mission path.
+            if config.ARC_CLEARANCE_CHECK:
+                if not self._corner_arc_clear(current.heading, current.waypoint, C):
+                    continue
+                if not self._corner_arc_clear(d1, C, gw):
+                    continue
+                T = self.scenario.get('goal_pos')
+                if T is not None and not self._corner_arc_clear(phi, gw, T):
+                    continue
             # Leg 1: current -> C (stored heading = leg bearing d1).
             c_state = State(C, d1)
             c_state.parent = current
@@ -1062,12 +1081,20 @@ class KinodynamicAstar:
         end. Correctness over cosmetics — a coupling-aware smoother that keeps
         the shortcut without this fallback is future work.
 
+        The TURN ARCS need the same guard, for the same reason: a shortcut
+        changes the turn angle at every anchor it touches, so the fillet arcs the
+        greedy pass never checked are not the arcs that get flown. This was
+        invisible while inflation carried the alpha_max turn term (3.3 km of
+        margin proved those arcs for free); with inflation reduced to
+        SAFE_MARGIN it is the single largest source of `path_self_collision`
+        (measured: 5 of 25 scenarios, all recovered by this guard).
+
         Args:
             path: List of (waypoint, heading) tuples
 
         Returns:
             Smoothed path, or the input path unchanged when smoothing would
-            break a đoản-trình reserve.
+            break a đoản-trình reserve or a turn-arc clearance.
         """
         if len(path) < 3:
             return path
@@ -1093,9 +1120,14 @@ class KinodynamicAstar:
                 out = out + [(tuple(T), h)]
             return out
 
+        full_smoothed = _full(smoothed)
         ok, _ = pv.straight_segments_ok(
-            _full(smoothed), self.R, config.L0, self._dss)
+            full_smoothed, self.R, config.L0, self._dss)
         if not ok:
+            return path
+        if config.ARC_CLEARANCE_CHECK and not pv.arcs_clear(
+                full_smoothed, self.R, self._arc_circles,
+                self.scenario['polygon_obstacles']):
             return path
         return smoothed
 
@@ -1283,8 +1315,6 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
         preprocessed_scenario['circle_obstacles'],
         preprocessed_scenario['polygon_obstacles'],
         planner.R, planner.alpha_max_rad, config.L0, config.DSS,
-        raw_circle_obstacles=preprocessed_scenario.get('raw_circle_obstacles'),
-        raw_polygon_obstacles=preprocessed_scenario.get('raw_polygon_obstacles'),
         circle_tol=config.CIRCLE_GRAZE_TOL_M)
     if not valid:
         return _result(path, False, 'path_self_collision')

@@ -9,17 +9,16 @@ import core.spatial_utils as su
 
 
 def inflation_offsets(R=config.R, alpha_max_rad=config.ALPHA_MAX_RAD, safe_margin=config.SAFE_MARGIN):
-    """Two obstacle boundary offsets for display:
+    """Obstacle boundary offsets for display.
 
-      ring 1 = safe_margin                                    (pure safety buffer)
-      ring 2 = safe_margin + R*(1/cos(alpha_max/2) - 1)       (full inflation)
-
-    The turn term guarantees that a turn at the maximum angle still clears the
-    obstacle. Ring 2 equals the single total inflation that `inflate_obstacles`
-    applies, so the outer ring coincides with the planner's inflated obstacle.
+    There is now a SINGLE ring: `safe_margin`, which is exactly the inflation
+    `inflate_obstacles` applies. The second ring used to add a
+    `R*(1/cos(alpha_max/2)-1)` turn term reserving the worst-case fillet bulge;
+    that term is gone (the search checks each arc exactly instead), so both
+    values coincide. The pair is kept so callers that draw two rings keep
+    working — they simply draw the same circle twice.
     """
-    turn_term = R * (1.0 / math.cos(alpha_max_rad / 2.0) - 1.0)
-    return safe_margin, safe_margin + turn_term
+    return safe_margin, safe_margin
 
 
 def inflate_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MARGIN, alpha_max_rad=config.ALPHA_MAX_RAD):
@@ -36,7 +35,16 @@ def inflate_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MARGIN, alp
     Returns:
         List of inflated obstacles
     """
-    inflation = R * (1 / math.cos(alpha_max_rad / 2) - 1) + safe_margin
+    # SAFE_MARGIN only. The old `R*(1/cos(alpha_max/2)-1)` turn term covered the
+    # worst-case bulge of a fillet arc into the corner it cuts; it is gone
+    # because the search now checks that bulge EXACTLY, per corner, with the
+    # real turn angle (`_corner_arc_clear`). Sized for alpha_max and applied to
+    # every obstacle, the term closed 49% of all corridors between obstacle
+    # pairs (measured, 1536 pairs) — a straight transit paid the same 3.3 km as
+    # a 90-degree corner. Inflation is now purely the operator's minimum
+    # stand-off distance. See docs/superpowers/specs/2026-08-08-obstacle-
+    # inflation-safe-margin-design.md.
+    inflation = safe_margin
     inflated = []
     
     for obstacle in obstacles:
@@ -264,10 +272,11 @@ def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS, safe_ma
     # Process obstacles
     inflated_data = compute_inflated_obstacles(scenario['obstacles'], R, safe_margin, alpha_max_rad)
 
-    # Raw (uninflated) obstacle sets. The final-path oracle validates turn
-    # ARCS against the raw obstacles (arcs are designed to bulge into the
-    # inflation band by up to R*(1/cos(alpha_max/2)-1)), while straight legs
-    # keep the full inflated margin — see path_validation.path_is_valid.
+    # Raw (uninflated) obstacle sets, threaded through for callers that want to
+    # measure or draw the true obstacle. They are NO LONGER the arc-clearance
+    # reference: straight legs and turn arcs both clear the inflated set
+    # (raw + SAFE_MARGIN) now that inflation carries no turn term — see
+    # path_validation.path_is_valid.
     raw_circle_obstacles = [(o['center'], o['radius'])
                             for o in scenario['obstacles'] if o['type'] == 'circle']
     raw_polygon_obstacles = [o['polygon']

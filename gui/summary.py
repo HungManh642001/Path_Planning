@@ -41,8 +41,7 @@ def compute_summary(result, preprocessed, raw_circles, raw_polys, render_mode, r
 
     valid = pv.path_is_valid(
         path, preprocessed['circle_obstacles'], preprocessed['polygon_obstacles'],
-        R, preprocessed['alpha_max_rad'], config.L0, config.DSS,
-        raw_circle_obstacles=raw_circles, raw_polygon_obstacles=raw_polys)
+        R, preprocessed['alpha_max_rad'], config.L0, config.DSS)
 
     base.update({
         'distance_km': dist / 1000.0,

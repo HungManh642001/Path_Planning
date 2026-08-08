@@ -146,12 +146,16 @@ def path_is_valid(path, circle_obstacles, polygon_obstacles, R, alpha_max_rad, L
                   raw_circle_obstacles=None, raw_polygon_obstacles=None, circle_tol=1e-6):
     """One-call full validity gate used by later phases.
 
-    Straight segments must clear the INFLATED obstacles (keeping the full safety
-    margin on the straight legs). Turn arcs, however, are designed to bulge into
-    the inflation band by up to R*(1/cos(alpha_max/2)-1) and only need to clear
-    the RAW obstacle — so when the raw obstacle sets are supplied, arcs are
-    validated against them. They default to the inflated sets for backward
-    compatibility (correct for circle-tangent paths, whose arcs bulge outward).
+    Straight segments AND turn arcs must both clear the INFLATED obstacles,
+    which are now simply raw + SAFE_MARGIN: the whole flown path honours the
+    operator's minimum stand-off.
+
+    The `raw_*` parameters are a legacy escape hatch. They existed because
+    inflation used to carry a `R*(1/cos(alpha_max/2)-1)` turn term and a fillet
+    arc was designed to bulge into exactly that band, so arcs were validated
+    against the raw obstacle instead. With the turn term gone there is no band,
+    and passing raw sets here would let a turn dip inside SAFE_MARGIN. Leave
+    them unset unless you are deliberately reproducing the old model.
     """
     if not path or len(path) < 2:
         return False
