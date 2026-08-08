@@ -16,7 +16,6 @@ import core.preprocessing as prep
 import core.arc_geometry as ag
 import core.goal_shot as gshot
 import core.path_validation as pv
-from core.heuristic_field import GoalDistanceField
 
 
 def _angle_diff(a, b):
@@ -233,19 +232,6 @@ class KinodynamicAstar:
             st.is_start_corner = True
             self.start_corners.append(st)
 
-        # Admissible goal-distance field (heuristic tightening). ARMED only
-        # when EVERY surviving corner's straight chord to the goal is
-        # blocked, and BUILT lazily by search() only after
-        # config.HEURISTIC_FIELD_LAZY_ITERS iterations without finishing —
-        # proof of real Euclid flooding. Easy maps (most: 734/869 random
-        # seeds finish under the threshold) never pay the ~0.3 s build, and
-        # any build failure degrades to the plain Euclid heuristic (the
-        # field must never be able to fail a plan).
-        self._goal_field = None
-        self._field_pending = bool(self.start_corners) and all(
-            not self._check_collision(c.waypoint, self.goal_state.waypoint)
-            for c in self.start_corners)
-
         # Pre-computed constants (depend only on R / alpha_max / config, all
         # fixed for the planner's lifetime) hoisted out of the per-expansion
         # hot loops. Values are byte-identical to computing them inline.
@@ -294,50 +280,18 @@ class KinodynamicAstar:
         # index avoids float-tuple hashing on every ride).
         self._dep_cache = {}
 
-    def _build_goal_field(self):
-        """Build the armed goal-distance field and re-order OPEN under the
-        tightened heuristic. Called by search() at the lazy threshold.
-
-        Mid-search heuristic switching keeps the search exact: both
-        heuristics are CONSISTENT (Euclid trivially; the field query is a
-        max of 1-Lipschitz cone terms, and every edge costs at least the
-        Euclid distance between its endpoints), so nodes closed in the
-        Euclid phase already have exact g; from there the standard
-        inductive argument applies to the re-ordered frontier under the new
-        consistent h. Any build failure disarms the field (pure Euclid).
-        """
-        self._field_pending = False
-        try:
-            self._goal_field = GoalDistanceField(self.scenario)
-        except Exception:
-            self._goal_field = None
-            return
-        rebuilt = []
-        for _f, cnt, st in self.open_set:
-            st.h_cost = self.heuristic(st, self.goal_state)
-            rebuilt.append((
-                st.g_cost + config.HEURISTIC_WEIGHT * st.h_cost, cnt, st))
-        heapq.heapify(rebuilt)
-        self.open_set = rebuilt
-
     def heuristic(self, state, goal_state):
         """
         Admissible lower-bound heuristic: straight-line distance to the goal
-        waypoint, tightened by the goal-distance field (max of two lower
-        bounds is a lower bound) when one was built. The old
-        `dist + R * heading_diff` term was inadmissible because heading is
-        corrected gradually while travelling, so it over-estimated remaining
-        cost and could cause A* to return suboptimal paths.
+        waypoint. The old `dist + R * heading_diff` term was inadmissible
+        because heading is corrected gradually while travelling, so it
+        over-estimated remaining cost and could cause A* to return suboptimal
+        paths.
         """
         dx = goal_state.waypoint[0] - state.waypoint[0]
         dy = goal_state.waypoint[1] - state.waypoint[1]
-        h = math.sqrt(dx * dx + dy * dy)
-        if self._goal_field is not None:
-            hf = self._goal_field.query(state.waypoint)
-            if hf > h:
-                return hf
-        return h
-    
+        return math.sqrt(dx * dx + dy * dy)
+
     def _doan_trinh(self, current, seg_len, turn_at_current, far_reserve=0.0):
         """Exact đoản-trình (min straight-segment) check for the edge
         current -> new, split across the two events its two turns become known.
@@ -861,12 +815,6 @@ class KinodynamicAstar:
             if _budget is not None and (time.perf_counter() - _start) > _budget:
                 break
             self.iteration_count += 1
-
-            # Lazy heuristic tightening: the search running this long is the
-            # proof of Euclid flooding that justifies the field's build cost.
-            if (self._field_pending and
-                    self.iteration_count >= config.HEURISTIC_FIELD_LAZY_ITERS):
-                self._build_goal_field()
 
             # Pop best state from open set
             _, _, current = heapq.heappop(self.open_set)

@@ -92,18 +92,6 @@ STATE_HEADING_QUANTUM_DEG = 3.0     # degrees
 # Heuristic weight (1.0 = Dijkstra, > 1.0 = more greedy)
 HEURISTIC_WEIGHT = 1.0
 
-# Grid resolution (cells on the long side) for the admissible goal-distance
-# field heuristic (core/heuristic_field.py). The field only ever tightens h
-# via max(euclid, field), so a coarser grid degrades toward plain Euclid.
-HEURISTIC_GRID_N = 256
-
-# Lazy-build threshold: the goal-distance field is built only when the
-# search reaches this many iterations without finishing (proof of real
-# Euclid flooding). 734/869 solved random seeds finish under 300 iterations
-# and would pay the ~0.3 s build for nothing (measured +185 s over a
-# 1000-seed sweep when building eagerly at init).
-HEURISTIC_FIELD_LAZY_ITERS = 300
-
 # Threshold for considering a point as reached (meters)
 GOAL_THRESHOLD = 1.0  # meters; reachable given STATE_POS_QUANTUM
 
