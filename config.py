@@ -145,6 +145,28 @@ NUM_FAN_DISTANCES = 2
 # still shedding 90% of the old 1000 m pad.
 RADIAL_FAN_STEP_M = 100.0
 
+# Along-ray pivot slide: number of retry positions tried when a Strategy-A
+# candidate is rejected (usually by _corner_arc_clear at a polygon hull vertex,
+# where the fillet folds into the polygon the vertex belongs to).
+#
+# The pivot slides FORWARD along the incoming heading, P' = P + d*h_in, so the
+# incoming leg keeps its DIRECTION and only grows: the parent's corner, its
+# turn reserve and every ancestor stay valid by construction, and the straight
+# budget can only increase. Sliding along the outer bisector instead would
+# rotate the incoming leg and force the ancestors to be re-validated (which is
+# the non-terminating version of this idea).
+#
+# With h_in as the x-axis and V - P = (a, b), the new turn is
+# |atan2(b, a - d)|, which INCREASES with d — so the slide is capped at
+# d_max = a - |b|/tan(alpha_max) and the fillet bulge grows as it is repaired.
+# Retry positions are therefore parametrised by the RESULTING turn, in
+# tan-uniform capability buckets tan(alpha_i/2) = (i/K)*tan(alpha_max/2) — the
+# same idiom as NUM_START_CORNERS and NUM_FAN_DISTANCES — and the first bucket
+# that clears wins (smallest slide = shortest detour).
+#
+# 0 disables the mechanism entirely (the A/B knob).
+NUM_PIVOT_SLIDES = 4
+
 # Escape-valve budget: number of expansions that may ALSO get the radial fan
 # while the goal is line-of-sight blocked (cheap reorientation moves, e.g.
 # recovering from an adverse initial heading). Fallback/riding fans are not

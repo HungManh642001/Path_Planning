@@ -42,6 +42,12 @@ class State:
         self.g_cost = float('inf')  # Cost from start
         self.h_cost = 0  # Heuristic to goal
         self.arc_from = None  # (center, radius, arc_start_pt, s) if reached via arc hop
+        # (pivot, heading) of an INTERMEDIATE straight-through waypoint on the
+        # incoming edge, when this state was reached by an along-ray pivot slide
+        # (see _slide_pivot): the aircraft flies straight through the parent's
+        # candidate corner to `pivot` and only turns there. Expanded back into
+        # the path by _reconstruct_path, exactly like arc_from.
+        self.via = None
         # Remaining straight length of the INCOMING segment after its near-end
         # turn reserve — the budget still available to the far-end (this
         # waypoint's) turn. Set exactly at creation; the đoản-trình far-end
@@ -257,6 +263,13 @@ class KinodynamicAstar:
         # riding_sense per circle) so get_next_states need not recompute it.
         self._riding = False
 
+        # Which gate rejected the most recent _pivot_candidate (None on
+        # success). Same side-channel style as _riding: it lets the caller ask
+        # "was this an ARC rejection?" — the only kind worth retrying with an
+        # along-ray slide — without _pivot_candidate returning a richer type on
+        # its hot path.
+        self._last_reject = None
+
         # Track if search failed
         self.search_failed = False
 
@@ -292,7 +305,8 @@ class KinodynamicAstar:
         dy = goal_state.waypoint[1] - state.waypoint[1]
         return math.sqrt(dx * dx + dy * dy)
 
-    def _doan_trinh(self, current, seg_len, turn_at_current, far_reserve=0.0):
+    def _doan_trinh(self, current, seg_len, turn_at_current, far_reserve=0.0,
+                    advance=0.0):
         """Exact đoản-trình (min straight-segment) check for the edge
         current -> new, split across the two events its two turns become known.
 
@@ -302,6 +316,13 @@ class KinodynamicAstar:
         it is already known (terminal turn onto the goal); 0 otherwise, in which
         case that check is deferred to the new state's own expansion.
 
+        `advance` is the along-ray pivot slide (_slide_pivot): the aircraft
+        flies straight THROUGH `current` for a further `advance` metres before
+        turning, so the incoming straight run is that much longer and the turn
+        happens at the slid pivot, not at `current`. Since the direction is
+        unchanged this only ever ADDS budget — the constraint cannot be broken
+        by sliding, which is the whole point of sliding along the ray.
+
         Returns the new state's `straight_budget` (new segment length minus the
         near reserve) when both ends have room, else None. The deferred
         far-end check of `current`'s incoming segment uses `current`'s own
@@ -310,7 +331,7 @@ class KinodynamicAstar:
         """
         reserve = self.R * math.tan(turn_at_current / 2.0)
         # Deferred far-end check of `current`'s incoming segment.
-        if current.straight_budget - reserve < current.min_straight_in:
+        if current.straight_budget + advance - reserve < current.min_straight_in:
             return None
         budget = seg_len - reserve
         if budget - far_reserve < _MIN_STRAIGHT_M:
@@ -345,44 +366,19 @@ class KinodynamicAstar:
             dy = node[1] - P[1]
             if dx * dx + dy * dy < 10000:        # skip ~within 100 m
                 continue
-            heading_to_node = su.angle_to_heading(P, node)
-            turn = abs(_angle_diff(heading_to_node, h))
-            if turn > self.alpha_max_rad:
-                continue
-            # Far-end reserve of this segment: 0 for an interior waypoint (its
-            # turn is unknown here, deferred to that waypoint's expansion); for
-            # the terminal goal the far turn IS known now (onto goal_heading, or
-            # 0 in free mode), so reserve it exactly.
-            far_reserve = 0.0
-            if node is goal_wp:
-                if self._free_goal:
-                    # Free approach: the edge INTO T is the straight seeker
-                    # run-in. Its USABLE straight length (after the turn fillet
-                    # at P bites R*tan(turn/2)) must be at least DSS — checking
-                    # the raw distance would let the fillet steal into the
-                    # seeker leg. Heading already points at T; _check_collision
-                    # below keeps it clear; no fixed goal_heading terminal turn.
-                    if math.hypot(dx, dy) - self.R * math.tan(turn / 2.0) < self._dss:
-                        continue
-                else:
-                    # At the final waypoint W_{n-1} the autonomous aircraft must
-                    # turn from the approach heading onto goal_heading; that
-                    # terminal turn must also be feasible and reserves its bite.
-                    final_turn = abs(_angle_diff(self.goal_state.heading, heading_to_node))
-                    if final_turn > self.alpha_max_rad:
-                        continue
-                    far_reserve = self.R * math.tan(final_turn / 2.0)
-            budget = self._doan_trinh(current_state, math.hypot(dx, dy), turn, far_reserve)
-            if budget is None:
-                continue
-            if not self._check_collision(P, node):
-                continue
-            if config.ARC_CLEARANCE_CHECK and not self._corner_arc_clear(h, P, node):
-                continue
-            cost = math.hypot(dx, dy) + config.TURN_PENALTY_WEIGHT * turn
-            nxt = State(node, heading_to_node)
-            nxt.straight_budget = budget
-            successors.append((nxt, cost))
+            res = self._pivot_candidate(current_state, node, 0.0)
+            if (res is None and config.NUM_PIVOT_SLIDES > 0
+                    and self._last_reject == 'arc'):
+                # Only an ARC rejection is worth retrying. Sliding forward can
+                # only INCREASE the turn, so a candidate already over alpha_max
+                # is hopeless; and a blocked chord is almost never unblocked by
+                # moving the pivot (measured: 1.0%). Retrying every rejection
+                # regardless costs 4 extra collision-checked attempts on the
+                # candidates that dominate dense maps, which is what made
+                # iterations collapse 45335 -> 13851 at K=4.
+                res = self._slide_pivot(current_state, node)
+            if res is not None:
+                successors.append(res)
 
         # NOTE: it is tempting to skip the fan entirely when the goal is
         # already a valid successor ("the fan is only branching noise in open
@@ -459,6 +455,132 @@ class KinodynamicAstar:
                 successors.append((nxt, cost))
 
         return successors
+
+    def _pivot_candidate(self, current, node, advance):
+        """One Strategy-A candidate edge, pivoting `advance` metres along the
+        incoming ray. `advance = 0.0` is the plain corner at `current` and is
+        bit-identical to the pre-slide code; `advance > 0` flies straight
+        through `current` to P' = P + advance*h and turns there instead.
+
+        Returns `(State, cost)` or None. The returned state's waypoint is
+        always `node`; a positive slide is recorded in `State.via` and expanded
+        back into the path by _reconstruct_path.
+        """
+        P = current.waypoint
+        h = current.heading
+        if advance > 0.0:
+            pivot = (P[0] + advance * math.cos(h), P[1] + advance * math.sin(h))
+        else:
+            pivot = P
+        dx = node[0] - pivot[0]
+        dy = node[1] - pivot[1]
+        seg_len = math.hypot(dx, dy)
+        heading_to_node = su.angle_to_heading(pivot, node)
+        turn = abs(_angle_diff(heading_to_node, h))
+        if turn > self.alpha_max_rad:
+            self._last_reject = 'turn'
+            return None
+        # Far-end reserve of this segment: 0 for an interior waypoint (its
+        # turn is unknown here, deferred to that waypoint's expansion); for
+        # the terminal goal the far turn IS known now (onto goal_heading, or
+        # 0 in free mode), so reserve it exactly.
+        far_reserve = 0.0
+        if node is self.goal_state.waypoint:
+            if self._free_goal:
+                # Free approach: the edge INTO T is the straight seeker
+                # run-in. Its USABLE straight length (after the turn fillet
+                # at the pivot bites R*tan(turn/2)) must be at least DSS —
+                # checking the raw distance would let the fillet steal into the
+                # seeker leg. Heading already points at T; _check_collision
+                # below keeps it clear; no fixed goal_heading terminal turn.
+                if seg_len - self.R * math.tan(turn / 2.0) < self._dss:
+                    self._last_reject = 'goal'
+                    return None
+            else:
+                # At the final waypoint W_{n-1} the autonomous aircraft must
+                # turn from the approach heading onto goal_heading; that
+                # terminal turn must also be feasible and reserves its bite.
+                final_turn = abs(_angle_diff(self.goal_state.heading, heading_to_node))
+                if final_turn > self.alpha_max_rad:
+                    self._last_reject = 'goal'
+                    return None
+                far_reserve = self.R * math.tan(final_turn / 2.0)
+        budget = self._doan_trinh(current, seg_len, turn, far_reserve, advance)
+        if budget is None:
+            self._last_reject = 'doan_trinh'
+            return None
+        if advance > 0.0:
+            # The slide is new flying: the extension leg must be clear and stay
+            # inside the operating area. (At advance = 0 this is a no-op leg.)
+            if not self._in_bounds(pivot):
+                self._last_reject = 'bounds'
+                return None
+            if not self._check_collision(P, pivot):
+                self._last_reject = 'ext_leg'
+                return None
+        if not self._check_collision(pivot, node):
+            self._last_reject = 'los'
+            return None
+        if config.ARC_CLEARANCE_CHECK and not self._corner_arc_clear(h, pivot, node):
+            self._last_reject = 'arc'
+            return None
+        self._last_reject = None
+        nxt = State(node, heading_to_node)
+        nxt.straight_budget = budget
+        if advance > 0.0:
+            # Stored with the INCOMING heading: the aircraft reaches the pivot
+            # still on h (it flew straight through P) and turns only there.
+            nxt.via = (pivot, h)
+        return nxt, advance + seg_len + config.TURN_PENALTY_WEIGHT * turn
+
+    def _slide_pivot(self, current, node):
+        """Retry a rejected Strategy-A candidate from pivots slid FORWARD along
+        the incoming ray, P' = P + d*h_in.
+
+        Why forward along the ray and not along the outer bisector: the bisector
+        rotates the incoming leg, so the parent's corner, its turn reserve and
+        every ancestor would have to be re-validated — and re-validating can
+        move them in turn, which is the non-terminating version of this idea.
+        Sliding along the ray keeps the incoming DIRECTION and only lengthens
+        the leg, so nothing upstream changes and _doan_trinh only gains budget.
+        Nothing is mutated either: this emits an ADDITIONAL successor, so there
+        is no fixed point to iterate towards.
+
+        The cost of that safety: with h_in as the x-axis and V - P = (a, b), the
+        resulting turn is |atan2(b, a - d)|, which grows with d. The repair
+        therefore inflates the very fillet it is repairing, and d is capped at
+        a - |b|/tan(alpha_max) (= a at alpha_max = 90 deg). Retry positions are
+        parametrised by that resulting turn in tan-uniform capability buckets
+        (config.NUM_PIVOT_SLIDES), smallest first so the shortest repair wins.
+        """
+        P = current.waypoint
+        h = current.heading
+        ux, uy = math.cos(h), math.sin(h)
+        vx = node[0] - P[0]
+        vy = node[1] - P[1]
+        a = vx * ux + vy * uy               # along-track component of V - P
+        if a <= 0.0:                        # abeam or behind: sliding only hurts
+            return None
+        b = abs(vx * -uy + vy * ux)         # cross-track component
+        if b < 1e-9:                        # collinear: there is no corner
+            return None
+        alpha0 = math.atan2(b, a)           # the turn without any slide
+        K = int(config.NUM_PIVOT_SLIDES)
+        tan_half_max = math.tan(self.alpha_max_rad / 2.0)
+        for i in range(1, K + 1):
+            alpha_i = 2.0 * math.atan((i / K) * tan_half_max)
+            if alpha_i <= alpha0:
+                continue                    # this bucket is behind us (d <= 0)
+            if alpha_i >= math.pi / 2.0 - 1e-9:
+                d = a                       # the perpendicular foot
+            else:
+                d = a - b / math.tan(alpha_i)
+            if d <= 1.0:
+                continue
+            res = self._pivot_candidate(current, node, d)
+            if res is not None:
+                return res
+        return None
 
     def _arc_hop_successors(self, current_state):
         """Successors that ride an inflated circle's boundary.
@@ -1014,7 +1136,15 @@ class KinodynamicAstar:
             states.append(current)
         states.reverse()
 
-        self.raw_route = [(st.waypoint, st.heading) for st in states]
+        # `via` pivots are real waypoints of the searched route (the aircraft
+        # flies straight through the parent and turns at the pivot), so they
+        # belong in raw_route too — unlike arc expansion, which is pure output
+        # discretisation.
+        self.raw_route = []
+        for st in states:
+            if st.via is not None:
+                self.raw_route.append(st.via)
+            self.raw_route.append((st.waypoint, st.heading))
 
         theta_out = math.radians(config.ARC_WAYPOINT_STEP_DEG)
         path = []
@@ -1024,6 +1154,8 @@ class KinodynamicAstar:
                 center, radius, arc_start, s = st.arc_from
                 dphi = ag.arc_angle(arc_start, st.waypoint, center, s)
                 path.extend(ag.arc_waypoints(center, radius, arc_start, dphi, s, theta_out))
+            if st.via is not None:
+                path.append(st.via)
             path.append((st.waypoint, st.heading))
             prev_wp = st.waypoint
         return path
@@ -1262,7 +1394,7 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
     if path is None:
         return _result(None, False, 'no_path')
 
-    path = planner.smooth_path(path)
+    # path = planner.smooth_path(path)
 
     # Final whole-path oracle. The search validates each edge as it goes, but
     # arc expansion, smoothing, and the fixed O->W1 / W_{n-1}->T legs (added
