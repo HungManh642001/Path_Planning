@@ -526,6 +526,24 @@ class KinodynamicAstar:
                     continue
                 nxt = State(dep, ag.tangent_heading(dep, center, s))
                 nxt.arc_from = (center, r_ride, P, s)
+                # A ride ENDS ON THE ARC: at the departure point the aircraft is
+                # still turning, so there is no straight segment yet for a
+                # fillet to bite into. Leaving straight_budget at its `inf`
+                # default let _doan_trinh wave through ANY turn <= alpha_max
+                # right at the departure — contradicting this method's own
+                # contract ("zero turn there") and producing paths the oracle
+                # rejects: batch_random_test seed 6 rode a circle and then banked
+                # 90 deg on the spot, whose 8000 m reserve had to come out of the
+                # ride's last 4535 m expansion chord (usable straight -4683 m,
+                # reported as path_self_collision).
+                #
+                # 0.0 with a -1 m floor means: only a tangent-continuous
+                # continuation may leave the ride; any real turn (reserve
+                # > 1 m, i.e. alpha > 0.015 deg at R = 8000) is deferred until a
+                # straight leg has actually been flown. The floor absorbs float
+                # noise in the tangent heading, nothing more.
+                nxt.straight_budget = 0.0
+                nxt.min_straight_in = -1.0
                 successors.append((nxt, r_ride * dphi))
         return successors
 
