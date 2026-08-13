@@ -122,22 +122,18 @@ def _dubins_arc_path(waypoints, R, step, arc_samples=_ARC_SAMPLES):
         if a_abs < 1e-9:
             _extend_straight(pts, tuple(wp), step)       # no turn: straight to wp
             continue
-        # Tangent inset t = R*tan(alpha/2), clamped so adjacent arcs fit the legs.
+        # Tangent inset t = R*tan(alpha/2) - unchanged radius R.
         t = R * math.tan(a_abs / 2.0)
-        leg_in = math.hypot(wp[0] - wp_prev[0], wp[1] - wp_prev[1])
-        leg_out = math.hypot(wp_next[0] - wp[0], wp_next[1] - wp[1])
-        t = min(t, leg_in * 0.5, leg_out * 0.5)
-        r = t / math.tan(a_abs / 2.0)                    # effective radius after clamp
         s = 1.0 if alpha > 0 else -1.0
         start = (wp[0] - u[0] * t, wp[1] - u[1] * t)     # entry tangent point
         end = (wp[0] + v[0] * t, wp[1] + v[1] * t)       # exit tangent point
         n_in = (-u[1] * s, u[0] * s)                     # inward normal
-        cx, cy = start[0] + r * n_in[0], start[1] + r * n_in[1]   # arc centre
+        cx, cy = start[0] + R * n_in[0], start[1] + R * n_in[1]   # arc centre
         ang0 = math.atan2(start[1] - cy, start[0] - cx)
         _extend_straight(pts, start, step)               # straight leg into the turn
         for k in range(1, arc_samples + 1):
             a = ang0 + s * a_abs * (k / arc_samples)
-            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+            pts.append((cx + R * math.cos(a), cy + R * math.sin(a)))
         turns.append({'start': start, 'mid': tuple(wp), 'end': end,
                       'angle_deg': math.degrees(alpha)})    # +left/CCW, -right/CW
     _extend_straight(pts, tuple(waypoints[-1]), step)     # final straight leg
