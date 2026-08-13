@@ -8,6 +8,22 @@ import math
 from shapely.geometry import Polygon, LineString
 
 
+# Longest interior overlap with a polygon that still counts as "touching the
+# boundary" rather than penetrating it (metres). Sized far above the artefact it
+# exists for -- a tangency point reported as a zero-length interior
+# intersection, measured at 0 to 2.5e-4 m depending on arc sampling -- and far
+# below any clearance that matters operationally, where SAFE_MARGIN is in
+# metres and real crossings run to kilometres.
+POLYGON_TOUCH_TOL_M = 1e-3
+
+# A turn whose fillet bites less than this many metres out of the straight is
+# not a turn: the waypoint is flown straight through and does not split the
+# straight run (see straight_segments_ok). At R = 8000 m this is a turn of
+# 1.4e-5 degrees, so it only ever absorbs float noise in collinear waypoints,
+# never a manoeuvre.
+TURN_RESERVE_TOL_M = 1e-6
+
+
 # NOTE: intentionally re-implements spatial_utils.point_to_line_distance rather than
 # importing it, so this validator stays independent of the planner code it validates.
 def _point_to_segment_distance(p, a, b):
@@ -36,9 +52,22 @@ def _segment_clear(a, b, circle_obstacles, polygon_obstacles, circle_tol=1e-6):
     # allowed: a waypoint may sit on a polygon corner (corners are valid navigation
     # goals, like circle tangent points), and a segment may run ALONG an edge to
     # hug the obstacle boundary. Interior penetration still fails.
+    #
+    # The interior overlap must have POSITIVE MEASURE. 'T********' also matches a
+    # zero-length touch, and that is not a hypothetical: a fillet arc is TANGENT
+    # to a polygon edge whenever the pivot is a hull vertex and the outgoing leg
+    # runs along a hull edge -- the normal case once inflation is only
+    # SAFE_MARGIN, since the hull vertices then lie exactly on the raw polygon.
+    # The discretised arc's tangency point lands a float-hair inside and shapely
+    # reports a Point of length 0 as an interior intersection (batch_random_test
+    # seed 166). Requiring positive length keeps every real crossing -- those are
+    # metres to kilometres long -- while ignoring a touch that has no extent.
     line = LineString([a, b])
     for coords in polygon_obstacles:
-        if Polygon(coords).relate_pattern(line, 'T********'):
+        poly = Polygon(coords)
+        if not poly.relate_pattern(line, 'T********'):
+            continue
+        if poly.intersection(line).length > POLYGON_TOUCH_TOL_M:
             return False
     return True
 
@@ -49,8 +78,8 @@ def segments_clear(path, circle_obstacles, polygon_obstacles, circle_tol=1e-6):
         a = path[i][0]
         b = path[i + 1][0]
         if not _segment_clear(a, b, circle_obstacles, polygon_obstacles, circle_tol):
-            return False
-    return True
+            return False, f"segment {i} blocked ({a} -> {b})"
+    return True, "ok"
 
 
 def _seg_heading(a, b):
@@ -72,7 +101,11 @@ def turn_angles(path):
 
 
 def turn_angles_ok(path, alpha_max_rad):
-    return all(a <= alpha_max_rad + 1e-9 for a in turn_angles(path))
+    angles = turn_angles(path)
+    for i, a in enumerate(angles):
+        if a > alpha_max_rad + 1e-9:
+            return False, f"wp[{i + 1}] {path[i + 1][0]} turn angle {math.degrees(a):.3f}° > alpha_max {math.degrees(alpha_max_rad):.3f}°"
+    return True, "ok"
 
 
 def _seg_len(a, b):
@@ -84,25 +117,45 @@ def straight_segments_ok(path, R, L0, dss):
 
     Returns (ok, detail). alpha at interior waypoints comes from turn_angles();
     endpoints have no turn before/after them (alpha = 0 at O and at T).
+
+    The constraint is about the straight FLOWN BETWEEN TWO TURNS, which is not
+    the same as a segment between two waypoints: a waypoint whose turn is zero
+    is flown straight through and does not split the straight run. The planner
+    emits such waypoints routinely -- an arc-hop departure leaves tangentially,
+    and an along-ray pivot slide deliberately flies straight through the
+    original candidate before turning at the slid pivot -- so consecutive
+    segments are merged across them here. Charging each segment the full reserve
+    of the turns at both its endpoints instead double-counts the split and
+    rejects flyable paths (batch_random_test seed 117: a 1701 m segment between
+    two collinear waypoints was charged the 4000 m fillet of the next real turn,
+    which in fact reaches back harmlessly into the 4100 m segment before it).
     """
     n_seg = len(path) - 1
     if n_seg < 1:
         return True, "trivial"
     alphas = [0.0] + turn_angles(path) + [0.0]  # alpha at each waypoint index
-    for i in range(n_seg):
-        d = _seg_len(path[i][0], path[i + 1][0])
-        a_i = alphas[i]
-        a_next = alphas[i + 1]
-        l = d - R * (math.tan(a_i / 2) + math.tan(a_next / 2))
+    reserves = [R * math.tan(a / 2) for a in alphas]
+
+    # Waypoints that actually bend the path delimit the straight runs; the
+    # endpoints always do (they carry reserve 0 and bound the first/last run).
+    breaks = [0]
+    breaks.extend(i for i in range(1, n_seg) if reserves[i] > TURN_RESERVE_TOL_M)
+    breaks.append(n_seg)
+
+    for k in range(len(breaks) - 1):
+        i, j = breaks[k], breaks[k + 1]
+        d = sum(_seg_len(path[m][0], path[m + 1][0]) for m in range(i, j))
+        l = d - reserves[i] - reserves[j]
+        span = f"wp[{i}]..wp[{j}]" if j > i + 1 else f"segment {i}"
         if i == 0:                       # first đoản trình: l1 >= L0
             if l < L0 - 1.0:
-                return False, f"first segment l={l:.1f} < L0={L0}"
-        elif i == n_seg - 1:             # last đoản trình: ln = l - dss >= 0
+                return False, f"first {span} l={l:.1f} < L0={L0}"
+        elif j == n_seg:                 # last đoản trình: ln = l - dss >= 0
             if l - dss < -1.0:
-                return False, f"last segment usable l={l - dss:.1f} < 0"
+                return False, f"last {span} usable l={l - dss:.1f} < 0"
         else:                            # middle: l > 0
             if l < 1.0:
-                return False, f"middle segment {i} l={l:.1f} <= 0"
+                return False, f"middle {span} l={l:.1f} <= 0"
     return True, "ok"
 
 
@@ -138,8 +191,8 @@ def arcs_clear(path, R, circle_obstacles, polygon_obstacles):
         pts = _arc_points(path[i - 1][0], path[i][0], path[i + 1][0], R)
         for j in range(len(pts) - 1):
             if not _segment_clear(pts[j], pts[j + 1], circle_obstacles, polygon_obstacles):
-                return False
-    return True
+                return False, f"turn arc at wp[{i}] {path[i][0]} blocked ({pts[j]} -> {pts[j + 1]})"
+    return True, "ok"
 
 
 def path_is_valid(path, circle_obstacles, polygon_obstacles, R, alpha_max_rad, L0, dss,
@@ -158,14 +211,19 @@ def path_is_valid(path, circle_obstacles, polygon_obstacles, R, alpha_max_rad, L
     them unset unless you are deliberately reproducing the old model.
     """
     if not path or len(path) < 2:
-        return False
-    if not segments_clear(path, circle_obstacles, polygon_obstacles, circle_tol):
-        return False
-    if not turn_angles_ok(path, alpha_max_rad):
-        return False
+        return False, "path too short"
+    ok, reason = segments_clear(path, circle_obstacles, polygon_obstacles, circle_tol)
+    if not ok:
+        return False, f"segments blocked: {reason}"
+    ok, reason = turn_angles_ok(path, alpha_max_rad)
+    if not ok:
+        return False, f"turn angles invalid: {reason}"
     arc_circles = raw_circle_obstacles if raw_circle_obstacles is not None else circle_obstacles
     arc_polys = raw_polygon_obstacles if raw_polygon_obstacles is not None else polygon_obstacles
-    if not arcs_clear(path, R, arc_circles, arc_polys):
-        return False
-    ok, _ = straight_segments_ok(path, R, L0, dss)
-    return ok
+    ok, reason = arcs_clear(path, R, arc_circles, arc_polys)
+    if not ok:
+        return False, f"turn arcs blocked: {reason}"
+    ok, reason = straight_segments_ok(path, R, L0, dss)
+    if not ok:
+        return False, f"straight segments invalid: {reason}"
+    return True, "ok"

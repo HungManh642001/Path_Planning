@@ -49,5 +49,10 @@ def test_path_is_valid_threads_circle_tol():
     common = dict(circle_obstacles=[(C, R)], polygon_obstacles=[],
                   R=8000.0, alpha_max_rad=math.radians(90), L0=4000.0, dss=23000.0,
                   raw_circle_obstacles=[(C, 1.0)], raw_polygon_obstacles=[])
-    assert pv.path_is_valid(path, **common) is False
-    assert pv.path_is_valid(path, **common, circle_tol=1.0) is True
+    # path_is_valid reports (ok, reason) so plan_trajectory can surface WHICH
+    # constraint failed; only the verdict matters here.
+    ok_strict, reason = pv.path_is_valid(path, **common)
+    assert ok_strict is False, reason
+    assert 'segment' in reason
+    ok_lenient, _ = pv.path_is_valid(path, **common, circle_tol=1.0)
+    assert ok_lenient is True

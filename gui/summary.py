@@ -39,7 +39,7 @@ def compute_summary(result, preprocessed, raw_circles, raw_polys, render_mode, r
         h_out = math.atan2(path[i + 1][0][1] - path[i][0][1], path[i + 1][0][0] - path[i][0][0])
         turns.append(abs(_angle_diff(h_out, h_in)))
 
-    valid = pv.path_is_valid(
+    valid, _reason = pv.path_is_valid(
         path, preprocessed['circle_obstacles'], preprocessed['polygon_obstacles'],
         R, preprocessed['alpha_max_rad'], config.L0, config.DSS)
 

@@ -1223,10 +1223,14 @@ class KinodynamicAstar:
             full_smoothed, self.R, config.L0, self._dss)
         if not ok:
             return path
-        if config.ARC_CLEARANCE_CHECK and not pv.arcs_clear(
+        if config.ARC_CLEARANCE_CHECK:
+            # arcs_clear returns (ok, reason); `not <tuple>` is always False, so
+            # taking the tuple as a bool silently disabled this guard.
+            arcs_ok, _ = pv.arcs_clear(
                 full_smoothed, self.R, self._arc_circles,
-                self.scenario['polygon_obstacles']):
-            return path
+                self.scenario['polygon_obstacles'])
+            if not arcs_ok:
+                return path
         return smoothed
 
     def _smooth_greedy(self, path):
@@ -1408,14 +1412,17 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
     # inflated obstacles (full margin); turn arcs against the raw obstacles
     # (arcs are designed to bulge into the inflation band).
     full = _full_mission_path(path, preprocessed_scenario)
-    valid = pv.path_is_valid(
+    valid, failure_reason = pv.path_is_valid(
         full,
         preprocessed_scenario['circle_obstacles'],
         preprocessed_scenario['polygon_obstacles'],
-        planner.R, planner.alpha_max_rad, config.L0, config.DSS,
+        R=preprocessed_scenario['turn_radius'], 
+        alpha_max_rad=preprocessed_scenario['alpha_max_rad'],
+        L0=preprocessed_scenario['start_state']['straight_length'],
+        dss=preprocessed_scenario['goal_state']['engagement_distance'],
         circle_tol=config.CIRCLE_GRAZE_TOL_M)
     if not valid:
-        return _result(path, False, 'path_self_collision')
+        return _result(path, False, failure_reason)
 
     if verbose:
         print(f"Path found with {len(path)} waypoints")

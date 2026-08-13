@@ -35,7 +35,7 @@ def _run(seed):
         full = tr.build_full_path(res['path'], pre)
         rawc = [(o['center'], o['radius']) for o in scen['obstacles'] if o['type'] == 'circle']
         rawp = [o['polygon'] for o in scen['obstacles'] if o['type'] == 'polygon']
-        valid = pv.path_is_valid(
+        valid, _reason = pv.path_is_valid(
             full, pre['circle_obstacles'], pre['polygon_obstacles'],
             config.R, config.ALPHA_MAX_RAD, config.L0, config.DSS,
             raw_circle_obstacles=rawc, raw_polygon_obstacles=rawp)
