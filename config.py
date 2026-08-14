@@ -167,6 +167,13 @@ RADIAL_FAN_STEP_M = 100.0
 # 0 disables the mechanism entirely (the A/B knob).
 NUM_PIVOT_SLIDES = 4
 
+# Largest O..T node count smooth_path will run its exact DP on. The DP is
+# O(m^3) transitions with one turn-arc check each, which is nothing at the sizes
+# this planner produces (measured over 114 paths: median 9 nodes, max 21, 2.4 ms
+# per path) but would be wasteful on a pathological input. Above this the path
+# is returned unsmoothed rather than spending the time budget here.
+SMOOTH_MAX_NODES = 64
+
 # Escape-valve budget: number of expansions that may ALSO get the radial fan
 # while the goal is line-of-sight blocked (cheap reorientation moves, e.g.
 # recovering from an adverse initial heading). Fallback/riding fans are not

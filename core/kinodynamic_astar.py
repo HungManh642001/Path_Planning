@@ -31,6 +31,12 @@ _ARC_CLEAR_BULGE = 1.0 / math.cos(math.pi / 8.0)
 # metres. Matches the threshold historically used by validate_kinodynamics.
 _MIN_STRAIGHT_M = 10.0
 
+# How far the first smoothed chord may deviate from start_heading (radians).
+# No turn is available at the takeoff point, so the first kept waypoint must sit
+# on the takeoff ray; the tolerance only absorbs float noise (the measured spread
+# between bearing(O -> W1) and start_heading is at most 4e-15 rad).
+_TAKEOFF_RAY_TOL_RAD = 1e-9
+
 
 class State:
     """Represents an autonomous aircraft state: (waypoint, heading)"""
@@ -1161,154 +1167,162 @@ class KinodynamicAstar:
         return path
     
     def smooth_path(self, path):
-        """
-        Smooth the path by shortcutting to the FARTHEST reachable waypoint, then
-        guard the result's đoản-trình.
+        """Shortest FEASIBLE subsequence of the reconstructed path, by exact DP.
 
-        The greedy shortcutter (`_smooth_greedy`) scans from each kept anchor to
-        the farthest waypoint whose direct chord is collision-free and
-        kinodynamically valid one-segment-at-a-time. But đoản-trình couples
-        adjacent segments through the turn they share: a later shortcut that
-        sharpens the turn at an already-kept anchor retroactively steals straight
-        length from the segment INTO that anchor and can drive its usable
-        straight negative — a physically unflyable path the per-segment check
-        cannot see (root cause of the đoản-trình oracle failures). So we
-        re-validate the whole smoothed path's straight segments; if any is
-        violated we return the UN-smoothed search path instead, which the search
-        validated edge by edge (straight_budget bookkeeping) and is valid end to
-        end. Correctness over cosmetics — a coupling-aware smoother that keeps
-        the shortcut without this fallback is future work.
+        The path is short (median 9 waypoints once O and T are included, 21 at
+        the worst measured), so the optimum is affordable and there is no reason
+        to settle for a greedy shortcut plus a fallback.
 
-        The TURN ARCS need the same guard, for the same reason: a shortcut
-        changes the turn angle at every anchor it touches, so the fillet arcs the
-        greedy pass never checked are not the arcs that get flown. This was
-        invisible while inflation carried the alpha_max turn term (3.3 km of
-        margin proved those arcs for free); with inflation reduced to
-        SAFE_MARGIN it is the single largest source of `path_self_collision`
-        (measured: 5 of 25 scenarios, all recovered by this guard).
+        Why a plain shortcutter cannot do this. Đoản trình couples adjacent
+        chords through the turn they share: dropping a waypoint sharpens the turn
+        at its neighbour, which retroactively steals straight length from the
+        chord INTO that neighbour. A one-chord-at-a-time scan cannot see that, so
+        the previous implementation checked the whole result afterwards and threw
+        ALL of it away on violation — measured over 200 seeds, that discarded
+        25% of its own work (46 of 48 discards were turn-arc clearance, which the
+        greedy scan never looked at while choosing) and captured only 11 km of
+        the 56 km available.
 
-        Args:
-            path: List of (waypoint, heading) tuples
+        The DP instead carries the coupling in the state, exactly the way the
+        search itself does with `State.straight_budget`:
 
-        Returns:
-            Smoothed path, or the input path unchanged when smoothing would
-            break a đoản-trình reserve or a turn-arc clearance.
+            state  (u, v)  = the last two kept waypoints
+            budget         = straight left on chord u->v after its NEAR fillet
+            step   (u,v) -> (v,w) reveals the turn at v, which is the FAR fillet
+                           of chord u->v and the NEAR fillet of chord v->w
+
+        so every chord is validated with both of its fillets known, at the first
+        moment both are known. O and T are nodes of the graph rather than
+        something a guard patches up afterwards, which is what enforces the
+        takeoff leg (l1 >= L0, and no turn is available at O so the first chord
+        must lie along start_heading) and the terminal seeker run-in (>= DSS).
+
+        Several predecessors can reach the same (u, v) with different budgets, so
+        entries are kept under dominance: more budget AND lower cost wins. In
+        practice that leaves one or two entries per state.
+
+        Returns a path in the same shape as the input (interior waypoints, O not
+        included; T only if the input ended there). Falls back to the input
+        unchanged if the DP finds nothing, which can only happen when the input
+        itself violates the model.
         """
         if len(path) < 3:
             return path
 
-        smoothed = self._smooth_greedy(path)
-
-        # Guard the coupling the greedy pass cannot see. Build the full O..T
-        # path (the flown legs) and check the min-straight reserves geometrically
-        # — the same test the final oracle applies. On violation, fall back to
-        # the search path, which is đoản-trình-valid by construction.
-        O = self.scenario['start_pos']
-        T = self.scenario['goal_pos']
-        gh = self.scenario.get('goal_heading')
-
-        def _full(wps):
-            out = list(wps)
-            if O is not None and (not out or math.dist(O, out[0][0]) > 1.0):
-                out = [(tuple(O), self.scenario.get('start_heading', 0.0))] + out
-            if T is not None and (not out or math.dist(T, out[-1][0]) > 1.0):
-                h = gh
-                if h is None:
-                    h = math.atan2(T[1] - out[-1][0][1], T[0] - out[-1][0][0]) if out else 0.0
-                out = out + [(tuple(T), h)]
-            return out
-
-        full_smoothed = _full(smoothed)
-        ok, _ = pv.straight_segments_ok(
-            full_smoothed, self.R, config.L0, self._dss)
-        if not ok:
+        O = self.scenario.get('start_pos')
+        T = self.scenario.get('goal_pos')
+        wps = [w for w, _ in path]
+        head = 0
+        if O is not None and math.dist(O, wps[0]) > 1.0:
+            wps = [tuple(O)] + wps
+            head = 1
+        tail = 0
+        if T is not None and math.dist(T, wps[-1]) > 1.0:
+            wps = wps + [tuple(T)]
+            tail = 1
+        m = len(wps)
+        if m < 3:
             return path
-        if config.ARC_CLEARANCE_CHECK:
-            # arcs_clear returns (ok, reason); `not <tuple>` is always False, so
-            # taking the tuple as a bool silently disabled this guard.
-            arcs_ok, _ = pv.arcs_clear(
-                full_smoothed, self.R, self._arc_circles,
-                self.scenario['polygon_obstacles'])
-            if not arcs_ok:
-                return path
-        return smoothed
+        # The DP is O(m^3) transitions with an arc check each. That is nothing at
+        # the sizes this planner produces, but a pathological path should not be
+        # allowed to spend the whole time budget here.
+        if m > config.SMOOTH_MAX_NODES:
+            return path
 
-    def _smooth_greedy(self, path):
-        """Greedy farthest-reachable shortcutter. From each kept anchor, scan
-        inward from the farthest waypoint and jump to the farthest one whose
-        chord is collision-free and passes validate_kinodynamics at both ends
-        (turn <= alpha_max + đoản trình using that waypoint's search neighbour
-        as the onward turn). The one-segment view can still leave a globally
-        infeasible đoản-trình coupling — smooth_path re-checks and guards it."""
-        n = len(path)
-        smoothed = [path[0]]
-        i = 0
-        while i < n - 1:
-            anchor_wp = smoothed[-1][0]
-            # Geometric inbound heading at the anchor (bearing from the previous
-            # KEPT waypoint); the first anchor uses the start heading.
-            if len(smoothed) >= 2:
-                anchor_h = su.angle_to_heading(smoothed[-2][0], anchor_wp)
-            else:
-                anchor_h = path[0][1]
+        R = self.R
+        amax = self.alpha_max_rad
+        L0 = self.scenario['start_state'].get('straight_length', config.L0)
+        dss = self._dss
+        start_h = self.scenario['start_state']['heading']
 
-            best = i + 1
-            for j in range(n - 1, i, -1):
-                target_wp = path[j][0]
-                heading_to = su.angle_to_heading(anchor_wp, target_wp)
-                # First-anchor L0 guard: when the anchor is path[0] (the
-                # seeded takeoff corner), a shortcut changes the first turn
-                # alpha_1, and the incoming O->corner leg must still keep
-                # l1 = d(O, corner) - R*tan(alpha_1/2) >= L0.
-                if len(smoothed) == 1:
-                    a1_new = abs(_angle_diff(heading_to, anchor_h))
-                    d0 = math.dist(self.scenario['start_pos'], anchor_wp)
-                    l0_req = self.scenario['start_state']['straight_length']
-                    if d0 - self.R * math.tan(a1_new / 2.0) < l0_req - config.EPS:
+        # Chord geometry, computed once. `clear` uses the planner's own collision
+        # test so the smoothed path obeys the safezone too, not just obstacles.
+        dist = [[0.0] * m for _ in range(m)]
+        brg = [[0.0] * m for _ in range(m)]
+        clear = [[False] * m for _ in range(m)]
+        for i in range(m):
+            for j in range(i + 1, m):
+                dist[i][j] = math.dist(wps[i], wps[j])
+                brg[i][j] = math.atan2(wps[j][1] - wps[i][1], wps[j][0] - wps[i][0])
+                clear[i][j] = self._check_collision(wps[i], wps[j])
+
+        arc_memo = {}
+
+        def arc_ok(u, v, w):
+            if not config.ARC_CLEARANCE_CHECK:
+                return True
+            key = (u, v, w)
+            hit = arc_memo.get(key)
+            if hit is None:
+                hit = self._corner_arc_clear(brg[u][v], wps[v], wps[w])
+                arc_memo[key] = hit
+            return hit
+
+        # entry = (budget, cost, prev_key, prev_entry); by_cur[v][u] = [entry...]
+        by_cur = defaultdict(dict)
+        for j in range(1, m):
+            if not clear[0][j]:
+                continue
+            # No turn is available at O: the aircraft leaves along start_heading,
+            # so the first kept waypoint must sit on that ray.
+            if abs(_angle_diff(brg[0][j], start_h)) > _TAKEOFF_RAY_TOL_RAD:
+                continue
+            by_cur[j][0] = [(dist[0][j], dist[0][j], None, None)]
+
+        best = None
+        for v in range(1, m):
+            for u, entries in by_cur[v].items():
+                for entry in entries:
+                    budget, cost = entry[0], entry[1]
+                    if v == m - 1:
+                        # Terminal: the fillet at T is zero, so the whole
+                        # remaining budget is the seeker run-in.
+                        if budget >= dss - config.EPS and (best is None or cost < best[1]):
+                            best = ((u, v), cost, entry)
                         continue
-                # Onward waypoint after target = the far-end turn of the
-                # anchor->target chord. Known here (path[j+1], or the goal leg),
-                # so pass it to validate BOTH ends of the chord exactly instead
-                # of the alpha_max worst case. For the free-goal terminal there
-                # is no onward turn (the chord is the straight run-in into T).
-                if j == n - 1 and self._free_goal:
-                    onward_wp = onward_h = None
-                elif j == n - 1:
-                    # The flown leg is path[-1] -> T = goal_pos at goal_heading;
-                    # use those, not the offset goal_state.waypoint which sits up
-                    # to GOAL_THRESHOLD away and would spuriously fail the length.
-                    onward_wp = self.scenario['goal_pos']
-                    onward_h = self.scenario['goal_heading']
-                else:
-                    onward_wp = path[j + 1][0]
-                    onward_h = su.angle_to_heading(target_wp, onward_wp)
+                    for w in range(v + 1, m):
+                        if not clear[v][w]:
+                            continue
+                        turn = abs(_angle_diff(brg[v][w], brg[u][v]))
+                        if turn > amax + 1e-9:
+                            continue
+                        reserve = R * math.tan(turn / 2.0)
+                        # Far end of chord u->v, now that the turn at v is known.
+                        need = L0 if u == 0 else _MIN_STRAIGHT_M
+                        if budget - reserve < need - config.EPS:
+                            continue
+                        if not arc_ok(u, v, w):
+                            continue
+                        nb = dist[v][w] - reserve
+                        nc = cost + dist[v][w]
+                        lst = by_cur[w].setdefault(v, [])
+                        if any(b >= nb - 1e-9 and c <= nc + 1e-9 for b, c, _, _ in lst):
+                            continue
+                        lst[:] = [e for e in lst
+                                  if not (nb >= e[0] - 1e-9 and nc <= e[1] + 1e-9)]
+                        lst.append((nb, nc, (u, v), entry))
 
-                is_valid, _ = prep.validate_kinodynamics(
-                    anchor_wp, anchor_h, target_wp, heading_to,
-                    w_next_next=onward_wp, heading_next_next=onward_h,
-                    R=self.R, alpha_max=self.alpha_max_rad)
-                if not is_valid:
-                    continue
+        if best is None:
+            return path
 
-                # Onward feasibility: the terminal run-in must stay >= DSS in
-                # free mode; otherwise the target->onward turn must be flyable.
-                if j == n - 1 and self._free_goal:
-                    turn_anchor = abs(_angle_diff(heading_to, anchor_h))
-                    usable = math.dist(anchor_wp, target_wp) - self.R * math.tan(turn_anchor / 2.0)
-                    is_next_valid = usable >= self._dss - config.EPS
-                else:
-                    is_next_valid, _ = prep.validate_kinodynamics(
-                        target_wp, heading_to, onward_wp, onward_h,
-                        R=self.R, alpha_max=self.alpha_max_rad)
-                if is_next_valid and self._check_collision(anchor_wp, target_wp):
-                    best = j
-                    break
+        key, _cost, entry = best
+        seq = []
+        while entry is not None:
+            seq.append(key[1])
+            prev_key, prev_entry = entry[2], entry[3]
+            if prev_key is None:
+                seq.append(key[0])
+                break
+            key, entry = prev_key, prev_entry
+        seq.reverse()
 
-            smoothed.append(path[best])
-            i = best
+        out = []
+        for idx in range(1 if head else 0, len(seq) - 1 if tail else len(seq)):
+            node = seq[idx]
+            h = brg[seq[idx - 1]][node] if idx > 0 else path[0][1]
+            out.append((wps[node], h))
+        return out if len(out) >= 1 else path
 
-        return smoothed
-    
     def get_search_stats(self):
         """Return search statistics"""
         return {
@@ -1398,7 +1412,7 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
     if path is None:
         return _result(None, False, 'no_path')
 
-    # path = planner.smooth_path(path)
+    path = planner.smooth_path(path)
 
     # Final whole-path oracle. The search validates each edge as it goes, but
     # arc expansion, smoothing, and the fixed O->W1 / W_{n-1}->T legs (added
