@@ -31,6 +31,7 @@ def generate_random_islands(num_islands, map_bounds, start=None, goal=None, topo
         np.random.seed(seed)
     
     islands = []
+    placed = []          # Polygon form of `islands`, for the separation test
     width, height = map_bounds
 
     attempts = 0
@@ -80,19 +81,29 @@ def generate_random_islands(num_islands, map_bounds, start=None, goal=None, topo
             
             island.append((x, y))
         
+        island_polygon = Polygon(island)
+
+        # Islands must not overlap each other, the same rule the circle
+        # generator enforces. Compared as real polygon distance rather than a
+        # centre-distance heuristic, so irregular shapes are handled exactly.
+        valid = all(island_polygon.distance(p) >= config.ISLAND_MIN_SEPARATION_M
+                    for p in placed)
+
         # Check start, goal located within obstacle-free zone (buffer zone)
-        buffer_zone = config.EPS  # meters
-        if start and goal:
+        if valid and start and goal:
             start_pt = Point(start)
             goal_pt = Point(goal)
-            island_polygon = Polygon(island)
+            if (island_polygon.distance(start_pt) < config.SPAWN_CLEARANCE_M
+                    or island_polygon.distance(goal_pt) < config.SPAWN_CLEARANCE_M):
+                valid = False
 
-            if island_polygon.distance(start_pt) < buffer_zone or island_polygon.distance(goal_pt) < buffer_zone:
-                attempts += 1
-                continue
-        
-        islands.append(island)
-    
+        if valid:
+            islands.append(island)
+            placed.append(island_polygon)
+            attempts = 0
+        else:
+            attempts += 1
+
     return islands
 
 
@@ -164,13 +175,13 @@ def generate_dynamic_obstacles(num_sites, map_bounds, start=None, goal=None, top
                 break
         
         # Check start, goal located within obstacle-free zone (buffer zone)
-        buffer_zone = config.EPS  # meters
         if valid and start and goal:
             start_pt = Point(start)
             goal_pt = Point(goal)
             obstacle_circle = Point(center).buffer(radius)
 
-            if obstacle_circle.distance(start_pt) < buffer_zone or obstacle_circle.distance(goal_pt) < buffer_zone:
+            if (obstacle_circle.distance(start_pt) < config.SPAWN_CLEARANCE_M
+                    or obstacle_circle.distance(goal_pt) < config.SPAWN_CLEARANCE_M):
                 valid = False
         
         if valid:

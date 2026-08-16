@@ -314,6 +314,23 @@ ISLAND_SIZE_MAX = 30000.0
 ISLAND_VERTICES_MIN = 4
 ISLAND_VERTICES_MAX = 8
 
+# Minimum gap (m) between two generated islands, mirroring the separation the
+# circle generator has always enforced. Without it islands overlap freely:
+# measured over 200 scenarios, 183 contained overlapping pairs (median 7, max
+# 62) and 21.2% of polygon hull vertices sat buried INSIDE another polygon —
+# candidates the search re-tests and re-rejects on every expansion.
+# This is a shape constraint, not a flyability one: at R = 8000 m a 500 m
+# corridor is unusable either way, the point is that the obstacle set stays
+# geometrically well-formed.
+ISLAND_MIN_SEPARATION_M = 500.0
+
+# Minimum clearance (m) required between start/goal and any generated obstacle.
+# This used to read config.EPS, i.e. 1e-6 m — a buffer that permitted an
+# obstacle to touch the start point. Measured at that setting: 16% of scenarios
+# put start or goal closer than L0 to an obstacle, so the mandatory takeoff or
+# run-in leg was born blocked.
+SPAWN_CLEARANCE_M = 5000.0
+
 # ====== UTILS ======
 import math
 

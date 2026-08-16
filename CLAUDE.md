@@ -51,6 +51,32 @@ render/                   drawing (consumes the planner path)
 gui/                      interactive Tk app (config | map | results)
 ```
 
+### Scenario generation (core/map_generator.py) — two rules that were missing
+
+Every scenario, including the 16 named presets, builds its obstacles through
+`generate_random_islands` / `generate_dynamic_obstacles` (seeded); only the
+start/goal and counts are hand-set. Two constraints are enforced there and are
+easy to reintroduce as bugs:
+
+- **Same-type obstacles must not overlap.** Circles always had a separation
+  test; islands had none, so they overlapped freely (measured over 200
+  scenarios: 183 with overlapping pairs, median 7, max 62) and **21.2% of
+  polygon hull vertices sat buried inside another polygon** — candidates the
+  search re-tests and re-rejects on every expansion. Now gated by
+  `ISLAND_MIN_SEPARATION_M`. Cross-type overlap (island vs circle) is still
+  allowed and is common (100/100 scenarios).
+- **Start and goal need real clearance.** The buffer was `config.EPS`, i.e.
+  1e-6 m, which permitted an obstacle to touch the start point; 16% of scenarios
+  put start or goal closer than `L0` to an obstacle, so the mandatory takeoff or
+  seeker leg was born blocked. Now `SPAWN_CLEARANCE_M`. This is where most
+  `start_leg_blocked` / `goal_leg_blocked` results came from — they were
+  **generator artifacts, not hard scenarios**: fixing it took free-goal
+  `start_leg_blocked` 2→0 and adverse `goal_leg_blocked` 10→7.
+
+Consequence to remember: any change here **moves every random benchmark**, so
+numbers are only comparable within one generator version (see also the note
+that `batch_random_test` drifts).
+
 ### The two dict shapes that flow through the pipeline
 
 - **scenario** (from `map_generator`): `start`, `start_heading`, `goal`, `goal_heading`, `islands` (list of polygons), `dynamic_obstacles` (list of `(center, radius)`), and a unified `obstacles` list where each item is `{'type': 'polygon', 'polygon': [...]}` or `{'type': 'circle', 'center', 'radius'}`.
