@@ -324,6 +324,14 @@ ISLAND_VERTICES_MAX = 8
 # geometrically well-formed.
 ISLAND_MIN_SEPARATION_M = 500.0
 
+# Same rule for circles, measured between the two BOUNDARIES: two sites are
+# separated when dist(centres) >= r_i + r_j + this. The old code compared
+# against a flat 2*OBSTACLE_RADIUS_MAX + 500 = 100.5 km instead, charging every
+# pair the worst-case radius — on a 500 km map that capped the field at ~13
+# circles no matter how many were asked for (measured: median 6, max 13 when
+# requesting 0-50).
+CIRCLE_MIN_SEPARATION_M = 500.0
+
 # Minimum clearance (m) required between start/goal and any generated obstacle.
 # This used to read config.EPS, i.e. 1e-6 m — a buffer that permitted an
 # obstacle to touch the start point. Measured at that setting: 16% of scenarios

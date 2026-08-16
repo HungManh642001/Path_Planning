@@ -131,10 +131,8 @@ def generate_dynamic_obstacles(num_sites, map_bounds, start=None, goal=None, top
     dynamic_obstacles = []
     width, height = map_bounds
     
-    min_separation = max_radius * 2 + 500  # Minimum distance between dynamic obstacles
-    
     attempts = 0
-    max_attempts = 100
+    max_attempts = 1000
 
     # Calculate the geometric parameters between start and goal 
     mx, my = (start[0] + goal[0]) / 2, (start[1] + goal[1]) / 2             # midpoint
@@ -165,12 +163,16 @@ def generate_dynamic_obstacles(num_sites, map_bounds, start=None, goal=None, top
         # Random radius
         radius = random.uniform(min_radius, max_radius)
         
-        # Check minimum separation from existing sites
+        # Check minimum separation from existing sites. The gap is measured
+        # between the two BOUNDARIES (r_i + r_j + gap), not against a flat
+        # 2*max_radius heuristic: charging every pair the worst-case radius made
+        # the effective spacing 100.5 km on a 500 km map, which capped the map
+        # at ~13 circles however many were requested.
         valid = True
         for existing_center, existing_radius in dynamic_obstacles:
-            dist = math.sqrt((center[0] - existing_center[0])**2 + 
-                            (center[1] - existing_center[1])**2)
-            if dist < min_separation:
+            dist = math.hypot(center[0] - existing_center[0],
+                              center[1] - existing_center[1])
+            if dist < radius + existing_radius + config.CIRCLE_MIN_SEPARATION_M:
                 valid = False
                 break
         
