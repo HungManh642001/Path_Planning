@@ -253,6 +253,11 @@ class KinodynamicAstar:
                     continue
                 if not self._check_collision(P, next_waypoint):
                     continue
+                # A fan leg turns at P just like a Strategy-A corner does, so its
+                # fillet needs the same gate. Skipping it here is invisible on
+                # sparse maps and costs 11/1000 missions on dense ones.
+                if config.ARC_CLEARANCE_CHECK and not self._corner_arc_clear(h, P, next_waypoint):
+                    continue
                 budget = self._doan_trinh(current_state, distance_next, turn)
                 if budget is None:
                     continue
@@ -363,11 +368,33 @@ class KinodynamicAstar:
         """True iff the radius-R fillet arc rounding corner `w` is clear, using
         the oracle's own arc geometry so the search rejects exactly the corners
         the final validation would. `h_in` is the incoming heading.
+
+        The whole arc is tested as ONE polyline rather than segment by segment:
+        the shapely work (LineString, tree query, safezone `covers`) is what
+        costs, and doing it per sub-segment made this gate 41% of run time.
         """
         prev = (w[0] - math.cos(h_in), w[1] - math.sin(h_in))
         pts = pv._arc_points(prev, w, w_next, self.R, n=config.ARC_CHECK_SAMPLES)
-        for j in range(len(pts) - 1):
-            if not self._check_collision(pts[j], pts[j + 1]):
+        if not pts:
+            return True
+
+        # Circles: scalar point-to-segment, no geometry objects built.
+        for center, radius in self.scenario['circle_obstacles']:
+            for j in range(len(pts) - 1):
+                if su.point_to_line_distance(center, pts[j], pts[j + 1]) < radius:
+                    return False
+
+        line = None
+        if self._poly_tree is not None:
+            line = LineString(pts)
+            for idx in self._poly_tree.query(line):
+                if self._polygons[idx].relate_pattern(line, 'T********'):
+                    return False
+
+        if self._safezone is not None:
+            if line is None:
+                line = LineString(pts)
+            if not self._safezone.covers(line):
                 return False
         return True
 
