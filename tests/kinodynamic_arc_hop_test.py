@@ -28,8 +28,11 @@ def test_arc_hop_successors_from_riding_state():
     pre = prep.prepare_scenario(synthetic_circle_scenario())
     planner = astar.KinodynamicAstar(pre)
     (_, r_inf), = pre['circle_obstacles']
-    # Riding geometry is built on the lifted radius r_ride = r + delta.
-    r_ride = r_inf + config.CONSTRUCTION_CLEARANCE_M
+    # Riding geometry is built on the lifted radius r_ride = r + delta, where
+    # delta is the operational stand-off PLUS the float-rounding guard — the two
+    # are added, not merged, so a stand-off of 0 still leaves geometry strictly
+    # clear of the exact-checked boundary.
+    r_ride = r_inf + config.CONSTRUCTION_CLEARANCE_M + config.GEOM_EPS_M
     P = (CENTER[0], CENTER[1] - r_ride)  # due south, heading east => CCW
     st = astar.State(P, 0.0)
     succ = planner._arc_hop_successors(st)
@@ -103,6 +106,8 @@ def test_fan_added_while_riding_boundary():
     st = astar.State(P, 0.0)
     succ = planner.get_next_states(st)
     assert any(s_.arc_from is not None for s_, _ in succ)  # arc-hops present
+    # Full worst-case reach: a fan point is a free-space pivot and must leave
+    # room for an alpha_max turn at BOTH ends (near reserve + far reserve).
     fan_dist = 2 * config.R * math.tan(config.ALPHA_MAX_RAD / 2) + config.RADIAL_FAN_STEP_M
     assert any(s_.arc_from is None
                and math.isclose(math.dist(s_.waypoint, P), fan_dist, rel_tol=1e-9)
@@ -187,12 +192,17 @@ def test_dep_cache_memoizes_and_preserves_successor_set():
     assert first_targets == fresh_targets
 
 
-def test_escape_valve_fan_when_goal_occluded():
+def test_escape_valve_fan_when_goal_occluded(monkeypatch):
     """With the goal LOS-blocked and budget remaining, the fan augments
     Strategy A successors; once the budget is exhausted it does not."""
+    # This exercises the GLOBAL escape-valve budget mechanic specifically, so
+    # pin that mode (the hybrid per-path mode uses consec_b, not num_strategy_b).
+    monkeypatch.setattr(config, 'STRATEGY_B_CONSECUTIVE', False)
     pre = prep.prepare_scenario(synthetic_circle_scenario())
     planner = astar.KinodynamicAstar(pre)
     st = astar.State(pre['start_state']['waypoint'], pre['start_state']['heading'])
+    # Full worst-case reach: a fan point is a free-space pivot and must leave
+    # room for an alpha_max turn at BOTH ends (near reserve + far reserve).
     fan_dist = 2 * config.R * math.tan(config.ALPHA_MAX_RAD / 2) + config.RADIAL_FAN_STEP_M
 
     succ = planner.get_next_states(st)

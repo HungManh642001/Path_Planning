@@ -329,3 +329,38 @@ def rad_to_deg(radians):
 ALPHA_MAX_RAD = deg_to_rad(ALPHA_MAX)
 
 EPS = 1e-6
+
+# ====== ROUNDING GUARDS (construction side only) ======
+# Float64 rounding pads. These exist so that geometry BUILT to sit exactly on a
+# limit is not rejected by the exact check that follows: a chord constructed
+# tangent to a circle has distance-to-centre == r in exact arithmetic, but lands
+# a few ULP either side in practice. Measured on this planner (2440 tangents,
+# coordinates ~2e5 m): |dist - r| median 7.3e-12 m, max 7.5e-11 m ~= 1 ULP, and
+# 43.3% of tangents fell INSIDE the circle, i.e. self-rejected against the exact
+# `dist < radius` test.
+#
+# Use them ONLY when CONSTRUCTING geometry, never to soften a check — a check
+# with slack forgives a real intrusion and destroys the guarantee that a
+# reported clearance is the true one.
+#
+# Pad TOWARDS FEASIBILITY, which is not always "+": add to an obstacle radius,
+# but SUBTRACT from a turn limit (build alpha <= alpha_max - GEOM_EPS_RAD) and
+# build straight runs LONGER than their floor. Adding to alpha_max would
+# construct the very violation the pad is meant to prevent.
+#
+# Magnitude: an absolute pad must clear one ULP at the largest coordinate in
+# play. ULP is ~1.2e-10 m at the 500 km map edge and ~2.3e-10 m at y ~ 1.15e6
+# (real missions), so 1e-8 m keeps ~25x headroom while remaining 1e-12 of the
+# 8 km turn radius, i.e. geometrically meaningless. Do NOT raise it into
+# millimetres to "be safe": measured, a 1e-3 m pad already costs 1.7-2.5% path
+# length, and a 1 m pad costs the same while buying nothing extra. That cost is
+# a STAND-OFF, which is what SAFE_MARGIN / CONSTRUCTION_CLEARANCE_M are for.
+GEOM_EPS_M = 1e-8
+
+# Angular twin of GEOM_EPS_M. Measured: 0.31% of turn decisions sit within
+# 1e-12 rad of alpha_max (they are the fan rungs and start corners built to
+# afford exactly alpha_max), and widening the band from 1e-12 to 1e-3 rad only
+# grows that set from 1410 to 1707 — so the population is genuinely AT the
+# limit, and 1e-9 rad clears it with three orders to spare. 1e-9 rad over an
+# 8 km radius is 8 microns of arc.
+GEOM_EPS_RAD = 1e-9

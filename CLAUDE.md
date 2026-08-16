@@ -167,6 +167,28 @@ consequence for expectations: on the named presets smoothing now buys **node
 reduction, not length** (14→7, 15→9 nodes, ~0 km); the old "scenario_04 saves
 ~10 km" figure *was* the illegal shortcut.
 
+**Rounding is absorbed when CONSTRUCTING, never forgiven when CHECKING.**
+Geometry built to sit exactly on a limit gets rejected by the exact check that
+follows — measured, **43% of tangent points fell inside their own circle** by
+~1e-11 m (1 ULP). So every construction lifts by `CONSTRUCTION_CLEARANCE_M +
+GEOM_EPS_M`: an operational stand-off (may be 0) **plus** a rounding guard
+(never 0), added rather than merged. Pad **towards feasibility** — that means
+`+` on an obstacle radius but `−` on a turn limit and *longer* on a straight
+floor; `+EPS` on `α_max` would construct the violation it is meant to prevent.
+Checks then carry no slack at all (measured free once construction has margin:
+the final leg is never closer than 8 km to the DSS threshold).
+
+Two traps this exposed, both worth remembering:
+- **`config.EPS` is dimensionless by accident.** `dx*dx + dy*dy < config.EPS`
+  compares **squared** metres, so a "1 µm" constant was really a 1 mm cutoff.
+  Use `GEOM_EPS_M`/`GEOM_EPS_RAD`, squared where the quantity is squared.
+- **A classifier tolerance must track the construction lift.** v0's
+  `_on_circle_boundary` used a fixed 1e-6 m; once tangents were built at
+  `r + 1e-3` or more, *nothing* classified as boundary-riding and the wrap step
+  silently switched off — which is what made a larger lift look like a 2.4%
+  path-length cost. With the tolerance tracking the lift, the 1 m stand-off
+  costs nothing.
+
 Collision checks are **exact** (zero tolerance): a circle is hit iff the
 (inlined) point-to-segment distance is `< radius` — `CIRCLE_GRAZE_TOL_M` is
 deprecated (`0.0`). Feasibility of boundary-riding chords comes from the

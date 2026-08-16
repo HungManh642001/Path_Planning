@@ -110,6 +110,15 @@ class KinodynamicAstar:
         self.R = preprocessed_scenario['turn_radius']
         self.alpha_max_rad = preprocessed_scenario['alpha_max_rad']
 
+        # Lift applied when CONSTRUCTING circle geometry, so a tangent chord is
+        # strictly clear of the exact-checked boundary instead of landing on it.
+        # Two separate reasons, added not merged: CONSTRUCTION_CLEARANCE_M is an
+        # operational stand-off (may be 0), GEOM_EPS_M is the rounding guard
+        # (never 0). Without it 43% of tangents fall inside the circle by ~1e-11 m
+        # and are rejected by their own collision test.
+        self._construct_delta = (config.CONSTRUCTION_CLEARANCE_M
+                                 + config.GEOM_EPS_M)
+
         # Seeded start corners
         O = preprocessed_scenario['start_pos']
         u_start = preprocessed_scenario['start_state']['heading']
@@ -195,14 +204,18 @@ class KinodynamicAstar:
         goal_wp = self.goal_state.waypoint
         candidates = []
         for center, radius in self.scenario['circle_obstacles']:
-            candidates.extend(su.circle_tangent_points(P, center, radius))
+            candidates.extend(su.circle_tangent_points(
+                P, center, radius + self._construct_delta))
         candidates.extend(self._poly_vertices)
         candidates.append(goal_wp)
 
         for node in candidates:
             dx = node[0] - P[0]
             dy = node[1] - P[1]
-            if dx * dx + dy * dy < config.EPS:
+            # Degenerate zero-length edge. Compared in SQUARED metres, so the
+            # threshold must be squared too — `< config.EPS` was 1e-6 m^2, i.e.
+            # a 1 mm cutoff wearing a 1 um label.
+            if dx * dx + dy * dy < config.GEOM_EPS_M * config.GEOM_EPS_M:
                 continue
             res = self._pivot_candidate(current_state, node, 0.0)
             if (res is None and config.NUM_PIVOT_SLIDES > 0
@@ -384,8 +397,17 @@ class KinodynamicAstar:
                 return False
         return True
     
-    def _on_circle_boundary(self, point, tol=config.EPS):
-        """True if `point` lies on (within tol of) any inflated circle boundary."""
+    def _on_circle_boundary(self, point, tol=None):
+        """True if `point` lies on (within tol of) any inflated circle boundary.
+
+        The tolerance must TRACK the construction lift: tangent points are built
+        at r + _construct_delta, so a tol below that classifies every one of them
+        as off-boundary and silently switches the wrap step off entirely
+        (measured: 13.0% of expansions ride a boundary at a 1e-9 lift, 0.0% at
+        1e-3 — which is what made a larger lift look like a 2.4% path cost).
+        """
+        if tol is None:
+            tol = self._construct_delta + config.GEOM_EPS_M
         for center, radius in self.scenario['circle_obstacles']:
             if abs(math.hypot(point[0] - center[0], point[1] - center[1]) - radius) < tol:
                 return True
@@ -456,7 +478,7 @@ class KinodynamicAstar:
                         bearing = su.angle_to_heading(current.parent.waypoint, current.waypoint)
                         turn_at_prev = abs(_angle_diff(bearing, current.parent.heading))
                         usable = seg - self.R * math.tan(turn_at_prev / 2.0)
-                        if usable >= self._dss - config.EPS:
+                        if usable >= self._dss:
                             return self._reconstruct_path(current)
                 else:
                     approach_turn = abs(_angle_diff(self.goal_state.heading, current.heading))
@@ -594,7 +616,7 @@ class KinodynamicAstar:
                         if (goal_h is not None
                                 and abs(_angle_diff(brg[u][v], goal_h)) > config.APPROACH_RAY_TOL_RAD):
                             continue
-                        if budget >= dss - config.EPS and (best is None or cost < best[1]):
+                        if budget >= dss and (best is None or cost < best[1]):
                             best = ((u, v), cost, entry)
                         continue
                     for w in range(v + 1, m):
@@ -606,7 +628,7 @@ class KinodynamicAstar:
                         reserve = R * math.tan(turn / 2.0)
                         # Far end of chord u->v, now that the turn at v is known.
                         need = L0 if u == 0 else config.MIN_STRAIGHT_M
-                        if budget - reserve < need - config.EPS:
+                        if budget - reserve < need:
                             continue
                         if not arc_ok(u, v, w):
                             continue

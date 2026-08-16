@@ -355,10 +355,12 @@ class KinodynamicAstar:
         h = current_state.heading
 
         # --- Arc-hop: ride any circle boundary this state is tangent to ---
-        # All riding/tangent geometry is built on r + CONSTRUCTION_CLEARANCE_M
-        # so constructed chords are strictly clear of the exact-checked
-        # inflated boundary (see config.CONSTRUCTION_CLEARANCE_M).
-        delta = config.CONSTRUCTION_CLEARANCE_M
+        # All riding/tangent geometry is built on the lifted radius so
+        # constructed chords are strictly clear of the exact-checked inflated
+        # boundary. Two separate reasons, deliberately added rather than merged:
+        # CONSTRUCTION_CLEARANCE_M is an operational stand-off (free to be 0),
+        # GEOM_EPS_M is the float-rounding guard that must never be 0.
+        delta = config.CONSTRUCTION_CLEARANCE_M + config.GEOM_EPS_M
         successors.extend(self._arc_hop_successors(current_state))
         riding = self._riding      # set as a side effect of _arc_hop_successors
 
@@ -605,7 +607,7 @@ class KinodynamicAstar:
         P = current_state.waypoint
         h = current_state.heading
         goal_wp = self.goal_state.waypoint
-        delta = config.CONSTRUCTION_CLEARANCE_M
+        delta = config.CONSTRUCTION_CLEARANCE_M + config.GEOM_EPS_M
         successors = []
         self._riding = False   # recomputed each expansion; read by get_next_states
         for idx, (center, radius) in enumerate(self.scenario['circle_obstacles']):
@@ -1024,7 +1026,7 @@ class KinodynamicAstar:
                         bearing = su.angle_to_heading(current.parent.waypoint, current.waypoint)
                         turn_at_prev = abs(_angle_diff(bearing, current.parent.heading))
                         usable = seg - self.R * math.tan(turn_at_prev / 2.0)
-                        if usable >= self._dss - config.EPS:
+                        if usable >= self._dss:
                             return self._reconstruct_path(current)
                 else:
                     # Reaching the goal region is not enough: the autonomous aircraft must arrive
@@ -1298,7 +1300,7 @@ class KinodynamicAstar:
                         if (goal_h is not None
                                 and abs(_angle_diff(brg[u][v], goal_h)) > config.APPROACH_RAY_TOL_RAD):
                             continue
-                        if budget >= dss - config.EPS and (best is None or cost < best[1]):
+                        if budget >= dss and (best is None or cost < best[1]):
                             best = ((u, v), cost, entry)
                         continue
                     for w in range(v + 1, m):
@@ -1310,7 +1312,7 @@ class KinodynamicAstar:
                         reserve = R * math.tan(turn / 2.0)
                         # Far end of chord u->v, now that the turn at v is known.
                         need = L0 if u == 0 else _MIN_STRAIGHT_M
-                        if budget - reserve < need - config.EPS:
+                        if budget - reserve < need:
                             continue
                         if not arc_ok(u, v, w):
                             continue
