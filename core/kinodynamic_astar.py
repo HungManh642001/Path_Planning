@@ -29,13 +29,16 @@ _ARC_CLEAR_BULGE = 1.0 / math.cos(math.pi / 8.0)
 
 # Minimum usable straight-flight length (đoản trình) between two waypoints, in
 # metres. Matches the threshold historically used by validate_kinodynamics.
-_MIN_STRAIGHT_M = 10.0
+# The value lives in config so the two planners cannot drift apart; the local
+# alias is kept because it is read on the hot path.
+_MIN_STRAIGHT_M = config.MIN_STRAIGHT_M
 
 # How far the first smoothed chord may deviate from start_heading (radians).
 # No turn is available at the takeoff point, so the first kept waypoint must sit
 # on the takeoff ray; the tolerance only absorbs float noise (the measured spread
 # between bearing(O -> W1) and start_heading is at most 4e-15 rad).
-_TAKEOFF_RAY_TOL_RAD = 1e-9
+# Hot-path alias of the config knob; not a second definition.
+_TAKEOFF_RAY_TOL_RAD = config.TAKEOFF_RAY_TOL_RAD
 
 
 class State:
@@ -1234,6 +1237,9 @@ class KinodynamicAstar:
         L0 = self.scenario['start_state'].get('straight_length', config.L0)
         dss = self._dss
         start_h = self.scenario['start_state']['heading']
+        # Fixed-goal approach ray; only meaningful when T really is the terminal
+        # node appended above (see the terminal branch of the DP below).
+        goal_h = None if (self._free_goal or not tail) else self.scenario.get('goal_heading')
 
         # Chord geometry, computed once. `clear` uses the planner's own collision
         # test so the smoothed path obeys the safezone too, not just obstacles.
@@ -1277,6 +1283,21 @@ class KinodynamicAstar:
                     if v == m - 1:
                         # Terminal: the fillet at T is zero, so the whole
                         # remaining budget is the seeker run-in.
+                        #
+                        # In FIXED-goal mode T is not a plain node: the run-in
+                        # must be FLOWN along goal_heading, so the last chord has
+                        # to lie on the approach ray — the mirror of the
+                        # takeoff-ray rule at O. Without this the DP drops
+                        # W_{n-1} whenever that shortens the path and arrives on
+                        # the wrong heading (measured: 3/16 named scenarios,
+                        # scenario_04 off by 45.5 deg; 16/28 on a fixed-goal
+                        # adverse suite, up to 61 deg). The oracle cannot catch
+                        # it either — path_validation derives every angle from
+                        # waypoint geometry and never compares the arrival
+                        # bearing against goal_heading.
+                        if (goal_h is not None
+                                and abs(_angle_diff(brg[u][v], goal_h)) > config.APPROACH_RAY_TOL_RAD):
+                            continue
                         if budget >= dss - config.EPS and (best is None or cost < best[1]):
                             best = ((u, v), cost, entry)
                         continue

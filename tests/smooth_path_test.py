@@ -1,9 +1,12 @@
 """smooth_path is an exact DP over subsequences of the reconstructed path.
 
 The properties that matter are structural, not cosmetic: it must never return a
-path the independent oracle rejects, never lengthen one, and never break the
-takeoff leg — the O->W1 straight is not in the input path at all, which is what
-made the previous greedy shortcutter need an all-or-nothing guard behind it.
+path the independent oracle rejects, never lengthen one, and never break either
+END leg. Neither end is in the input path: the O->W1 takeoff straight is absent
+entirely, and W_{n-1}->T is the seeker run-in that must be flown along
+goal_heading. Both are constraints the oracle cannot see — path_validation
+derives every angle from waypoint geometry and never compares the arrival
+bearing against goal_heading — so they are asserted here directly.
 """
 import math
 
@@ -40,12 +43,19 @@ def _validate(pre, result):
         circle_tol=config.CIRCLE_GRAZE_TOL_M)
 
 
-# scenario_04 is the preset where smoothing actually bites: the DP drops the
-# route to a single interior waypoint and saves ~10 km.
+# scenario_04 is the preset where smoothing bites: the DP folds the route down
+# to a single interior waypoint.
+#
+# It used to also assert a ~10 km saving. That saving was the DP dropping
+# W_{n-1} and running straight from the takeoff corner to T — 679.78 km instead
+# of 689.45 km, arriving 45.5 deg off goal_heading, i.e. not a flyable mission.
+# The oracle passed it (it never checks the arrival bearing), so the assertion
+# encoded the bug. What smoothing actually buys on these presets is node
+# reduction, not length; the length property is the one-sided guarantee below.
 MAZE = 'scenario_04_complex_maze'
 
 
-def test_smoothing_shortens_the_maze_and_stays_oracle_valid():
+def test_smoothing_folds_the_maze_and_stays_oracle_valid():
     scen = mg.get_all_scenarios()[MAZE]
     pre_off, off = _plan(scen(), smooth=False)
     pre_on, on = _plan(scen(), smooth=True)
@@ -54,8 +64,8 @@ def test_smoothing_shortens_the_maze_and_stays_oracle_valid():
     full_off = astar._full_mission_path(off['path'], pre_off)
     full_on, (ok, why) = _validate(pre_on, on)
     assert ok, why
-    assert _length(full_on) < _length(full_off) - 1.0, 'expected a real shortcut'
-    assert len(on['path']) < len(off['path'])
+    assert len(on['path']) < len(off['path']), 'expected waypoints to be folded away'
+    assert _length(full_on) <= _length(full_off) + 1.0
 
 
 def test_smoothing_never_lengthens_and_stays_valid_across_presets():
@@ -95,3 +105,28 @@ def test_smoothed_path_keeps_the_takeoff_leg_on_its_ray_and_above_L0():
         l1 = math.dist(full[0][0], full[1][0]) - R * math.tan(alphas[1] / 2.0)
         L0 = pre['start_state']['straight_length']
         assert l1 >= L0 - 1.0, f'{name}: takeoff straight {l1:.1f} < L0 {L0}'
+
+
+def test_smoothed_path_keeps_the_approach_leg_on_goal_heading():
+    """Mirror of the takeoff-ray rule at the other end. In fixed-goal mode the
+    W_{n-1}->T seeker run-in must be FLOWN along goal_heading, so the last chord
+    has to lie on the approach ray. T is a plain node to the DP, so without the
+    guard it drops W_{n-1} whenever that shortens the path and arrives on the
+    wrong heading — the oracle cannot catch that, which is why it is asserted
+    here."""
+    for name, fn in mg.get_all_scenarios().items():
+        scenario = fn()
+        goal_h = scenario.get('goal_heading')
+        if goal_h is None:                      # free-goal presets: no approach ray
+            continue
+        pre, res = _plan(scenario, smooth=True)
+        if not res['success']:
+            continue
+        T = pre['goal_pos']
+        last = res['path'][-1][0]
+        assert math.dist(T, last) > 1.0, f'{name}: path already ends at T'
+        bearing = math.atan2(T[1] - last[1], T[0] - last[0])
+        drift = abs(math.atan2(math.sin(bearing - goal_h),
+                               math.cos(bearing - goal_h)))
+        assert drift < 1e-6, \
+            f'{name}: run-in into T left the approach ray by {math.degrees(drift):.2f} deg'

@@ -17,6 +17,23 @@ L0 = 4000.0
 # Distance for terminal camera sensor lock(m)
 DSS = 23000.0
 
+# Minimum usable straight run between two consecutive turns (m), i.e. the
+# đoản-trình floor for every INTERIOR segment (the first and last legs use the
+# larger L0 / DSS instead). Read by both planners.
+MIN_STRAIGHT_M = 10.0
+
+# How far the first smoothed chord may deviate from start_heading (rad). No turn
+# is available at the takeoff point O, so the first kept waypoint must sit on
+# the takeoff ray; this is an exactness guard, not a slack allowance.
+TAKEOFF_RAY_TOL_RAD = 1e-9
+
+# The mirror of the above at the other end (rad): in FIXED-goal mode the seeker
+# run-in into T must be flown along goal_heading, so the last smoothed chord has
+# to lie on the approach ray. Without this a subsequence smoother happily drops
+# W_{n-1} and connects to T from wherever, which shortens the path while
+# silently arriving on the wrong heading (measured up to 68 deg off).
+APPROACH_RAY_TOL_RAD = 1e-9
+
 # Takeoff angle (degrees) - angle from horizontal at start of trajectory
 START_ANGLE_MIN = -180.0
 START_ANGLE_MAX = 180.0
@@ -167,6 +184,16 @@ RADIAL_FAN_STEP_M = 100.0
 # 0 disables the mechanism entirely (the A/B knob).
 NUM_PIVOT_SLIDES = 4
 
+# Shortest slide worth emitting (m). A bucket whose d falls below this differs
+# from the un-slid corner only by float noise, so it would cost a full
+# collision + arc check to re-test the geometry that was just rejected.
+MIN_PIVOT_SLIDE_M = 1.0
+
+# Straight continuation step off an inflated circle boundary (m), used only by
+# the readability-first core/kinodynamic_astar_v0.py; the main planner replaced
+# this wrap step with _arc_hop_successors, which has no step parameter at all.
+WRAP_STEP_M = 10000.0
+
 # Largest O..T node count smooth_path will run its exact DP on. The DP is
 # O(m^3) transitions with one turn-arc check each, which is nothing at the sizes
 # this planner produces (measured over 114 paths: median 9 nodes, max 21, 2.4 ms
@@ -212,7 +239,7 @@ STRATEGY_B_CONSECUTIVE = True
 # a per-path blow-up before the time budget. Only consulted when
 # STRATEGY_B_CONSECUTIVE is True. 50 is the validated value (fixes seed32/seed18
 # where lower caps still failed/were-longer, no worse than 150 on the rest).
-STRATEGY_B_GLOBAL_CAP = 500
+STRATEGY_B_GLOBAL_CAP = 100
 
 # ====== GOAL SHOT (analytic terminal connect) ======
 # Hybrid-A*-style analytic expansion. From each popped state the planner tries
@@ -272,7 +299,7 @@ PLOT_BUFFER_ZONES = True
 PLOT_START_END_MARKERS = True
 
 # Figure DPI for saving
-FIGURE_DPI = 150
+FIGURE_DPI = 200
 
 # ====== SCENARIO GENERATION (map_generator) ======
 # Obstacle detection radius (m)

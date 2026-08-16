@@ -61,6 +61,25 @@ gui/                      interactive Tk app (config | map | results)
 - **Units are meters; angles are radians** throughout the algorithm code. `config.ALPHA_MAX`/`START_ANGLE_*` are stored in **degrees** and converted (`config.ALPHA_MAX_RAD`, `config.deg_to_rad`). The map is 500 km × 500 km, `R = 8000 m`.
 - A planner **state** is the tuple `(waypoint, heading)` where `waypoint = (x, y)`. Paths are lists of these tuples. `spatial_utils.state_to_tuple` is used for hashing/dedup.
 - **Obstacle inflation** is not just `R + margin`. `preprocessing.inflate_obstacles` uses `R * (1/cos(α_max/2) - 1) + SAFE_MARGIN` so a turn at max angle still clears the obstacle. Start/goal waypoints (`W₁`, `W_{n-1}`) are offset from the raw start/goal points by `L0`/`DSS` plus a turn-radius term — the planner never searches to the literal goal.
+- **Operating-area bounds** (`_in_bounds`): a `safezones` polygon ⇒ point must be `covers`-ed by it; else an **explicit** `map_bounds` ⇒ the `[0,w]×[0,h]` rectangle; else (neither given) ⇒ **permissive** (returns True). The old code always fell back to the `config.MAP_WIDTH/HEIGHT` 500 km box, which silently rejected every waypoint of scenarios living outside it (e.g. real missions at `y≈1.15e6` that pass no bounds) — surfaced once start corners started filtering on `_in_bounds`. NOTE the two easy scenario-key mistakes that make a scenario effectively unbounded: the planner reads `safezones` (plural) and `map_bounds` (a `(w,h)` tuple) — `safezone`/`map_width`/`map_height` are ignored.
+- **Seeded start corners** (replaces the single worst-case `W₁`): the planner does NOT root the search at one `W₁ = O + (L0 + R·tan(α_max/2))·û`. Instead `KinodynamicAstar.__init__` seeds `config.NUM_START_CORNERS` (K=8) corner states on the takeoff ray at `d_i = L0 + R·tan(αᵢ/2)`, tan-uniform buckets `tan(αᵢ/2) = (i/K)·tan(α_max/2)`, i=1..K (bucket K == the legacy `W₁`, so `NUM_START_CORNERS=1` is exactly legacy — the A/B knob). A corner seeded for `αᵢ` affords any first turn `α ≤ αᵢ` while keeping the takeoff straight `l₁ ≥ L0` **exactly** (via `State.straight_budget` + `State.min_straight_in = L0`, checked in `_doan_trinh`). Corners outside the operating area or with a colliding `O→corner` leg are not seeded (feasibility recovery — the single legacy `W₁` could land inside an inflated obstacle / outside a safezone corridor and kill the whole plan; e.g. a diagonal-corridor safezone with an adverse takeoff heading). If none survive, the start is blocked (fast honest failure). `smooth_path` re-guards `l₁ ≥ L0` at the first anchor since a shortcut can change `α₁`. NOTE: the terminal `W_{n-1}` still uses the α_max reserve (fixed mode) — that's a planned Phase-2; free-goal mode already targets `T` with a real-angle usable run-in ≥ DSS.
+
+- **`core/kinodynamic_astar_v0.py`** (gitignored, may not exist in a fresh
+  clone) is a **readability-first** variant of the planner kept in sync by hand:
+  it keeps the simpler `WRAP_STEP_M` straight-continuation instead of
+  `_arc_hop_successors`, and reuses `path_validation` / `spatial_utils` helpers
+  instead of the main file's hand-inlined hot loops. Nothing imports it. When
+  porting a mechanism into it, **keep docstrings short** — one or two lines of
+  *what*, not the main file's long *why* essays — that brevity is the point of
+  the file.
+- **Every tunable lives in `config.py`, never as a literal in the algorithm.**
+  One constant per *meaning*, even when two happen to share a value: e.g. the
+  đoản-trình floor `MIN_STRAIGHT_M` and the fan's float-noise pad
+  `RADIAL_FAN_STEP_M` are separate knobs on purpose. `kinodynamic_astar.py`'s
+  module-level `_MIN_STRAIGHT_M` is an alias of `config.MIN_STRAIGHT_M` (hot
+  path), not a second definition — do not re-inline the number. Only degenerate
+  -geometry guards (`< 1e-9` collinearity / right-angle tests) stay inline;
+  they are not tunables.
 
 ### How the A\* search actually works (core/kinodynamic_astar.py)
 
@@ -77,9 +96,21 @@ clear segment; (3) **Strategy B** — an `±α_max` radial fan that fires when
 (a) no successor exists (pure fallback), (b) the state is riding a circle
 boundary (leave-the-boundary options between departure points), or (c) the
 goal is line-of-sight blocked, budgeted globally by `config.NUM_STRATEGY_B`
-(an escape valve against long detours from an adverse initial heading). In
-open water with valid Strategy-A candidates and no boundary-riding, the fan
-does not fire. `validate_kinodynamics` enforces the max-turn-angle and minimum-straight-segment
+(an escape valve against long detours from an adverse initial heading). Note
+`NUM_STRATEGY_B` gates only the **budget**, not whether the fan fires: gating
+the firing itself on "the goal is already reachable" costs seed 4 88 km
+(534.9 vs 446.9), because the dedup lattice (`STATE_POS_QUANTUM`,
+`STATE_HEADING_QUANTUM_DEG`) makes the search only approximately optimal, so
+the fan's redundant-looking pivots act as lattice diversity rather than noise.
+Each fan direction emits `config.NUM_FAN_DISTANCES` **distance rungs**, not one
+leg: rung `j` is the shortest leg still affording a next turn `β ≤ βⱼ`, with
+tan-uniform buckets `tan(βⱼ/2) = (j/M)·tan(α_max/2)` — the same capability-bucket
+idea as the seeded start corners (`M = 1` + the legacy 1000 m pad reproduces the
+old single worst-case leg exactly). The old code hardcoded `β = α_max`, so every
+fan leg paid the worst-case far reserve even when the pivot barely turns, which
+bulged fan-routed paths in open water. M is **measured, not tuned by intuition**
+— the relation is not monotone in M (see the note in `config.py`).
+`validate_kinodynamics` enforces the max-turn-angle and minimum-straight-segment
 (đoản trình) constraints. `search()` accepts the goal only when both within
 `GOAL_THRESHOLD` **and** the arrival heading is within `α_max` of `goal_heading`
 (so the terminal turn onto the approach is feasible). `smooth_path` shortcuts
@@ -87,6 +118,54 @@ each kept anchor to the **farthest** reachable waypoint whose direct chord is
 exact-collision-free and kinodynamically valid (turn at the anchor **and** the
 onward turn at the target; the terminal target uses `goal_pos`/`goal_heading`,
 not the offset `goal_state.waypoint`).
+
+**Along-ray pivot slide** (`_pivot_candidate` / `_slide_pivot`,
+`config.NUM_PIVOT_SLIDES`): every Strategy-A candidate edge goes through
+`_pivot_candidate(current, node, advance)`, which turns `advance` metres
+further along the incoming ray (`advance = 0` is the plain corner and is
+behaviour-identical to the pre-slide code — `NUM_PIVOT_SLIDES = 0` is the A/B
+knob). When a candidate is rejected *by the fillet-arc gate* (`_corner_arc_clear`,
+typically at a polygon hull vertex where the fillet folds into that polygon),
+it is retried from pivots slid **forward**, `P' = P + d·ĥ_in`. Forward along
+the ray — never along the outer bisector — because that keeps the incoming
+**direction**, so the parent's corner, its turn reserve and every ancestor stay
+valid and `_doan_trinh` only *gains* budget (hence its `advance` parameter);
+sliding along the bisector rotates the incoming leg and forces ancestors to be
+re-validated, which does not terminate. Nothing is mutated: the slide emits an
+**additional** successor. The price is that with `ĥ_in` as x-axis and
+`V − P = (a, b)` the resulting turn `|atan2(b, a − d)|` **grows** with `d`
+(cap `d ≤ a − |b|/tan α_max`), so retry positions are parametrised by that
+resulting turn in tan-uniform capability buckets — the same idiom as
+`NUM_START_CORNERS` / `NUM_FAN_DISTANCES` — smallest slide first. Only the
+`'arc'` rejection is retried (`self._last_reject` side-channel): sliding can
+only *increase* the turn, so an already-over-α_max candidate is hopeless, and a
+blocked chord is almost never unblocked by moving the pivot. The slide is
+recorded in `State.via` and expanded back into a real waypoint by
+`_reconstruct_path` (like `arc_from`, but `via` pivots also join `raw_route` —
+they are searched waypoints, not output discretisation).
+
+Note the smoother is the other half of that gate: a shortcut **re-forms** the
+corner at the anchor, so it must be arc-checked there too. `smooth_path` is an
+exact subsequence **DP** over `O..T` (state = the last two kept waypoints, plus
+the straight budget left on the chord between them), because đoản trình couples
+adjacent chords through the turn they share — a greedy one-chord-at-a-time scan
+cannot see that dropping a waypoint retroactively steals straight length from
+the chord *into* its neighbour.
+
+**Both endpoints are constraints, not plain nodes.** No turn is available at `O`,
+so the first kept chord must lie on the takeoff ray (`TAKEOFF_RAY_TOL_RAD`); and
+in **fixed-goal** mode the seeker run-in must be flown along `goal_heading`, so
+the last chord must lie on the approach ray (`APPROACH_RAY_TOL_RAD`). Omitting
+the second one was a live bug in both planners until 2026-08-16: the DP drops
+`W_{n-1}` whenever that shortens the path and arrives on the wrong heading —
+measured 3/16 named scenarios (scenario_04 off by **45.5°**) and 16/28 on a
+fixed-goal adverse suite (up to 61°). **The oracle cannot catch this**:
+`path_validation` derives every angle from waypoint geometry and never compares
+the arrival bearing against `goal_heading` — so it is asserted directly in
+`tests/smooth_path_test.py`, alongside the takeoff-ray mirror. Note the
+consequence for expectations: on the named presets smoothing now buys **node
+reduction, not length** (14→7, 15→9 nodes, ~0 km); the old "scenario_04 saves
+~10 km" figure *was* the illegal shortcut.
 
 Collision checks are **exact** (zero tolerance): a circle is hit iff the
 (inlined) point-to-segment distance is `< radius` — `CIRCLE_GRAZE_TOL_M` is
