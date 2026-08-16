@@ -201,8 +201,28 @@ GEOM_EPS_M`: an operational stand-off (may be 0) **plus** a rounding guard
 (never 0), added rather than merged. Pad **towards feasibility** — that means
 `+` on an obstacle radius but `−` on a turn limit and *longer* on a straight
 floor; `+EPS` on `α_max` would construct the violation it is meant to prevent.
-Checks then carry no slack at all (measured free once construction has margin:
-the final leg is never closer than 8 km to the DSS threshold).
+Checks then carry no slack at all — **including the independent oracle**.
+`path_validation` has no `circle_tol` parameter, forgives no polygon
+penetration however short, and compares `l1 >= L0`, `l - dss >= 0`, `l > 0` and
+`turn <= α_max` exactly. Making it exact required padding construction FIRST;
+measured worst margins on accepted paths, before → after that padding:
+
+| quantity | before | after |
+| --- | --- | --- |
+| circle penetration | −0.112 m (already clear) | unchanged |
+| polygon interior overlap | no occurrences | unchanged |
+| turn vs α_max | **−1.1e-15 rad (over!)** | +1.0e-9 rad |
+| l1 vs L0 | **−1.4e-11 m (short!)** | +9.96e-9 m |
+| last leg vs DSS | +413 m | unchanged |
+| middle straight | +96 m | unchanged |
+
+Both planners therefore build with `self._alpha_build = α_max − GEOM_EPS_RAD`
+and seed start corners at `L0 + GEOM_EPS_M + R·tan(αᵢ/2)`. **The one number in
+`path_validation` that keeps a tolerance is `TURN_RESERVE_TOL_M`** — it
+classifies which waypoints split a straight run rather than comparing a value
+against a limit, and driving it to 0 would make float noise at a *deliberately*
+collinear waypoint (arc-hop departure, pivot slide) manufacture zero-length
+segments that then fail the exact `l > 0` test.
 
 Two traps this exposed, both worth remembering:
 - **`config.EPS` is dimensionless by accident.** `dx*dx + dy*dy < config.EPS`

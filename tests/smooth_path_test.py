@@ -39,8 +39,7 @@ def _validate(pre, result):
         full, pre['circle_obstacles'], pre['polygon_obstacles'],
         pre['turn_radius'], pre['alpha_max_rad'],
         pre['start_state']['straight_length'],
-        pre['goal_state']['engagement_distance'],
-        circle_tol=config.CIRCLE_GRAZE_TOL_M)
+        pre['goal_state']['engagement_distance'])
 
 
 # scenario_04 is the preset where smoothing bites: the DP folds the route down

@@ -8,19 +8,32 @@ import math
 from shapely.geometry import Polygon, LineString
 
 
-# Longest interior overlap with a polygon that still counts as "touching the
-# boundary" rather than penetrating it (metres). Sized far above the artefact it
-# exists for -- a tangency point reported as a zero-length interior
-# intersection, measured at 0 to 2.5e-4 m depending on arc sampling -- and far
-# below any clearance that matters operationally, where SAFE_MARGIN is in
-# metres and real crossings run to kilometres.
-POLYGON_TOUCH_TOL_M = 1e-3
+# Interior overlap with a polygon is measured EXACTLY: any positive-length
+# penetration fails. A tangency still passes, because shapely reports it as a
+# zero-length intersection and 0.0 is not > 0.0.
+#
+# This used to be 1e-3 m, forgiving a genuine (if tiny) penetration. That is a
+# check, so it carries no allowance: feasibility is bought on the construction
+# side instead. Measured over 120 scenarios of accepted paths, no segment and no
+# arc sub-segment produced ANY interior intersection, so the allowance was
+# absorbing nothing.
 
 # A turn whose fillet bites less than this many metres out of the straight is
 # not a turn: the waypoint is flown straight through and does not split the
 # straight run (see straight_segments_ok). At R = 8000 m this is a turn of
 # 1.4e-5 degrees, so it only ever absorbs float noise in collinear waypoints,
 # never a manoeuvre.
+#
+# This is the one number here that is NOT a check, and it deliberately keeps a
+# tolerance. It CLASSIFIES waypoints (does this one split the straight run?)
+# rather than comparing a quantity against a limit. Driving it to 0 would make
+# every float-noise reserve at a collinear waypoint split the run, manufacturing
+# zero-length segments that then fail the exact `l > 0` test — the checker would
+# reject paths for its own rounding. The planner emits genuinely collinear
+# waypoints as a matter of course (arc-hop departures leave tangentially, and a
+# pivot slide flies straight THROUGH its parent), so this case is the norm, not
+# an edge. Like every classifier tolerance, it must stay above construction
+# noise: keep it well clear of GEOM_EPS_M.
 TURN_RESERVE_TOL_M = 1e-6
 
 
@@ -39,13 +52,15 @@ def _point_to_segment_distance(p, a, b):
     return math.hypot(px - cx, py - cy)
 
 
-def _segment_clear(a, b, circle_obstacles, polygon_obstacles, circle_tol=1e-6):
+def _segment_clear(a, b, circle_obstacles, polygon_obstacles):
     for center, radius in circle_obstacles:
-        # Leniency: a segment grazing the inflated boundary to within
-        # `circle_tol` meters is accepted (numerical/discretisation noise
-        # within the ~13 km inflation band; the raw obstacle is far inside).
-        # tol is subtracted, so only genuine penetration fails.
-        if _point_to_segment_distance(center, a, b) < radius - circle_tol:
+        # EXACT: a circle is hit iff the segment comes closer than its radius.
+        # No leniency — a check never forgives a real intrusion, otherwise a
+        # reported clearance is not the true one. Planner-made chords keep their
+        # margin because the geometry is BUILT on radius + CONSTRUCTION_CLEARANCE_M
+        # + GEOM_EPS_M. Measured over 120 scenarios: the closest any accepted
+        # segment came was 0.112 m OUTSIDE the boundary.
+        if _point_to_segment_distance(center, a, b) < radius:
             return False
     # A segment is blocked ONLY when it enters a polygon's INTERIOR (DE-9IM
     # interior/interior overlap, pattern 'T********'). Touching the boundary is
@@ -67,17 +82,17 @@ def _segment_clear(a, b, circle_obstacles, polygon_obstacles, circle_tol=1e-6):
         poly = Polygon(coords)
         if not poly.relate_pattern(line, 'T********'):
             continue
-        if poly.intersection(line).length > POLYGON_TOUCH_TOL_M:
+        if poly.intersection(line).length > 0.0:
             return False
     return True
 
 
-def segments_clear(path, circle_obstacles, polygon_obstacles, circle_tol=1e-6):
+def segments_clear(path, circle_obstacles, polygon_obstacles):
     """True iff every straight segment between consecutive waypoints is clear."""
     for i in range(len(path) - 1):
         a = path[i][0]
         b = path[i + 1][0]
-        if not _segment_clear(a, b, circle_obstacles, polygon_obstacles, circle_tol):
+        if not _segment_clear(a, b, circle_obstacles, polygon_obstacles):
             return False, f"segment {i} blocked ({a} -> {b})"
     return True, "ok"
 
@@ -103,7 +118,7 @@ def turn_angles(path):
 def turn_angles_ok(path, alpha_max_rad):
     angles = turn_angles(path)
     for i, a in enumerate(angles):
-        if a > alpha_max_rad + 1e-9:
+        if a > alpha_max_rad:            # exact; the planner builds to alpha_max - GEOM_EPS_RAD
             return False, f"wp[{i + 1}] {path[i + 1][0]} turn angle {math.degrees(a):.3f}° > alpha_max {math.degrees(alpha_max_rad):.3f}°"
     return True, "ok"
 
@@ -147,15 +162,20 @@ def straight_segments_ok(path, R, L0, dss):
         d = sum(_seg_len(path[m][0], path[m + 1][0]) for m in range(i, j))
         l = d - reserves[i] - reserves[j]
         span = f"wp[{i}]..wp[{j}]" if j > i + 1 else f"segment {i}"
+        # All three are EXACT: the 1 m allowances they used to carry were
+        # forgiving real violations. Feasibility comes from the construction
+        # side — start corners are built at L0 + GEOM_EPS_M, turns at
+        # alpha_max - GEOM_EPS_RAD. Measured worst margins over 120 scenarios of
+        # accepted paths: L0 +9.96e-9 m, DSS +413 m, middle +96 m.
         if i == 0:                       # first đoản trình: l1 >= L0
-            if l < L0 - 1.0:
-                return False, f"first {span} l={l:.1f} < L0={L0}"
+            if l < L0:
+                return False, f"first {span} l={l:.3f} < L0={L0}"
         elif j == n_seg:                 # last đoản trình: ln = l - dss >= 0
-            if l - dss < -1.0:
-                return False, f"last {span} usable l={l - dss:.1f} < 0"
+            if l - dss < 0.0:
+                return False, f"last {span} usable l={l - dss:.3f} < 0"
         else:                            # middle: l > 0
-            if l < 1.0:
-                return False, f"middle {span} l={l:.1f} <= 0"
+            if l <= 0.0:
+                return False, f"middle {span} l={l:.3f} <= 0"
     return True, "ok"
 
 
@@ -196,7 +216,7 @@ def arcs_clear(path, R, circle_obstacles, polygon_obstacles):
 
 
 def path_is_valid(path, circle_obstacles, polygon_obstacles, R, alpha_max_rad, L0, dss,
-                  raw_circle_obstacles=None, raw_polygon_obstacles=None, circle_tol=1e-6):
+                  raw_circle_obstacles=None, raw_polygon_obstacles=None):
     """One-call full validity gate used by later phases.
 
     Straight segments AND turn arcs must both clear the INFLATED obstacles,
@@ -212,7 +232,7 @@ def path_is_valid(path, circle_obstacles, polygon_obstacles, R, alpha_max_rad, L
     """
     if not path or len(path) < 2:
         return False, "path too short"
-    ok, reason = segments_clear(path, circle_obstacles, polygon_obstacles, circle_tol)
+    ok, reason = segments_clear(path, circle_obstacles, polygon_obstacles)
     if not ok:
         return False, f"segments blocked: {reason}"
     ok, reason = turn_angles_ok(path, alpha_max_rad)

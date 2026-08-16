@@ -317,8 +317,8 @@ def _assert_honest_outcome(seed):
         assert pv.path_is_valid(
             full, pre['circle_obstacles'], pre['polygon_obstacles'],
             config.R, config.ALPHA_MAX_RAD, config.L0, config.DSS,
-            raw_circle_obstacles=rawc, raw_polygon_obstacles=rawp,
-            circle_tol=0.0), f"seed {seed}: success but strict oracle rejected"
+            raw_circle_obstacles=rawc, raw_polygon_obstacles=rawp), \
+            f"seed {seed}: success but strict oracle rejected"
         assert result['failure_reason'] is None
     else:
         assert result['failure_reason'] in (

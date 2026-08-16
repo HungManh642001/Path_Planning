@@ -109,6 +109,12 @@ class KinodynamicAstar:
         self.max_iterations = config.MAX_ITERATIONS
         self.R = preprocessed_scenario['turn_radius']
         self.alpha_max_rad = preprocessed_scenario['alpha_max_rad']
+        # Turn limit used when BUILDING and accepting geometry. Padded towards
+        # feasibility (i.e. SUBTRACTED) so a corner constructed hard against the
+        # limit still reads as legal when the oracle recomputes the angle from
+        # waypoint geometry — measured, that recomputation overshoots by up to
+        # 1.1e-15 rad, which an exact oracle would reject.
+        self._alpha_build = self.alpha_max_rad - config.GEOM_EPS_RAD
 
         # Lift applied when CONSTRUCTING circle geometry, so a tangent chord is
         # strictly clear of the exact-checked boundary instead of landing on it.
@@ -124,10 +130,12 @@ class KinodynamicAstar:
         u_start = preprocessed_scenario['start_state']['heading']
         L0_start = preprocessed_scenario['start_state'].get('straight_length', config.L0)
         K = max(1, int(config.NUM_START_CORNERS))
-        tan_max = math.tan(self.alpha_max_rad / 2.0)
+        tan_max = math.tan(self._alpha_build / 2.0)
         self.start_corners = []
         for i in range(1, K + 1):
-            d_i = L0_start + self.R * (i / K) * tan_max
+            # +GEOM_EPS_M: build l1 strictly longer than L0 so the oracle's
+            # exact `l1 >= L0` test survives its own recomputation.
+            d_i = L0_start + config.GEOM_EPS_M + self.R * (i / K) * tan_max
             corner = (O[0] + d_i * math.cos(u_start),
                       O[1] + d_i * math.sin(u_start))
             if not self._in_bounds(corner):
@@ -143,7 +151,7 @@ class KinodynamicAstar:
         
         # Fan distance rungs
         M = max(1, int(config.NUM_FAN_DISTANCES))
-        tan_half_max = math.tan(self.alpha_max_rad / 2)
+        tan_half_max = math.tan(self._alpha_build / 2)
         self._fan_rungs = [self.R * (j / M) * tan_half_max
                            + config.RADIAL_FAN_STEP_M
                            for j in range(1, M + 1)]
@@ -238,7 +246,7 @@ class KinodynamicAstar:
         num_directions = config.RADIAL_FAN_DIRECTIONS
         # distance = self.R * math.tan(self.alpha_max_rad / 2) + config.RAIDAL_FAN_STEP_M
         for i in range(num_directions):
-            heading_offset = -self.alpha_max_rad + 2 * self.alpha_max_rad * i / (num_directions - 1)
+            heading_offset = -self._alpha_build + 2 * self._alpha_build * i / (num_directions - 1)
             next_heading = h + heading_offset
             near_reserve = math.tan(abs(heading_offset) / 2.0) * self.R
             turn = abs(_angle_diff(next_heading, h))
@@ -283,7 +291,7 @@ class KinodynamicAstar:
         seg_len = math.hypot(dx, dy)
         heading_to_node = su.angle_to_heading(pivot, node)
         turn = abs(_angle_diff(heading_to_node, h))
-        if turn > self.alpha_max_rad:
+        if turn > self._alpha_build:
             self._last_reject = 'turn'
             return None
         # Far-end reserve: 0 for an interior waypoint (its turn is unknown here);
@@ -296,7 +304,7 @@ class KinodynamicAstar:
                     return None
             else:
                 final_turn = abs(_angle_diff(self.goal_state.heading, heading_to_node))
-                if final_turn > self.alpha_max_rad:
+                if final_turn > self._alpha_build:
                     self._last_reject = 'goal'
                     return None
                 far_reserve = self.R * math.tan(final_turn / 2.0)
@@ -348,7 +356,7 @@ class KinodynamicAstar:
             return None
         alpha0 = math.atan2(b, a)           # the turn without any slide
         K = int(config.NUM_PIVOT_SLIDES)
-        tan_half_max = math.tan(self.alpha_max_rad / 2.0)
+        tan_half_max = math.tan(self._alpha_build / 2.0)
         for i in range(1, K + 1):
             alpha_i = 2.0 * math.atan((i / K) * tan_half_max)
             if alpha_i <= alpha0:
@@ -509,7 +517,7 @@ class KinodynamicAstar:
                             return self._reconstruct_path(current)
                 else:
                     approach_turn = abs(_angle_diff(self.goal_state.heading, current.heading))
-                    if approach_turn <= self.alpha_max_rad:
+                    if approach_turn <= self._alpha_build:
                         return self._reconstruct_path(current)
 
             successors = self.get_next_states(current)
@@ -589,7 +597,7 @@ class KinodynamicAstar:
             return path
 
         R = self.R
-        amax = self.alpha_max_rad
+        amax = self._alpha_build
         L0 = self.scenario['start_state'].get('straight_length', config.L0)
         dss = self._dss
         start_h = self.scenario['start_state']['heading']
@@ -650,7 +658,7 @@ class KinodynamicAstar:
                         if not clear[v][w]:
                             continue
                         turn = abs(_angle_diff(brg[v][w], brg[u][v]))
-                        if turn > amax + 1e-9:
+                        if turn > amax:
                             continue
                         reserve = R * math.tan(turn / 2.0)
                         # Far end of chord u->v, now that the turn at v is known.
@@ -797,8 +805,7 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
         R=preprocessed_scenario['turn_radius'], 
         alpha_max_rad=preprocessed_scenario['alpha_max_rad'],
         L0=preprocessed_scenario['start_state']['straight_length'],
-        dss=preprocessed_scenario['goal_state']['engagement_distance'],
-        circle_tol=config.CIRCLE_GRAZE_TOL_M)
+        dss=preprocessed_scenario['goal_state']['engagement_distance'])
     if not valid:
         return _result(path, False, failure_reason)
 
