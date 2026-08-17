@@ -8,15 +8,24 @@ import math
 from shapely.geometry import Polygon, LineString
 
 
-# Interior overlap with a polygon is measured EXACTLY: any positive-length
-# penetration fails. A tangency still passes, because shapely reports it as a
-# zero-length intersection and 0.0 is not > 0.0.
+# Shortest interior overlap with a polygon that this validator can still tell
+# apart from a tangency (metres).
 #
-# This used to be 1e-3 m, forgiving a genuine (if tiny) penetration. That is a
-# check, so it carries no allowance: feasibility is bought on the construction
-# side instead. Measured over 120 scenarios of accepted paths, no segment and no
-# arc sub-segment produced ANY interior intersection, so the allowance was
-# absorbing nothing.
+# This is NOT a forgiveness of the path — it is the resolution limit of the
+# validator's OWN arithmetic, in the same family as TURN_RESERVE_TOL_M below.
+# The exact predicate is "positive-length interior overlap", but shapely cannot
+# compute "positive" to better than about one ULP of the coordinates: a fillet
+# arc TANGENT to a hull edge (the normal case, since inflation is only
+# SAFE_MARGIN and hull vertices then sit exactly on the raw polygon) reports an
+# overlap of a few nanometres. Measured on the three paths that a zero threshold
+# rejected: 8.1e-9 m, 4.4e-9 m and 5.8e-11 m — the last is 0.06 nanometres. At 0
+# the oracle rejects flyable missions because of its own rounding (3 of 300
+# scenarios, v0).
+#
+# 1e-6 m is 100x above that noise and still 6 orders below anything operational
+# (SAFE_MARGIN is metres; a real crossing runs to kilometres). It was 1e-3 m,
+# which WAS a genuine forgiveness — 1000x more than the artefact needs.
+POLYGON_TOUCH_TOL_M = 1e-6
 
 # A turn whose fillet bites less than this many metres out of the straight is
 # not a turn: the waypoint is flown straight through and does not split the
@@ -82,7 +91,7 @@ def _segment_clear(a, b, circle_obstacles, polygon_obstacles):
         poly = Polygon(coords)
         if not poly.relate_pattern(line, 'T********'):
             continue
-        if poly.intersection(line).length > 0.0:
+        if poly.intersection(line).length > POLYGON_TOUCH_TOL_M:
             return False
     return True
 

@@ -202,9 +202,19 @@ GEOM_EPS_M`: an operational stand-off (may be 0) **plus** a rounding guard
 `+` on an obstacle radius but `−` on a turn limit and *longer* on a straight
 floor; `+EPS` on `α_max` would construct the violation it is meant to prevent.
 Checks then carry no slack at all — **including the independent oracle**.
-`path_validation` has no `circle_tol` parameter, forgives no polygon
-penetration however short, and compares `l1 >= L0`, `l - dss >= 0`, `l > 0` and
-`turn <= α_max` exactly. Making it exact required padding construction FIRST;
+`path_validation` has no `circle_tol` parameter and compares `l1 >= L0`,
+`l - dss >= 0`, `l > 0` and `turn <= α_max` exactly.
+
+**Distinguish a forgiveness from a resolution limit.** Two numbers in
+`path_validation` keep a tolerance on purpose, and neither is a check against a
+limit: `TURN_RESERVE_TOL_M` *classifies* which waypoints split a straight run,
+and `POLYGON_TOUCH_TOL_M` bounds how short an interior overlap the validator can
+still tell apart from a tangency. Driving either to 0 makes the oracle reject
+flyable missions because of *its own* rounding — measured for the polygon one:
+3 of 300 v0 scenarios, rejected on overlaps of 8.1e-9 m, 4.4e-9 m and
+**5.8e-11 m** (0.06 nanometres) where a fillet arc is tangent to a hull edge.
+It is now 1e-6 m: 100× above that noise, still 6 orders below anything
+operational. It was 1e-3 m, which genuinely *was* a forgiveness. Making it exact required padding construction FIRST;
 measured worst margins on accepted paths, before → after that padding:
 
 | quantity | before | after |
