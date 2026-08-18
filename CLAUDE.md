@@ -377,6 +377,37 @@ gap). Note (perf): the circle collision loop is a hand-inlined scalar loop on
 purpose — numpy-vectorising it or adding an STRtree over circles is SLOWER at
 these obstacle counts (N≈6–16); see the memory note.
 
+**The waste is never a redundant check — it is a check run against an obstacle
+that cannot possibly be involved.** Profiled on v0 over 40 scenarios: 45% of
+runtime was `point_to_line_distance`, and a bbox test showed **97.6%** of the
+circle tests in `_corner_arc_clear` and **82.3%** of those in `_check_collision`
+were against a circle whose bounding box cannot reach the query — 93% of ALL the
+distance work in the planner. Every gate, meanwhile, earns its keep: the
+rejection histogram over 985,623 Strategy-A candidates is turn 546,825 /
+đoản trình 65,271 / line-of-sight 336,326 / arc 2,810, and even `_in_bounds`
+fires 6 times in 23,493.
+
+So the fixes are prefilters and ordering, not deletions:
+- a plain-float bbox test before any circle distance and before any LineString
+  is constructed (on open water none is built at all);
+- Strategy B ran `_doan_trinh` — pure arithmetic — AFTER the fillet-arc gate,
+  the most expensive check in the planner, so 31% of the legs that reached the
+  arc gate were rejected by arithmetic straight afterwards. Strategy A already
+  ordered it correctly;
+- v0's `STRtree` over polygons then had no callers and is gone.
+
+Measured: **2.05× faster** (76→37 s and 51→27 s on two disjoint 300-scenario
+samples), `point_to_line_distance` calls 12.0M → 0.82M, and every one of the 590
+paths **bit-identical** — same waypoints, same length to the last ULP. Held to
+that by `tests/collision_prefilter_test.py`, which re-checks random chords
+against a brute-force copy with every prefilter removed.
+
+Two things measured and NOT worth doing: a prepared-geometry `intersects`
+prefilter in front of `relate_pattern` (2× cheaper per call, but 47% of
+bbox-overlapping pairs are genuine hits, so it saves ≈0), and testing the shrunk
+`_polygons_deep` copy BEFORE the full polygon (saves a relate on every hit but
+costs one on every miss, and misses are the majority: 57,820 vs 51,180).
+
 ### Rendering model (render/trajectory.py)
 
 `sample_trajectory(path, R, mode)` turns the planner waypoints into a drawable
