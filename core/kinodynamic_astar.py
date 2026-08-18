@@ -135,6 +135,9 @@ class KinodynamicAstar:
         """
 
         self.scenario = preprocessed_scenario
+        # Operational stand-off + rounding guard, added never merged. Every
+        # piece of geometry this planner CONSTRUCTS is lifted by it.
+        self._construct_delta = config.CONSTRUCTION_CLEARANCE_M + config.GEOM_EPS_M
         self._polygons = [Polygon(coords) for coords in preprocessed_scenario['polygon_obstacles']]
         # Plain-float bboxes for the manual prefilter in _check_collision /
         # _sector_clear. At N <= ~20 polygons a scalar bbox loop beats the
@@ -148,9 +151,17 @@ class KinodynamicAstar:
         # MultiPolygon; an empty one simply never short-circuits.
         self._polygons_deep = [p.buffer(-config.POLYGON_DEEP_HIT_INSET_M)
                                for p in self._polygons]
+        # Vertex candidates are LIFTED off the hull by the same
+        # _construct_delta that circle tangent points are built on. Without it
+        # polygons were the one obstacle type whose navigation targets sat
+        # EXACTLY on the boundary they must clear, which is what put the
+        # boundary case in front of shapely on every chord that ends at, passes
+        # through, or runs along a hull edge. A mitre buffer offsets every edge
+        # perpendicular by delta and keeps the corner count.
         self._poly_vertices = []
         for poly in self._polygons:
-            self._poly_vertices.extend(poly.convex_hull.exterior.coords[:-1])
+            hull = poly.convex_hull.buffer(self._construct_delta, join_style=2)
+            self._poly_vertices.extend(hull.exterior.coords[:-1])
 
         # Obstacle sets for the search-time turn-arc clearance check
         # (_corner_arc_clear). These are the INFLATED sets, i.e. raw +
@@ -385,7 +396,7 @@ class KinodynamicAstar:
         # boundary. Two separate reasons, deliberately added rather than merged:
         # CONSTRUCTION_CLEARANCE_M is an operational stand-off (free to be 0),
         # GEOM_EPS_M is the float-rounding guard that must never be 0.
-        delta = config.CONSTRUCTION_CLEARANCE_M + config.GEOM_EPS_M
+        delta = self._construct_delta
         successors.extend(self._arc_hop_successors(current_state))
         riding = self._riding      # set as a side effect of _arc_hop_successors
 
@@ -632,7 +643,7 @@ class KinodynamicAstar:
         P = current_state.waypoint
         h = current_state.heading
         goal_wp = self.goal_state.waypoint
-        delta = config.CONSTRUCTION_CLEARANCE_M + config.GEOM_EPS_M
+        delta = self._construct_delta
         successors = []
         self._riding = False   # recomputed each expansion; read by get_next_states
         for idx, (center, radius) in enumerate(self.scenario['circle_obstacles']):

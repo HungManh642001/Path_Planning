@@ -77,6 +77,15 @@ class KinodynamicAstar:
     
     def __init__(self, preprocessed_scenario):
         self.scenario = preprocessed_scenario        
+        # Lift applied when CONSTRUCTING geometry, so a tangent chord is
+        # strictly clear of the exact-checked boundary instead of landing on it.
+        # Two separate reasons, added not merged: CONSTRUCTION_CLEARANCE_M is an
+        # operational stand-off (may be 0), GEOM_EPS_M is the rounding guard
+        # (never 0). Without it 43% of tangents fall inside the circle by ~1e-11 m
+        # and are rejected by their own collision test.
+        self._construct_delta = (config.CONSTRUCTION_CLEARANCE_M
+                                 + config.GEOM_EPS_M)
+
         self._polygons = [Polygon(coords) for coords in preprocessed_scenario['polygon_obstacles']]
         self._poly_tree = STRtree(self._polygons) if self._polygons else None
         # Shrunk copies for the deep-hit short-circuit in _check_collision (see
@@ -84,9 +93,17 @@ class KinodynamicAstar:
         # MultiPolygon; an empty one simply never short-circuits.
         self._polygons_deep = [p.buffer(-config.POLYGON_DEEP_HIT_INSET_M)
                                for p in self._polygons]
+        # Vertex candidates are LIFTED off the hull by the same
+        # _construct_delta that circle tangent points are built on. Without it
+        # polygons were the one obstacle type whose navigation targets sat
+        # EXACTLY on the boundary they must clear, which is what put the
+        # boundary case in front of shapely on every chord that ends at, passes
+        # through, or runs along a hull edge. A mitre buffer offsets every edge
+        # perpendicular by delta and keeps the corner count.
         self._poly_vertices = []
         for poly in self._polygons:
-            self._poly_vertices.extend(poly.convex_hull.exterior.coords[:-1])
+            hull = poly.convex_hull.buffer(self._construct_delta, join_style=2)
+            self._poly_vertices.extend(hull.exterior.coords[:-1])
 
         safezones = preprocessed_scenario.get('safezones')
         self._safezone = unary_union([Polygon(sz) for sz in safezones]) if safezones else None
@@ -132,15 +149,6 @@ class KinodynamicAstar:
         # waypoint geometry — measured, that recomputation overshoots by up to
         # 1.1e-15 rad, which an exact oracle would reject.
         self._alpha_build = self.alpha_max_rad - config.GEOM_EPS_RAD
-
-        # Lift applied when CONSTRUCTING circle geometry, so a tangent chord is
-        # strictly clear of the exact-checked boundary instead of landing on it.
-        # Two separate reasons, added not merged: CONSTRUCTION_CLEARANCE_M is an
-        # operational stand-off (may be 0), GEOM_EPS_M is the rounding guard
-        # (never 0). Without it 43% of tangents fall inside the circle by ~1e-11 m
-        # and are rejected by their own collision test.
-        self._construct_delta = (config.CONSTRUCTION_CLEARANCE_M
-                                 + config.GEOM_EPS_M)
 
         # Seeded start corners
         O = preprocessed_scenario['start_pos']

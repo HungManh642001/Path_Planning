@@ -286,6 +286,31 @@ checks it against `L0` only, so collapsing the mission would drop the `>= DSS`
 run-in check altogether. The renderer does not need them (it places its `L₀` /
 `d_ss` markers by arc length along the flown path), but the oracle does.
 
+**Lift the navigation targets of EVERY obstacle type, not just circles — that
+is the root fix, and everything above is the safety net.** Circle tangent points
+were always built on `radius + _construct_delta`; polygon hull vertices were
+handed to `get_next_states` raw, sitting EXACTLY on the boundary they have to
+clear. That asymmetry is what put the boundary case in front of shapely on every
+chord that ends at, passes through, or runs along a hull edge — the whole family
+of interior-overlap artefacts above traces back to it. `_poly_vertices` is now
+`convex_hull.buffer(_construct_delta, join_style=2)` (mitre: offsets every edge
+perpendicular by delta, keeps the corner count).
+
+Measured over 60 scenarios, the interior-overlap measurement fires **23 times,
+9 of them forgiving an overlap** (0.0, 1.0e-10, 7.8e-10 m) without the lift, and
+**0 times with it** — the predicate no longer flags anything to resolve. Over
+600 scenarios in two disjoint halves: missions solved unchanged, waypoints flown
+straight through still 0, path length −0.043% / +0.012% (median per case 0.000%,
+p10 −0.0002%, p90 +0.0003% — a 1 m lift moves a 250 km mission by fractions of a
+ppm), and **5% FASTER**, because the measuring path is never taken.
+
+Keep the checking machinery anyway. `path_validation` is an independent oracle
+that validates paths from any source and cannot assume the planner's lift, and a
+fillet arc is constructed from the LEGS, not from the lifted vertices, so it can
+still come tangent to some other polygon's edge. The machinery is now dormant,
+not redundant — and "measured zero over 60 scenarios" is exactly the claim this
+file has been wrong about three times.
+
 **Rounding is absorbed when CONSTRUCTING, never forgiven when CHECKING.**
 Geometry built to sit exactly on a limit gets rejected by the exact check that
 follows — measured, **43% of tangent points fell inside their own circle** by
