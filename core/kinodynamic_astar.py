@@ -33,6 +33,18 @@ _ARC_CLEAR_BULGE = 1.0 / math.cos(math.pi / 8.0)
 # alias is kept because it is read on the hot path.
 _MIN_STRAIGHT_M = config.MIN_STRAIGHT_M
 
+# Shortest polygon-interior overlap that counts as a collision, in metres --
+# the OWNER of this number is the oracle (core/path_validation), and the planner
+# borrows it on purpose: a planner stricter than its own validator rejects
+# flyable chords. 'T********' alone matches a zero-extent touch, so a chord that
+# grazes a hull VERTEX reads as a hit. That is not hypothetical -- it made the
+# collision test non-monotone under splitting (batch_random_test seed 0: two
+# collinear chords each clear, their union "blocked" on an overlap of 2.9e-11 m
+# at the shared vertex), which is exactly the chord smooth_path needs in order
+# to drop the pass-through waypoint sitting on that vertex.
+# Hot-path alias, not a second definition.
+_POLY_TOUCH_TOL_M = pv.POLYGON_TOUCH_TOL_M
+
 # How far the first smoothed chord may deviate from start_heading (radians).
 # No turn is available at the takeoff point, so the first kept waypoint must sit
 # on the takeoff ray; the tolerance only absorbs float noise (the measured spread
@@ -131,6 +143,11 @@ class KinodynamicAstar:
         # overlaps: measured ~50% of hard-seed wall time was shapely object
         # construction on queries that hit nothing.
         self._poly_bboxes = [p.bounds for p in self._polygons]
+        # Shrunk copies for the deep-hit short-circuit in _check_collision (see
+        # config.POLYGON_DEEP_HIT_INSET_M). buffer() can return empty or a
+        # MultiPolygon; an empty one simply never short-circuits.
+        self._polygons_deep = [p.buffer(-config.POLYGON_DEEP_HIT_INSET_M)
+                               for p in self._polygons]
         self._poly_vertices = []
         for poly in self._polygons:
             self._poly_vertices.extend(poly.convex_hull.exterior.coords[:-1])
@@ -805,7 +822,13 @@ class KinodynamicAstar:
                     continue
                 if line is None:
                     line = LineString([p1, p2])
-                if self._polygons[i].relate_pattern(line, 'T********'):
+                poly = self._polygons[i]
+                if not poly.relate_pattern(line, 'T********'):
+                    continue
+                deep = self._polygons_deep[i]
+                if not deep.is_empty and deep.relate_pattern(line, 'T********'):
+                    return False
+                if poly.intersection(line).length > _POLY_TOUCH_TOL_M:
                     return False
 
         # Safezone containment: the WHOLE chord must stay inside the operating
@@ -1213,6 +1236,12 @@ class KinodynamicAstar:
         entries are kept under dominance: more budget AND lower cost wins. In
         practice that leaves one or two entries per state.
 
+        Cost is length plus SMOOTH_NODE_PENALTY_M per kept waypoint. Length
+        alone leaves ties the DP breaks by chance: a waypoint the aircraft flies
+        STRAIGHT through -- a pivot slide, a fan rung -- adds exactly zero
+        length, so it survives or not depending on iteration order. The penalty
+        makes the shortest subsequence also the one with the fewest waypoints.
+
         Returns a path in the same shape as the input (interior waypoints, O not
         included; T only if the input ended there). Falls back to the input
         unchanged if the DP finds nothing, which can only happen when the input
@@ -1242,9 +1271,21 @@ class KinodynamicAstar:
             return path
 
         R = self.R
-        amax = self._alpha_build
+        # The true limit, NOT the build reserve. Every corner the DP weighs is
+        # defined by waypoints that already exist, and it measures them with the
+        # oracle's own formula, bit for bit -- so this gate IS the oracle's
+        # check, not a construction that needs padding away from the limit.
+        # Using _alpha_build here re-measures the search's own corners against a
+        # limit 1e-9 rad tighter than the one they were built at: a corner built
+        # AT the limit reads back as alpha_max - 1e-9 + ~3e-15 rad and rejects,
+        # which kills every continuation out of it and drops the whole DP into
+        # its "found nothing" fallback -- smoothing silently does nothing.
+        amax = self.alpha_max_rad
         L0 = self.scenario['start_state'].get('straight_length', config.L0)
         dss = self._dss
+        # Length tie-break: a waypoint flown straight through costs zero length,
+        # so without this the DP keeps or drops it arbitrarily.
+        node_cost = config.SMOOTH_NODE_PENALTY_M
         start_h = self.scenario['start_state']['heading']
         # Fixed-goal approach ray; only meaningful when T really is the terminal
         # node appended above (see the terminal branch of the DP below).
@@ -1282,7 +1323,7 @@ class KinodynamicAstar:
             # so the first kept waypoint must sit on that ray.
             if abs(_angle_diff(brg[0][j], start_h)) > _TAKEOFF_RAY_TOL_RAD:
                 continue
-            by_cur[j][0] = [(dist[0][j], dist[0][j], None, None)]
+            by_cur[j][0] = [(dist[0][j], dist[0][j] + node_cost, None, None)]
 
         best = None
         for v in range(1, m):
@@ -1324,7 +1365,7 @@ class KinodynamicAstar:
                         if not arc_ok(u, v, w):
                             continue
                         nb = dist[v][w] - reserve
-                        nc = cost + dist[v][w]
+                        nc = cost + dist[v][w] + node_cost
                         lst = by_cur[w].setdefault(v, [])
                         if any(b >= nb - 1e-9 and c <= nc + 1e-9 for b, c, _, _ in lst):
                             continue

@@ -201,6 +201,31 @@ WRAP_STEP_M = 10000.0
 # is returned unsmoothed rather than spending the time budget here.
 SMOOTH_MAX_NODES = 64
 
+# Tie-break for smooth_path's DP: metres of path length that one kept waypoint
+# is worth. The DP minimises length alone, and a waypoint the aircraft flies
+# STRAIGHT through costs exactly zero length -- measured bit-for-bit equal on
+# seed 34, where the chord across three pivot-slide/fan waypoints came to
+# 28299.999971999972 m either way -- so with no tie-break the DP keeps or drops
+# such waypoints arbitrarily, and the delivered plan carries waypoints that mark
+# no manoeuvre. Charging every waypoint a metre makes the shortest path also the
+# one with the fewest waypoints. It also bounds what that preference may cost:
+# at most this many metres per waypoint dropped, ~5 ppm of a 200 km mission.
+# This is a TIE-BREAK, not an objective -- raising it far enough to buy real
+# length is a different decision and would need its own measurement.
+SMOOTH_NODE_PENALTY_M = 1.0
+
+# Inset (m) of the shrunk polygon copies used ONLY to short-circuit the exact
+# interior-overlap measurement in _check_collision. A chord whose interior
+# reaches into the shrunk copy is overlapping the real polygon by more than this
+# and is unambiguously blocked, so it never needs measuring; measuring costs
+# 63 us against 12 us for the predicate, and 14.4% of collision calls hit a
+# polygon (measured over 60 scenarios). Only chords that graze the boundary
+# shallower than this fall through to the exact test -- 8 of 77333 hits. This is
+# a PERFORMANCE gate, not a tolerance: it can only skip work on chords that are
+# already blocked, never forgive one. Keep it far above POLYGON_TOUCH_TOL_M (the
+# real threshold, 1e-6 m) and far below anything operational.
+POLYGON_DEEP_HIT_INSET_M = 1e-3
+
 # Escape-valve budget: number of expansions that may ALSO get the radial fan
 # while the goal is line-of-sight blocked (cheap reorientation moves, e.g.
 # recovering from an adverse initial heading). Fallback/riding fans are not

@@ -193,6 +193,71 @@ consequence for expectations: on the named presets smoothing now buys **node
 reduction, not length** (14→7, 15→9 nodes, ~0 km); the old "scenario_04 saves
 ~10 km" figure *was* the illegal shortcut.
 
+**The DP must always be able to reproduce its own input, and it must prefer
+fewer waypoints.** Two independent defects broke that, and both surfaced as the
+same symptom — a delivered path carrying waypoints the aircraft flies STRAIGHT
+through (`batch_random_test` seed 34: W1, W2, W4 at turn = 0.00000°):
+
+- **The turn gate used the construction reserve on measured geometry.** It
+  compared against `self._alpha_build` (`α_max − GEOM_EPS_RAD`) while deriving
+  the turn from waypoint coordinates. The search legitimately builds corners AT
+  that limit, and re-deriving one from the emitted coordinates reads back as
+  `_alpha_build + ~3e-15 rad` — over. That kills every continuation out of the
+  corner, so `best` stays `None` and the DP hits its `return path` fallback:
+  **smoothing silently does nothing at all** (measured 33 of 294 solved
+  scenarios). The gate belongs at the **true** `alpha_max_rad`, because nothing
+  in the DP is constructed from an angle: every corner it weighs is defined by
+  waypoints that already exist, and it measures them with `path_validation`'s
+  formula bit for bit, so the gate IS the oracle's check.
+- **Length alone leaves the choice to iteration order.** A waypoint flown
+  straight through adds exactly zero length (measured bit-identical: 28299.999971999972 m
+  across three of them), so cost could not see it. `SMOOTH_NODE_PENALTY_M`
+  charges each kept waypoint a metre, which makes the shortest subsequence also
+  the one with the fewest waypoints, and bounds the preference at one metre per
+  waypoint dropped. Measured effect on its own is small (−1 waypoint over 300
+  scenarios) because insertion order already leaned that way — it converts an
+  accident into a guarantee.
+
+Both are asserted in `tests/smooth_path_dp_test.py` (a corner placed exactly on
+`α_max`, followed by pass-through waypoints); both assertions fail on the code
+before the fix.
+
+**A planner stricter than its own oracle rejects flyable chords.** The third
+cause of the same symptom was in `_check_collision`, not the smoother:
+`relate_pattern(line, 'T********')` alone also matches a **zero-extent** touch,
+so a chord grazing a hull VERTEX reads as a hit. `path_validation` has measured
+the interior overlap against `POLYGON_TOUCH_TOL_M` since that was fixed for the
+oracle; the planners had not. The consequence is worse than a lost chord — it
+makes the collision test **non-monotone under splitting**: on seed 0, two
+collinear chords are each clear while their union is "blocked" on an overlap of
+**2.9e-11 m** at the shared vertex, which is exactly the chord the smoother
+needs in order to drop the pass-through waypoint sitting on it. Both planners
+now borrow the oracle's threshold (`_POLY_TOUCH_TOL_M`, a hot-path alias of
+`pv.POLYGON_TOUCH_TOL_M` — the oracle owns the number, since it owns the
+explanation, and stays free of `import config` on purpose).
+
+Measuring the overlap costs 63 µs against 12 µs for the predicate, and 14.4% of
+collision calls hit a polygon, so `config.POLYGON_DEEP_HIT_INSET_M` short-
+circuits it: a chord whose interior reaches into a **shrunk** copy of the
+polygon overlaps by more than the inset and is unambiguously blocked. That is a
+performance gate, not a tolerance — it can only skip work on chords that are
+already blocked, never forgive one — and it is behaviour-identical (bit-for-bit
+equal results on 300 scenarios).
+
+Measured over 300 random scenarios (v0, the shipped planner), all three fixes
+together: waypoints **1506 → 1405** (−6.7%), waypoints flown straight through
+**100 → 2**, silent DP fallbacks **33 → 7**, missions solved 294 → 294, oracle
+rejections 0 → 0, path length −0.0097%, time **+6%** (paired, 3 repeats). The
+two survivors are a different animal: the merged chord there runs ALONG a hull
+edge, so shapely puts the whole 8.6 km / 11.5 km of it a float-hair inside the
+polygon — the artefact is in the DEPTH, which a length threshold cannot see.
+The flown line is bit-identical either way.
+
+Not covered, and deliberately: a 2-waypoint path still returns early
+(`len(path) < 3`), so a pure straight-line mission keeps its `L0` and `d_ss`
+waypoints even though both read turn = 0. Those are structural mission markers,
+not search artefacts.
+
 **Rounding is absorbed when CONSTRUCTING, never forgiven when CHECKING.**
 Geometry built to sit exactly on a limit gets rejected by the exact check that
 follows — measured, **43% of tangent points fell inside their own circle** by
