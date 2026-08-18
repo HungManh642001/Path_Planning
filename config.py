@@ -226,6 +226,17 @@ SMOOTH_NODE_PENALTY_M = 1.0
 # real threshold, 1e-6 m) and far below anything operational.
 POLYGON_DEEP_HIT_INSET_M = 1e-3
 
+# Guard band (rad) for the cheap turn prefilter in _pivot_candidate. The exact
+# gate is |turn| <= alpha_build with turn from atan2; the equivalent dot-product
+# form (dot >= cos(alpha_build) * seg_len) is mathematically identical but not
+# bit-identical near the limit, and turns land ON the limit routinely here (0.31%
+# of turn decisions sit within 1e-12 rad of alpha_max). So the prefilter rejects
+# only what is over the limit BY MORE THAN THIS, and anything inside the band
+# falls through to the exact test -- the cheap form can never be the one that
+# decides a borderline case. 1e-6 rad is ~1e10 times the dot product's own
+# relative error and still narrow enough that 55% of candidates skip the atan2s.
+TURN_PREFILTER_BAND_RAD = 1e-6
+
 # Escape-valve budget: number of expansions that may ALSO get the radial fan
 # while the goal is line-of-sight blocked (cheap reorientation moves, e.g.
 # recovering from an adverse initial heading). Fallback/riding fans are not

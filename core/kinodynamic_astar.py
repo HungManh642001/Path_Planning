@@ -59,6 +59,12 @@ class State:
     def __init__(self, waypoint, heading):
         self.waypoint = waypoint  # (x, y)
         self.heading = heading  # radians
+        # Unit vector of `heading`, cached because _pivot_candidate needs it for
+        # EVERY candidate (~120 per expansion) and heading never changes.
+        # None in free-goal mode, where goal_state carries no arrival heading;
+        # that state is only ever a TARGET, never expanded, so it never needs it.
+        self.cos_h = math.cos(heading) if heading is not None else None
+        self.sin_h = math.sin(heading) if heading is not None else None
         self.parent = None
         self.g_cost = float('inf')  # Cost from start
         self.h_cost = 0  # Heuristic to goal
@@ -245,6 +251,9 @@ class KinodynamicAstar:
         # still legal when the oracle recomputes the angle from waypoint
         # geometry. Measured, that recomputation overshoots by up to 1.1e-15 rad.
         self._alpha_build = self.alpha_max_rad - config.GEOM_EPS_RAD
+        # Cosine of the widest turn the cheap prefilter may reject outright.
+        self._turn_cos_guard = math.cos(min(math.pi, self._alpha_build
+                                            + config.TURN_PREFILTER_BAND_RAD))
 
         # Seeded start corners: instead of rooting the search at the single
         # worst-case W1 (L0 + R*tan(alpha_max/2) along the takeoff ray), seed
@@ -515,13 +524,24 @@ class KinodynamicAstar:
         """
         P = current.waypoint
         h = current.heading
+        ux = current.cos_h
+        uy = current.sin_h
         if advance > 0.0:
-            pivot = (P[0] + advance * math.cos(h), P[1] + advance * math.sin(h))
+            pivot = (P[0] + advance * ux, P[1] + advance * uy)
         else:
             pivot = P
         dx = node[0] - pivot[0]
         dy = node[1] - pivot[1]
         seg_len = math.hypot(dx, dy)
+        # 55% of candidates die on the turn limit, and the exact test costs two
+        # atan2 plus a sin and a cos to find that out. cos(turn) = dot / seg_len
+        # needs one multiply-add, so reject here anything over the limit by more
+        # than TURN_PREFILTER_BAND_RAD. Deliberately conservative: a candidate
+        # anywhere near the limit still gets the exact test below, so this can
+        # never decide a borderline case (see the config note).
+        if dx * ux + dy * uy < self._turn_cos_guard * seg_len:
+            self._last_reject = 'turn'
+            return None
         heading_to_node = su.angle_to_heading(pivot, node)
         turn = abs(_angle_diff(heading_to_node, h))
         if turn > self._alpha_build:
@@ -797,14 +817,26 @@ class KinodynamicAstar:
         sx = p2[0] - p1x
         sy = p2[1] - p1y
         dd = sx * sx + sy * sy
+        # Chord bbox, also reused by the polygon prefilter below. A centre
+        # further than `radius` outside it is further than `radius` from the
+        # chord, so the arithmetic below can be skipped outright: measured over
+        # 40 scenarios, that is 82.3% of the pairs.
+        gx0, gx1 = (p1x, p2[0]) if p1x <= p2[0] else (p2[0], p1x)
+        gy0, gy1 = (p1y, p2[1]) if p1y <= p2[1] else (p2[1], p1y)
         if dd == 0.0:                              # degenerate segment
             for (cx, cy), radius in self.scenario['circle_obstacles']:
+                if cx + radius < gx0 or cx - radius > gx1 or \
+                        cy + radius < gy0 or cy - radius > gy1:
+                    continue
                 relx = cx - p1x
                 rely = cy - p1y
                 if relx * relx + rely * rely < radius * radius:
                     return False
         else:
             for (cx, cy), radius in self.scenario['circle_obstacles']:
+                if cx + radius < gx0 or cx - radius > gx1 or \
+                        cy + radius < gy0 or cy - radius > gy1:
+                    continue
                 relx = cx - p1x
                 rely = cy - p1y
                 t = (relx * sx + rely * sy) / dd
@@ -827,8 +859,6 @@ class KinodynamicAstar:
         # bbox overlaps, which on open water is almost never.
         line = None
         if self._poly_bboxes:
-            gx0, gx1 = (p1x, p2[0]) if p1x <= p2[0] else (p2[0], p1x)
-            gy0, gy1 = (p1y, p2[1]) if p1y <= p2[1] else (p2[1], p1y)
             for i, (bx0, by0, bx1, by1) in enumerate(self._poly_bboxes):
                 if gx1 < bx0 or bx1 < gx0 or gy1 < by0 or by1 < gy0:
                     continue

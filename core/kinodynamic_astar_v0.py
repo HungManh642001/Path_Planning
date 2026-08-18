@@ -44,6 +44,12 @@ class State:
     def __init__(self, waypoint, heading):
         self.waypoint = waypoint  # (x, y)
         self.heading = heading  # radians
+        # Unit vector of `heading`, cached because _pivot_candidate needs it for
+        # EVERY candidate (~120 per expansion) and heading never changes.
+        # None in free-goal mode, where goal_state carries no arrival heading;
+        # that state is only ever a TARGET, never expanded, so it never needs it.
+        self.cos_h = math.cos(heading) if heading is not None else None
+        self.sin_h = math.sin(heading) if heading is not None else None
         self.parent = None
         self.g_cost = float('inf')  # Cost from start
         self.h_cost = 0  # Heuristic to goal
@@ -155,6 +161,9 @@ class KinodynamicAstar:
         # waypoint geometry — measured, that recomputation overshoots by up to
         # 1.1e-15 rad, which an exact oracle would reject.
         self._alpha_build = self.alpha_max_rad - config.GEOM_EPS_RAD
+        # Cosine of the widest turn the cheap prefilter may reject outright.
+        self._turn_cos_guard = math.cos(min(math.pi, self._alpha_build
+                                            + config.TURN_PREFILTER_BAND_RAD))
 
         # Seeded start corners
         O = preprocessed_scenario['start_pos']
@@ -317,13 +326,24 @@ class KinodynamicAstar:
         """
         P = current.waypoint
         h = current.heading
+        ux = current.cos_h
+        uy = current.sin_h
         if advance > 0.0:
-            pivot = (P[0] + advance * math.cos(h), P[1] + advance * math.sin(h))
+            pivot = (P[0] + advance * ux, P[1] + advance * uy)
         else:
             pivot = P
         dx = node[0] - pivot[0]
         dy = node[1] - pivot[1]
         seg_len = math.hypot(dx, dy)
+        # 55% of candidates die on the turn limit, and the exact test costs two
+        # atan2 plus a sin and a cos to find that out. cos(turn) = dot / seg_len
+        # needs one multiply-add, so reject here anything over the limit by more
+        # than TURN_PREFILTER_BAND_RAD. Deliberately conservative: a candidate
+        # anywhere near the limit still gets the exact test below, so this can
+        # never decide a borderline case (see the config note).
+        if dx * ux + dy * uy < self._turn_cos_guard * seg_len:
+            self._last_reject = 'turn'
+            return None
         heading_to_node = su.angle_to_heading(pivot, node)
         turn = abs(_angle_diff(heading_to_node, h))
         if turn > self._alpha_build:

@@ -408,6 +408,26 @@ bbox-overlapping pairs are genuine hits, so it saves ≈0), and testing the shru
 `_polygons_deep` copy BEFORE the full polygon (saves a relate on every hit but
 costs one on every miss, and misses are the majority: 57,820 vs 51,180).
 
+Two smaller levers, both applied to BOTH planners and both bit-identical over
+200 v0 / 100 main paths (every coordinate exactly equal):
+- **The cheap turn gate.** 55% of `_pivot_candidate`'s candidates die on the
+  turn limit, and the exact test costs two `atan2` plus a `sin` and a `cos` to
+  find out. `cos(turn) = dot / seg_len` is one multiply-add, with the heading's
+  unit vector cached on `State` (once per state, used ~120 times). It is NOT
+  bit-identical near the limit, and turns land ON the limit routinely here, so
+  it only rejects what is over by more than `TURN_PREFILTER_BAND_RAD` (1e-6) and
+  anything inside the band still gets the exact test — the cheap form can never
+  decide a borderline case. Worth −3.8% (v0) and −1.5% (main), consistent.
+- **A circle bbox prefilter in the MAIN planner's `_check_collision`**, which
+  inlined the distance but prefiltered nothing. Worth −2.2%, and noisy (one of
+  three paired repeats came out +0.1%) — the per-pair cost was already low, so
+  this is nothing like the 2× the same idea bought in v0.
+
+Note the shape of the result: the same idea is worth 2× where each skipped pair
+was a function call plus a `distance()` call, and 2% where it was already ten
+inline arithmetic ops. Prefilter what is EXPENSIVE per pair, not what is
+frequent.
+
 ### Rendering model (render/trajectory.py)
 
 `sample_trajectory(path, R, mode)` turns the planner waypoints into a drawable
