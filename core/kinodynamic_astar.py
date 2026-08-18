@@ -166,6 +166,7 @@ class KinodynamicAstar:
         self._arc_circles = self.scenario['circle_obstacles']
         self._arc_polygons = self._polygons
         self._arc_poly_bboxes = self._poly_bboxes
+        self._arc_polygons_deep = self._polygons_deep
         self._arc_check_n = max(2, int(config.ARC_CHECK_SAMPLES))
 
         # Operating areas (safezones). When one or more polygons are supplied the
@@ -828,7 +829,7 @@ class KinodynamicAstar:
                 deep = self._polygons_deep[i]
                 if not deep.is_empty and deep.relate_pattern(line, 'T********'):
                     return False
-                if poly.intersection(line).length > _POLY_TOUCH_TOL_M:
+                if pv.interior_overlap_length(poly, line) > _POLY_TOUCH_TOL_M:
                     return False
 
         # Safezone containment: the WHOLE chord must stay inside the operating
@@ -843,19 +844,34 @@ class KinodynamicAstar:
                 return False
         return True
 
-    def _corner_arc_clear(self, h_in, w, w_next):
+    def _corner_arc_clear(self, h_in, w, w_next, exact=False):
         """True iff the radius-R fillet arc rounding corner `w` clears all RAW
         obstacles. `h_in` is the incoming heading (the arc is tangent to it),
         `w_next` the next waypoint (the arc is tangent to w->w_next). Mirrors
-        path_validation._arc_points geometry so the search rejects exactly the
-        corners the final oracle would (path_self_collision), instead of
-        committing to them. No-op turn (collinear) => trivially clear.
+        path_validation._arc_points GEOMETRY so the search weighs the same arc
+        the final oracle will (path_self_collision), instead of committing to it;
+        how a polygon hit on that arc is RESOLVED depends on `exact` below.
+        No-op turn (collinear) => trivially clear.
 
         Hot path — same prefilter economy as _check_collision: the whole arc is
         sampled once, its bbox computed, and an obstacle is only tested when its
         bbox overlaps the arc's; polygons get ONE LineString for the entire arc
         polyline (not one per segment). An open-water corner therefore costs
-        just the sample loop + bbox compares, no shapely construction."""
+        just the sample loop + bbox compares, no shapely construction.
+
+        `exact` picks how a polygon "hit" is resolved, and it is a MEASURED
+        choice, not a principled one. Bare 'T********' also fires on an arc that
+        merely grazes a hull edge; measuring the true interior overlap (see
+        pv.interior_overlap_length) tells the two apart. The smoother passes
+        exact=True because it has ONE chord per pair of waypoints and a false
+        hit there costs a waypoint that marks no manoeuvre. The search keeps the
+        conservative verdict because it has thousands of alternatives and the
+        dedup lattice makes quality non-monotone in successor count: measured
+        over 300 scenarios, resolving hits exactly in the SEARCH too changed one
+        route from 296.75 km to 319.49 km (+7.7%) and bought nothing on a second
+        300-scenario sample. Conservative here is also the safe direction -- it
+        only ever declines a candidate.
+        """
         ux, uy = math.cos(h_in), math.sin(h_in)
         vx = w_next[0] - w[0]
         vy = w_next[1] - w[1]
@@ -931,7 +947,15 @@ class KinodynamicAstar:
                     continue
                 if line is None:
                     line = LineString(pts)
-                if self._arc_polygons[i].relate_pattern(line, 'T********'):
+                poly = self._arc_polygons[i]
+                if not poly.relate_pattern(line, 'T********'):
+                    continue
+                if not exact:
+                    return False
+                deep = self._arc_polygons_deep[i]
+                if not deep.is_empty and deep.relate_pattern(line, 'T********'):
+                    return False
+                if pv.interior_overlap_length(poly, line) > _POLY_TOUCH_TOL_M:
                     return False
         return True
 
@@ -1310,7 +1334,7 @@ class KinodynamicAstar:
             key = (u, v, w)
             hit = arc_memo.get(key)
             if hit is None:
-                hit = self._corner_arc_clear(brg[u][v], wps[v], wps[w])
+                hit = self._corner_arc_clear(brg[u][v], wps[v], wps[w], exact=True)
                 arc_memo[key] = hit
             return hit
 

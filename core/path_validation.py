@@ -61,6 +61,25 @@ def _point_to_segment_distance(p, a, b):
     return math.hypot(px - cx, py - cy)
 
 
+def interior_overlap_length(poly, line):
+    """Length of `line` that lies strictly INSIDE `poly`, boundary excluded.
+
+    `poly.intersection(line).length` is the wrong quantity for this: it measures
+    the overlap with the CLOSED polygon (interior UNION boundary), so a chord
+    that legitimately runs ALONG a hull edge scores its whole edge-following
+    stretch -- kilometres -- even though it never enters the interior. Measured
+    on batch_random_test seed 194: 11533.475 m of "overlap", of which 11533.475 m
+    is on the boundary and 0.0 m is inside. Subtracting the boundary part leaves
+    the penetration itself.
+
+    Shared with the planners on purpose: a planner stricter than its own oracle
+    rejects flyable chords, and one more lenient produces paths the oracle then
+    fails. There must be exactly one answer to "how far does this chord go
+    inside this polygon".
+    """
+    return poly.intersection(line).length - poly.boundary.intersection(line).length
+
+
 def _segment_clear(a, b, circle_obstacles, polygon_obstacles):
     for center, radius in circle_obstacles:
         # EXACT: a circle is hit iff the segment comes closer than its radius.
@@ -86,12 +105,19 @@ def _segment_clear(a, b, circle_obstacles, polygon_obstacles):
     # reports a Point of length 0 as an interior intersection (batch_random_test
     # seed 166). Requiring positive length keeps every real crossing -- those are
     # metres to kilometres long -- while ignoring a touch that has no extent.
+    #
+    # It must be the INTERIOR length, not the closed-polygon one -- see
+    # interior_overlap_length. 'T********' can also disagree with the geometry it
+    # is derived from: on seed 194 it reports a dimension-1 interior overlap for
+    # a chord whose interior overlap measures exactly 0.0 m, because the chord
+    # runs along an edge and the two predicates node it differently. Measuring
+    # settles it.
     line = LineString([a, b])
     for coords in polygon_obstacles:
         poly = Polygon(coords)
         if not poly.relate_pattern(line, 'T********'):
             continue
-        if poly.intersection(line).length > POLYGON_TOUCH_TOL_M:
+        if interior_overlap_length(poly, line) > POLYGON_TOUCH_TOL_M:
             return False
     return True
 

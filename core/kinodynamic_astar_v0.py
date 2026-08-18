@@ -389,14 +389,28 @@ class KinodynamicAstar:
                 return res
         return None
 
-    def _corner_arc_clear(self, h_in, w, w_next):
+    def _corner_arc_clear(self, h_in, w, w_next, exact=False):
         """True iff the radius-R fillet arc rounding corner `w` is clear, using
-        the oracle's own arc geometry so the search rejects exactly the corners
-        the final validation would. `h_in` is the incoming heading.
+        the oracle's own arc GEOMETRY so the search weighs the same arc the final
+        validation will. `h_in` is the incoming heading. Whether a polygon hit on
+        that arc is resolved the same way as the oracle depends on `exact`.
 
         The whole arc is tested as ONE polyline rather than segment by segment:
         the shapely work (LineString, tree query, safezone `covers`) is what
         costs, and doing it per sub-segment made this gate 41% of run time.
+
+        `exact` picks how a polygon "hit" is resolved, and it is a MEASURED
+        choice, not a principled one. Bare 'T********' also fires on an arc that
+        merely grazes a hull edge; measuring the true interior overlap (see
+        pv.interior_overlap_length) tells the two apart. The smoother passes
+        exact=True because it has ONE chord per pair of waypoints and a false
+        hit there costs a waypoint that marks no manoeuvre. The search keeps the
+        conservative verdict because it has thousands of alternatives and the
+        dedup lattice makes quality non-monotone in successor count: measured
+        over 300 scenarios, resolving hits exactly in the SEARCH too changed one
+        route from 296.75 km to 319.49 km (+7.7%) and bought nothing on a second
+        300-scenario sample. Conservative here is also the safe direction -- it
+        only ever declines a candidate.
         """
         prev = (w[0] - math.cos(h_in), w[1] - math.sin(h_in))
         pts = pv._arc_points(prev, w, w_next, self.R, n=config.ARC_CHECK_SAMPLES)
@@ -413,7 +427,15 @@ class KinodynamicAstar:
         if self._poly_tree is not None:
             line = LineString(pts)
             for idx in self._poly_tree.query(line):
-                if self._polygons[idx].relate_pattern(line, 'T********'):
+                poly = self._polygons[idx]
+                if not poly.relate_pattern(line, 'T********'):
+                    continue
+                if not exact:
+                    return False
+                deep = self._polygons_deep[idx]
+                if not deep.is_empty and deep.relate_pattern(line, 'T********'):
+                    return False
+                if pv.interior_overlap_length(poly, line) > _POLY_TOUCH_TOL_M:
                     return False
 
         if self._safezone is not None:
@@ -445,7 +467,7 @@ class KinodynamicAstar:
                 deep = self._polygons_deep[idx]
                 if not deep.is_empty and deep.relate_pattern(line, 'T********'):
                     return False
-                if poly.intersection(line).length > _POLY_TOUCH_TOL_M:
+                if pv.interior_overlap_length(poly, line) > _POLY_TOUCH_TOL_M:
                     return False
         
         if self._safezone is not None:
@@ -660,7 +682,7 @@ class KinodynamicAstar:
                 return True
             hit = arc_memo.get((u, v, w))
             if hit is None:
-                hit = self._corner_arc_clear(brg[u][v], wps[v], wps[w])
+                hit = self._corner_arc_clear(brg[u][v], wps[v], wps[w], exact=True)
                 arc_memo[(u, v, w)] = hit
             return hit
 

@@ -244,19 +244,47 @@ performance gate, not a tolerance — it can only skip work on chords that are
 already blocked, never forgive one — and it is behaviour-identical (bit-for-bit
 equal results on 300 scenarios).
 
-Measured over 300 random scenarios (v0, the shipped planner), all three fixes
-together: waypoints **1506 → 1405** (−6.7%), waypoints flown straight through
-**100 → 2**, silent DP fallbacks **33 → 7**, missions solved 294 → 294, oracle
-rejections 0 → 0, path length −0.0097%, time **+6%** (paired, 3 repeats). The
-two survivors are a different animal: the merged chord there runs ALONG a hull
-edge, so shapely puts the whole 8.6 km / 11.5 km of it a float-hair inside the
-polygon — the artefact is in the DEPTH, which a length threshold cannot see.
-The flown line is bit-identical either way.
+**Measure the INTERIOR overlap, not the closed-polygon one.**
+`poly.intersection(line).length` is the overlap with interior **∪ boundary**, so
+a chord that legitimately runs ALONG a hull edge — an explicitly allowed move —
+scores its whole edge-following stretch. Measured on seed 194: **11533.475 m of
+"overlap", every metre of it on the boundary and 0.0 m inside**; seed 257,
+8597.245 m likewise. `path_validation.interior_overlap_length` subtracts the
+boundary part, and both planners share that one function with the oracle so
+there is a single answer to "how far inside is this chord".
 
-Not covered, and deliberately: a 2-waypoint path still returns early
-(`len(path) < 3`), so a pure straight-line mission keeps its `L0` and `d_ss`
-waypoints even though both read turn = 0. Those are structural mission markers,
-not search artefacts.
+This also exposes shapely disagreeing with itself: on seed 194 `'T********'`
+reports a **dimension-1** interior overlap for a chord whose interior overlap
+**measures 0.0 m**, because the chord runs along an edge and the predicate and
+the overlay node it differently. The predicate stays as the cheap prefilter;
+measuring settles what it flags.
+
+**The fillet-arc gate resolves hits conservatively in the SEARCH, exactly in the
+SMOOTHER** (`_corner_arc_clear(..., exact=)`), and that split is measured, not
+principled. The smoother has ONE chord per waypoint pair, so a false hit there
+costs a waypoint that marks no manoeuvre. The search has thousands of
+alternatives and the dedup lattice makes quality non-monotone in successor
+count: resolving hits exactly there too moved one route from 296.75 km to
+**319.49 km (+7.7%)** and bought nothing on a second 300-scenario sample.
+Conservative is also the safe direction — it only ever declines a candidate.
+
+Measured over 300 random scenarios (v0, the shipped planner), everything above
+together: waypoints **1506 → 1392** (−7.6%), waypoints flown straight through
+**100 → 0**, silent DP fallbacks **33 → 7**, missions solved and oracle
+rejections unchanged, path length −0.0097%, time **+6%** then **+2%** for the
+interior-overlap round (paired, 3 repeats each — single runs drift 74→78 s on
+identical code, so pair them). Confirmed on a second, disjoint sample (seeds
+300–599): waypoints 1474 → 1399, straight-through 74 → 0.
+
+Not covered, and deliberately: a 2-waypoint path returns early (`len(path) < 3`),
+so a pure straight-line mission keeps its `L0` and `d_ss` waypoints even though
+both read turn = 0 (18 of 44 waypoints across the named presets). The DP would
+not remove them anyway — it would fold `O..T` to a single chord and produce an
+EMPTY interior list, which `smooth_path` refuses. That refusal is load-bearing:
+`straight_segments_ok` treats a one-segment path as the FIRST straight run and
+checks it against `L0` only, so collapsing the mission would drop the `>= DSS`
+run-in check altogether. The renderer does not need them (it places its `L₀` /
+`d_ss` markers by arc length along the flown path), but the oracle does.
 
 **Rounding is absorbed when CONSTRUCTING, never forgiven when CHECKING.**
 Geometry built to sit exactly on a limit gets rejected by the exact check that
