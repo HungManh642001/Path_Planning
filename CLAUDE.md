@@ -14,9 +14,37 @@ pip install -r requirements.txt          # numpy, scipy, shapely, matplotlib (+ 
 python main.py                           # Batch test harness: runs all 16 scenarios, writes PNGs to results/
 python launch_gui.py                     # Interactive Tk GUI: click to place start/goal/obstacles, then plan
 python performance_eval.py               # Performance metric helpers (also imported by main.py)
+
+# The gate for ANY change to either planner. Dumps every waypoint, so a claimed
+# bit-identical optimisation can actually be checked. Read scripts/BENCHMARKS.md
+# BEFORE trusting a number out of it — two traps there will otherwise fool you.
+PYTHONPATH=. python scripts/ab_planners.py run --planner v0 --seeds 300 --out /tmp/new.json
+PYTHONPATH=. python scripts/ab_planners.py compare docs/benchmarks/baseline-v0-free.json /tmp/new.json
+
+# Static analysis. Config lives in pyproject.toml; `core/` and `render/` are
+# clean under BOTH as of 2026-08-21 and are expected to stay that way.
+ruff check core/ render/ && ruff format --check core/ render/
+pyright                                  # strict mode, scoped to core/ + render/
 ```
 
-There **is** a pytest suite under `tests/` — run `python -m pytest -q` from the repo root (`pytest.ini` sets `pythonpath = .` so tests can `import config` / `import core.* / render.* / gui.*`, and `testpaths = tests`). Test files are named `*_test.py` (these ARE committed); `test_*.py` is gitignored, so name scratch tests that way to keep them out of git. `main.py` is a separate batch harness that runs all scenarios and writes PNGs.
+There **is** a pytest suite under `tests/` — run `python -m pytest -q` from the repo root (`pytest.ini` sets `pythonpath = .` so tests can `import config` / `import core.* / render.* / gui.*`, and `testpaths = tests`). Test files are named `*_test.py`; `test_*.py` is a scratch-test convention. `main.py` is a separate batch harness that runs all scenarios and writes PNGs.
+
+**`/tests/` is in `.gitignore`.** Individual test files are tracked only because they were force-added, and about a third are NOT — as of 2026-08-20 `goal_shot_align_gate_test.py`, `safezone_test.py`, `start_corner_test.py`, `strategy_b_ladder_test.py`, `strategy_b_valve_test.py`, `goal_heading_free_test.py` and `plot_extents_test.py` exist only on this machine. Check `git ls-files tests/` before assuming a test is shared — an earlier version of this file claimed all `*_test.py` "ARE committed", and acting on that claim means a deletion or an edit leaves no trace in git history at all.
+
+**The environment needs `numpy 1.26.4`, and the whole suite runs.** Until 2026-08-20 numpy was 2.4.6 here, which broke every package this Anaconda base was built against — matplotlib 3.8, pandas 2.1.4, contourpy, numba, pywavelets, astropy, scikit-image, scikit-learn all pin `numpy<2` — so six test files could not even be COLLECTED (`numpy.core.multiarray failed to import`) and `pytest -q` silently reported a green 83/85 while covering barely half the suite. numpy 2.4.6 was the outlier, not the rest: `scipy 1.17.1` wants `numpy>=1.26.4,<2.7`, so 1.26.4 satisfies everything at once. Going the other way (upgrading matplotlib and pandas to numpy-2 builds) drags in **pandas 3.0**, a breaking release, plus half the stack.
+
+If a `_ARRAY_API not found` / `numpy.core.multiarray failed to import` ever comes back, it is the same thing: `pip install "numpy==1.26.4"`.
+
+**The real gate is `pytest -q tests/` = 170 passed, 7 failed.** All seven predate this work — verified by running the same files against `5400d9c` in a scratch worktree, which produces the identical seven — so treat them as the baseline, not as breakage:
+
+| failing test | why |
+| --- | --- |
+| `goal_shot_align_gate_test` (×2) | feature has tests but no implementation: `config.GOAL_SHOT_ALIGN_GATE` does not exist |
+| `hard_seeds_test[674-584760.0]` | **seed 674 fails to plan at all.** A real open regression on a seed the suite expects solved; it was invisible while the file could not be collected |
+| `kinodynamic_arc_hop_test::test_no_radial_fan_in_open_water` | asserts 1 successor, gets 7. It encodes the *rejected* design — gating the fan on "goal already reachable" costs seed 4 88 km, see the Strategy-B note below |
+| `kinodynamic_arc_hop_test::test_check_fixed_legs_detects_blocked_start_and_goal` | signature drift: calls `_check_fixed_legs(body)` expecting `(ok, reason)`; it now takes no arguments and returns a bool |
+| `kinodynamic_arc_hop_test::test_plan_maps_blocked_leg_to_failure_reason` | same signature drift, via monkeypatch |
+| `strategy_b_valve_test::test_non_corner_expansion_still_consumes_valve_budget` | asserts the global-budget branch decrements `num_strategy_b`; `STRATEGY_B_CONSECUTIVE = True` takes the per-path branch instead, leaving that counter untouched |
 
 To run/debug a single scenario instead of all 16, call the pieces directly (this is the canonical pipeline):
 
@@ -40,11 +68,15 @@ constants; nothing imports `main.py`/`launch_gui.py`.
 ```
 config.py                 tactical constants + deg/rad helpers (R, ALPHA_MAX, L0, DSS, SAFE_MARGIN, map bounds)
 core/                     planning pipeline
+  → types                   shared TypedDicts/aliases for the two dict shapes below (typing only, no logic)
   → map_generator         builds a "scenario" dict (start/goal + obstacles); 16 predefined + create_scenario()
   → preprocessing         prepare_scenario(): inflates obstacles, computes start/goal *waypoint* states
   → kinodynamic_astar     plan_trajectory(): A* over (waypoint, heading); returns path + stats
   → path_validation       independent oracle: segments/arcs clear, turn angles ok (used by tests + GUI summary)
-  → spatial_utils         geometry helpers (distance, headings, polygon inflation, tangent points)
+  → spatial_utils         geometry helpers (distance, headings, angle_diff, polygon inflation, tangent points)
+  → mission               full_mission_path(): the flown path O..T (planners AND render share it)
+  → arc_geometry          pure arc math for main's arc-hop (riding, bitangents, sector cover)
+  → goal_shot             pure geometry for main's analytic 2-corner terminal shot
 render/                   drawing (consumes the planner path)
   → trajectory            sample_trajectory(path, R, mode): straight or fillet-arc flight path + turn_markers()
   → visualizer            plot_scenario(...) for the batch harness
@@ -64,7 +96,8 @@ easy to reintroduce as bugs:
   polygon hull vertices sat buried inside another polygon** — candidates the
   search re-tests and re-rejects on every expansion. Now gated by
   `ISLAND_MIN_SEPARATION_M`. Cross-type overlap (island vs circle) is still
-  allowed and is common (100/100 scenarios).
+  allowed and is common (100/100 scenarios) — though see the next bullet for
+  why "common" understates it.
 - **Start and goal need real clearance.** The buffer was `config.EPS`, i.e.
   1e-6 m, which permitted an obstacle to touch the start point; 16% of scenarios
   put start or goal closer than `L0` to an obstacle, so the mandatory takeoff or
@@ -72,6 +105,19 @@ easy to reintroduce as bugs:
   `start_leg_blocked` / `goal_leg_blocked` results came from — they were
   **generator artifacts, not hard scenarios**: fixing it took free-goal
   `start_leg_blocked` 2→0 and adverse `goal_leg_blocked` 10→7.
+
+- **OPEN BUG (found 2026-08-20, not yet fixed): the two generators share one
+  RNG stream.** `create_scenario` passes the same `seed` to both, and each calls
+  `random.seed(seed)` on the global `random` module — so the circle generator
+  restarts the identical sequence the island generator just used. With
+  `topology='random'` the first circle's centre is therefore **bit-identical to
+  the first island's centre**, every seed, verified: both draw
+  `(179533.10593326495, 110339.66956980077)` at seed 7. That is where the
+  "cross-type overlap is common (100/100 scenarios)" observation above comes
+  from — it is an RNG artefact, not a property of the maps. The fix is a local
+  `random.Random(seed)` per generator, and it will move **every** benchmark
+  number in `docs/benchmarks/`, so it needs a full re-baseline in the same
+  commit.
 
 Consequence to remember: any change here **moves every random benchmark**, so
 numbers are only comparable within one generator version (see also the note
@@ -86,19 +132,43 @@ that `batch_random_test` drifts).
 
 - **Units are meters; angles are radians** throughout the algorithm code. `config.ALPHA_MAX`/`START_ANGLE_*` are stored in **degrees** and converted (`config.ALPHA_MAX_RAD`, `config.deg_to_rad`). The map is 500 km × 500 km, `R = 8000 m`.
 - A planner **state** is the tuple `(waypoint, heading)` where `waypoint = (x, y)`. Paths are lists of these tuples. `spatial_utils.state_to_tuple` is used for hashing/dedup.
-- **Obstacle inflation** is not just `R + margin`. `preprocessing.inflate_obstacles` uses `R * (1/cos(α_max/2) - 1) + SAFE_MARGIN` so a turn at max angle still clears the obstacle. Start/goal waypoints (`W₁`, `W_{n-1}`) are offset from the raw start/goal points by `L0`/`DSS` plus a turn-radius term — the planner never searches to the literal goal.
+- **Obstacle inflation is exactly `SAFE_MARGIN`** — the operator's stand-off, nothing else. It used to add a `R*(1/cos(α_max/2)-1)` worst-case fillet term; that is gone (the search checks each arc exactly, per corner, with the real turn angle), because sized for α_max and applied to every obstacle it closed 49% of all corridors between obstacle pairs. Start/goal waypoints (`W₁`, `W_{n-1}`) are offset from the raw start/goal points by `L0`/`DSS` plus a turn-radius term — the planner never searches to the literal goal.
 - **Operating-area bounds** (`_in_bounds`): a `safezones` polygon ⇒ point must be `covers`-ed by it; else an **explicit** `map_bounds` ⇒ the `[0,w]×[0,h]` rectangle; else (neither given) ⇒ **permissive** (returns True). The old code always fell back to the `config.MAP_WIDTH/HEIGHT` 500 km box, which silently rejected every waypoint of scenarios living outside it (e.g. real missions at `y≈1.15e6` that pass no bounds) — surfaced once start corners started filtering on `_in_bounds`. NOTE the two easy scenario-key mistakes that make a scenario effectively unbounded: the planner reads `safezones` (plural) and `map_bounds` (a `(w,h)` tuple) — `safezone`/`map_width`/`map_height` are ignored.
-- **Seeded start corners** (replaces the single worst-case `W₁`): the planner does NOT root the search at one `W₁ = O + (L0 + R·tan(α_max/2))·û`. Instead `KinodynamicAstar.__init__` seeds `config.NUM_START_CORNERS` (K=8) corner states on the takeoff ray at `d_i = L0 + R·tan(αᵢ/2)`, tan-uniform buckets `tan(αᵢ/2) = (i/K)·tan(α_max/2)`, i=1..K (bucket K == the legacy `W₁`, so `NUM_START_CORNERS=1` is exactly legacy — the A/B knob). A corner seeded for `αᵢ` affords any first turn `α ≤ αᵢ` while keeping the takeoff straight `l₁ ≥ L0` **exactly** (via `State.straight_budget` + `State.min_straight_in = L0`, checked in `_doan_trinh`). Corners outside the operating area or with a colliding `O→corner` leg are not seeded (feasibility recovery — the single legacy `W₁` could land inside an inflated obstacle / outside a safezone corridor and kill the whole plan; e.g. a diagonal-corridor safezone with an adverse takeoff heading). If none survive, the start is blocked (fast honest failure). `smooth_path` re-guards `l₁ ≥ L0` at the first anchor since a shortcut can change `α₁`. NOTE: the terminal `W_{n-1}` still uses the α_max reserve (fixed mode) — that's a planned Phase-2; free-goal mode already targets `T` with a real-angle usable run-in ≥ DSS.
+- **Seeded start corners** (replaces the single worst-case `W₁`): the planner does NOT root the search at one `W₁ = O + (L0 + R·tan(α_max/2))·û`. Instead `KinodynamicAstar.__init__` seeds `config.NUM_START_CORNERS` (K=4) corner states on the takeoff ray at `d_i = L0 + R·tan(αᵢ/2)`, tan-uniform buckets `tan(αᵢ/2) = (i/K)·tan(α_max/2)`, i=1..K (bucket K == the legacy `W₁`, so `NUM_START_CORNERS=1` is exactly legacy — the A/B knob). A corner seeded for `αᵢ` affords any first turn `α ≤ αᵢ` while keeping the takeoff straight `l₁ ≥ L0` **exactly** (via `State.straight_budget` + `State.min_straight_in = L0`, checked in `_doan_trinh`). Corners outside the operating area or with a colliding `O→corner` leg are not seeded (feasibility recovery — the single legacy `W₁` could land inside an inflated obstacle / outside a safezone corridor and kill the whole plan; e.g. a diagonal-corridor safezone with an adverse takeoff heading). If none survive, the start is blocked (fast honest failure). `smooth_path` re-guards `l₁ ≥ L0` at the first anchor since a shortcut can change `α₁`. NOTE: the terminal `W_{n-1}` still uses the α_max reserve (fixed mode) — that's a planned Phase-2; free-goal mode already targets `T` with a real-angle usable run-in ≥ DSS.
 
-- **`core/kinodynamic_astar_v0.py`** (gitignored, may not exist in a fresh
-  clone) is a **readability-first** variant of the planner kept in sync by hand:
-  it keeps the simpler `WRAP_STEP_M` straight-continuation instead of
-  `_arc_hop_successors`, and reuses `path_validation` / `spatial_utils` helpers
-  instead of the main file's hand-inlined hot loops. Nothing imports it. When
-  porting a mechanism into it, **keep docstrings short** — one or two lines of
-  *what*, not the main file's long *why* essays — that brevity is the point of
-  the file.
+- **`core/kinodynamic_astar_v0.py` is TRACKED, and it is the planner that
+  actually ships.** `batch_random_test.py` imports it (line ~117, shadowing the
+  `kinodynamic_astar` import at the top of that file); `main.py`, `run_test.py`
+  and `gui/app.py` import the MAIN planner instead. (`ml_planner/` used to be the
+  other big consumer of the main planner; it was deleted on 2026-08-21.) An earlier version of this file called v0 "gitignored, may not exist
+  in a fresh clone" — it is in `git ls-files`.
+
+  It began as a **readability-first** variant kept in sync by hand: simpler
+  `WRAP_STEP_M` straight-continuation instead of `_arc_hop_successors`, and
+  `path_validation` / `spatial_utils` helpers instead of the main file's
+  hand-inlined hot loops. That framing is now in tension with its role — a file
+  that ships is not a sketch — so when the two conflict, **v0 is the standard
+  and main follows it** (owner's call, 2026-08-20). Keep its docstrings short
+  regardless: one or two lines of *what*, not the main file's long *why* essays.
+
+  Measured over 300 seeds, both goal modes: the two solve the SAME missions
+  (294/300 free, 243/300 fixed). Main's paths are 0.53% shorter and cost 2.5x
+  the time and 21% more waypoints. Neither dominates; do not "upgrade" one to
+  the other without an A/B. Divergences that remain on purpose: arc-hop and the
+  analytic goal shot (main only — and note the goal shot never runs on the
+  deployed path, since `batch_random_test` plans in free-goal mode where
+  `_try_goal_shot` returns immediately), `STRATEGY_B_CONSECUTIVE` (main only),
+  and the interior-overlap machinery (main keeps it, v0 deleted it).
+- **A dead knob is worse than no knob.** `config.CIRCLE_GRAZE_TOL_M` is
+  deprecated and pinned at `0.0` — no planner reads it — yet `gui/params.py`
+  still renders it as a 0-500 m slider, so an operator can move it and change
+  nothing. Either wire it or drop it from the panel.
 - **Every tunable lives in `config.py`, never as a literal in the algorithm.**
+  The most recent offender was a bare `< 10000` (squared metres) in main's
+  successor loop, which silently made the two planners disagree about which
+  candidates exist; it is now `config.CANDIDATE_MIN_DIST_M`, shared and
+  measured. Watch for the same shape: a literal that encodes a DECISION rather
+  than a degenerate-geometry guard.
   One constant per *meaning*, even when two happen to share a value: e.g. the
   đoản-trình floor `MIN_STRAIGHT_M` and the fan's float-noise pad
   `RADIAL_FAN_STEP_M` are separate knobs on purpose. `kinodynamic_astar.py`'s
@@ -106,6 +176,67 @@ that `batch_random_test` drifts).
   path), not a second definition — do not re-inline the number. Only degenerate
   -geometry guards (`< 1e-9` collinearity / right-angle tests) stay inline;
   they are not tunables.
+
+### Typing and style contract (added 2026-08-21)
+
+`core/` and `render/` are **Ruff-clean and Pyright-strict-clean**; `pyproject.toml`
+holds both configs. Everything below was landed as a pure restyle and proved
+bit-identical (300 seeds x 2 planners x 2 goal modes, `bit-identical 300/300`,
+identical iteration counts), so the numbers in this file still stand.
+
+- **`core/types.py` is the single vocabulary** for the two dict shapes. Only the
+  keys the search reads unconditionally are required; the rest are
+  `NotRequired`, because GUI and render callers legitimately pass a partial
+  mapping (`gui/map_canvas.py` passes `preprocessed or {}`). Marking them
+  required would make the checker bless code that `KeyError`s on those inputs.
+  The planners resolve `start_pos` / `goal_pos` / `straight_length` ONCE in
+  `__init__` (`self._origin`, `self._target`, `self._l0`) and raise a clear
+  `ValueError` when they are missing, instead of failing deep inside the search.
+- **`plan_trajectory()` is now a thin wrapper over `KinodynamicAstar.plan()`**
+  in both planners. It used to be a module-level function reaching into
+  `planner._check_fixed_legs()`; the name, signature and result dict are
+  unchanged. `_check_fixed_legs` kept its name only because `ml_planner/plan.py`
+  called it — **`ml_planner/` was deleted on 2026-08-21**, so the last external
+  caller is gone and it is now free to become public. The only remaining
+  reference is `kinodynamic_arc_hop_test`, which is already red on signature
+  drift.
+- **`path_validation.arc_points` is public** (was `_arc_points`). It is a shared
+  contract, not an internal: v0 calls it so the search weighs the SAME arc the
+  oracle will.
+- **`preprocessing` parameters are snake_case**: `prepare_scenario(scenario,
+  turn_radius=, l0=, dss=, safe_margin=, alpha_max_rad=)` — was `R=, L0=, DSS=`.
+  `path_is_valid` likewise takes `turn_radius=` / `l0=`.
+- **Exactly two relaxations, both at a third-party boundary.** `render/` gets
+  `reportUnknownMemberType` / `reportUnknownArgumentType` switched off via a
+  per-directory `executionEnvironments` block, because matplotlib 3.8's stubs are
+  partial and strict there reported ~300 unknowns that come from the LIBRARY.
+  Everything that catches defects stays strict in `render/` too — verified with a
+  canary: an unannotated parameter, an unused function and a `None + 1` are all
+  still errors there. `core/spatial_utils.py` keeps a file-level suppression
+  because shapely 2.1.2 ships no `py.typed`, so the checker infers `buffer()` as
+  returning `Polygon` when it can return a `MultiPolygon` — the runtime branch is
+  right and the checker is not. Nothing else is suppressed; `Any` appears nowhere.
+
+  **Two pyright traps this cost, both measured, do not re-discover them:**
+  `typeCheckingMode` inside `executionEnvironments` is silently IGNORED by
+  pyright 1.1.411 (per-rule overrides work, the mode does not); and
+  `executionEnvironments.root` also becomes the **import resolution root**, so
+  without `extraPaths = ["."]` the package stops seeing `config` / `core.*` /
+  its own `render.*` — that alone turned 0 errors into 174, of which 168 were
+  downstream noise from 6 unresolved imports.
+- **`pythonVersion` is pinned to 3.11**, matching the interpreter here;
+  `typing.NotRequired` needs it.
+- **Unicode in operator-facing text is deliberate** — `α_max`, `L₀`, `°`,
+  `✓/✗`, and the domain term **đoản trình**. `RUF001-003` (the homoglyph hunt)
+  are **off**: they exist to catch a Cyrillic `а` smuggled into an identifier,
+  and here they flagged exactly one character — `α`, the domain's own notation.
+  Following them silently changed operator-facing labels and mangled a
+  Vietnamese technical term. Do not ASCII-fold these: `main.py`,
+  `performance_eval.py` and `check_waypoints.py` use the same symbols.
+
+- **`ruff`'s `D` rules only ever demand docstrings on PUBLIC functions** —
+  verified. Docstrings on private helpers are a house choice, not a rule, so
+  they are the first thing to trim if the file feels padded.
 
 ### How the A\* search actually works (core/kinodynamic_astar.py)
 
@@ -136,8 +267,10 @@ old single worst-case leg exactly). The old code hardcoded `β = α_max`, so eve
 fan leg paid the worst-case far reserve even when the pivot barely turns, which
 bulged fan-routed paths in open water. M is **measured, not tuned by intuition**
 — the relation is not monotone in M (see the note in `config.py`).
-`validate_kinodynamics` enforces the max-turn-angle and minimum-straight-segment
-(đoản trình) constraints. `search()` accepts the goal only when both within
+The max-turn-angle and đoản-trình (minimum-straight) constraints are enforced
+inline by `_pivot_candidate` and `_doan_trinh` (a `preprocessing.
+validate_kinodynamics` once did this; it was dead code by 2026-08-20 and is
+gone). `search()` accepts the goal only when both within
 `GOAL_THRESHOLD` **and** the arrival heading is within `α_max` of `goal_heading`
 (so the terminal turn onto the approach is feasible). `smooth_path` shortcuts
 each kept anchor to the **farthest** reachable waypoint whose direct chord is
@@ -440,6 +573,48 @@ Note the shape of the result: the same idea is worth 2× where each skipped pair
 was a function call plus a `distance()` call, and 2% where it was already ten
 inline arithmetic ops. Prefilter what is EXPENSIVE per pair, not what is
 frequent.
+
+### Measuring changes here (read before trusting any number)
+
+The gate is `scripts/ab_planners.py` + `scripts/BENCHMARKS.md`; baselines live in
+the gitignored `docs/benchmarks/` and regenerate in minutes. Decide the gate
+BEFORE writing the change: *bit-identical* for anything claimed to be a pure
+optimisation, *A/B* for anything that changes which successors exist. A matching
+summary is not evidence — two different routes agree on total length to four
+decimals — so compare the waypoint dumps.
+
+Four traps, each of which produced a confident wrong conclusion in one session
+on 2026-08-20:
+
+- **`grep` here honours `.gitignore`.** It is a shell function wrapping
+  `ugrep --ignore-files`, and `.gitignore` lists `/tests/` and `docs/`. Every
+  "I grepped the whole repo" claim made with it silently excluded the entire
+  test suite. Use `command grep`, and prefer `python -m pyflakes core/ render/
+  gui/ scripts/` for "is this still referenced" questions — it does not skip
+  what git happens to ignore.
+- **cProfile inflates small hot functions.** It attributes per-call overhead to
+  exactly the tiny functions worth optimising: it claimed 7.4% for
+  `state_to_tuple`, and caching it away was worth 0.5-1.3%. Use cProfile to FIND
+  candidates, never to size the win.
+- **Wall-clock is not comparable across time on this box** (3 GB WSL2). Same
+  commit, same config, same 300 seeds, two hours apart: 102.1 s vs 165.1 s,
+  +62%, every path bit-identical. Only paired repeats run back to back mean
+  anything, medians of 3+.
+- **`config.TIME_BUDGET_S = 15` makes the search wall-clock dependent** — the
+  same seed on a slower machine explores fewer nodes and can return a different
+  answer. Exactly one seed is budget-bound on the current sweeps (**seed 39,
+  fixed mode**), measured anywhere from 13,624 to 26,183 iterations on identical
+  code, and it alone shifted a fixed-mode call-count total by 29%. Take
+  instrumented counts in `free` mode, where nothing is budget-bound and they
+  reproduce exactly. Note the wider implication, which is not just a measurement
+  problem: **the planner is not deterministic across machines.**
+
+Two mechanical notes. Most files here are **CRLF** (`git ls-files --eol` to
+check, there is no `.gitattributes`); patching with `open(p, 'w').write(s)` in
+Python rewrites the whole file to LF and buries the real change in a 1600-line
+diff. Use `newline='\r\n'`, or the editing tools, which preserve it. And
+`str.replace` with a pattern that does not match is a silent no-op — assert the
+match count when scripting an edit.
 
 ### Rendering model (render/trajectory.py)
 
