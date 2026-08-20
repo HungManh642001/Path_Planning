@@ -1552,9 +1552,10 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
     # Re-validate the whole path with the INDEPENDENT oracle so success really
     # means oracle-valid; a path that fails is reported as an honest failure,
     # not returned as a silent bad plan. This is exactly the invariant asserted
-    # by tests/oracle_validity_test.py. Straight legs are checked against the
-    # inflated obstacles (full margin); turn arcs against the raw obstacles
-    # (arcs are designed to bulge into the inflation band).
+    # by tests/oracle_validity_test.py. Straight legs AND turn arcs are both
+    # checked against the INFLATED obstacles: path_is_valid's raw_* escape
+    # hatch is left unset on purpose, because inflation no longer carries a
+    # turn term for a fillet to bulge into.
     full = mission.full_mission_path(path, preprocessed_scenario)
     valid, failure_reason = pv.path_is_valid(
         full,

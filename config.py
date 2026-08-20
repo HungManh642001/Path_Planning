@@ -318,9 +318,16 @@ GOAL_SHOT_CONE = 25
 # R*(1/cos(alpha/2)-1) and can penetrate a nearby obstacle the straight legs
 # cleared, so the search commits to a path only the oracle then rejects
 # (path_self_collision) - no amount of successor diversity fixes it. With this
-# on, each successor's corner arc is checked against the RAW obstacles (the arc
-# is designed to bulge into the inflation band, so raw is the correct set, same
-# as path_validation.arcs_clear). ARC_CLEARANCE_CHECK = False is legacy.
+# on, each successor's corner arc is checked against the INFLATED obstacles --
+# the same set the straight legs clear, same as path_validation.arcs_clear.
+#
+# It used to be the RAW set, and this comment said so long after it stopped
+# being true: back when inflation carried an R*(1/cos(alpha_max/2)-1) turn term,
+# a fillet was DESIGNED to bulge into exactly that band, so raw was the correct
+# reference. With the turn term gone there is no band, and checking against raw
+# would let a turn dip inside the operator's stand-off (measured: 97.9 m of true
+# clearance on a run configured for 500 m). ARC_CLEARANCE_CHECK = False is
+# legacy.
 ARC_CLEARANCE_CHECK = True
 
 # Arc sample count for the search-time corner-arc check. The oracle samples 24;

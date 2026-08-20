@@ -33,12 +33,15 @@ def _run(seed):
         for a, b in zip(res['path'][:-1], res['path'][1:]):
             plen += math.dist(a[0], b[0])
         full = tr.build_full_path(res['path'], pre)
-        rawc = [(o['center'], o['radius']) for o in scen['obstacles'] if o['type'] == 'circle']
-        rawp = [o['polygon'] for o in scen['obstacles'] if o['type'] == 'polygon']
+        # Same verdict plan_trajectory reaches: INFLATED obstacles for straights
+        # AND arcs. This used to pass raw_circle_obstacles/raw_polygon_obstacles,
+        # which path_is_valid documents as a legacy escape hatch for reproducing
+        # the old inflation model -- it validates arcs against the uninflated
+        # obstacle, so a path dipping inside SAFE_MARGIN reads as valid here and
+        # invalid to the planner. Invisible today only because SAFE_MARGIN is 0.
         valid, _reason = pv.path_is_valid(
             full, pre['circle_obstacles'], pre['polygon_obstacles'],
-            config.R, config.ALPHA_MAX_RAD, config.L0, config.DSS,
-            raw_circle_obstacles=rawc, raw_polygon_obstacles=rawp)
+            config.R, config.ALPHA_MAX_RAD, config.L0, config.DSS)
     return res['success'], res['stats']['iterations'], dt, plen, valid
 
 
