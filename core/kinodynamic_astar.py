@@ -152,6 +152,15 @@ class KinodynamicAstar:
         # overlaps: measured ~50% of hard-seed wall time was shapely object
         # construction on queries that hit nothing.
         self._poly_bboxes = [p.bounds for p in self._polygons]
+        # Circles pre-unpacked to plain floats, as v0 already keeps them. The
+        # hot loops read this hundreds of thousands of times and the nested
+        # `for (cx, cy), radius in ...` paid a tuple unpack on every circle of
+        # every call. Safe to cache: nothing in the repo mutates an obstacle
+        # after prepare_scenario (grepped), so the "read live so a
+        # post-construction change is seen" note the old loop carried was
+        # protecting a case that does not exist.
+        self._circles = [(c[0], c[1], r)
+                         for c, r in preprocessed_scenario['circle_obstacles']]
         # Shrunk copies for the deep-hit short-circuit in _check_collision (see
         # config.POLYGON_DEEP_HIT_INSET_M). buffer() can return empty or a
         # MultiPolygon; an empty one simply never short-circuits.
@@ -180,7 +189,7 @@ class KinodynamicAstar:
         # inside the operator's minimum stand-off (measured: 97.9 m of true
         # clearance on a run configured for 500 m). Arcs and straights now both
         # honour SAFE_MARGIN.
-        self._arc_circles = self.scenario['circle_obstacles']
+        self._arc_circles = self._circles
         self._arc_polygons = self._polygons
         self._arc_poly_bboxes = self._poly_bboxes
         self._arc_polygons_deep = self._polygons_deep
@@ -818,9 +827,8 @@ class KinodynamicAstar:
         # point-to-SEGMENT distance (squared): the segment length dd is
         # computed once (not once per circle as point_to_line_distance did),
         # and each circle costs a few arithmetic ops with no function-call
-        # dispatch. `d² < r²` is exactly the old `dist < r`. Read live from
-        # scenario['circle_obstacles'] (no cache) so the check reflects any
-        # post-construction obstacle change, as before.
+        # dispatch. `d² < r²` is exactly the old `dist < r`. Read from the
+        # pre-unpacked self._circles (see __init__).
         p1x, p1y = p1
         sx = p2[0] - p1x
         sy = p2[1] - p1y
@@ -832,7 +840,7 @@ class KinodynamicAstar:
         gx0, gx1 = (p1x, p2[0]) if p1x <= p2[0] else (p2[0], p1x)
         gy0, gy1 = (p1y, p2[1]) if p1y <= p2[1] else (p2[1], p1y)
         if dd == 0.0:                              # degenerate segment
-            for (cx, cy), radius in self.scenario['circle_obstacles']:
+            for cx, cy, radius in self._circles:
                 if cx + radius < gx0 or cx - radius > gx1 or \
                         cy + radius < gy0 or cy - radius > gy1:
                     continue
@@ -841,7 +849,7 @@ class KinodynamicAstar:
                 if relx * relx + rely * rely < radius * radius:
                     return False
         else:
-            for (cx, cy), radius in self.scenario['circle_obstacles']:
+            for cx, cy, radius in self._circles:
                 if cx + radius < gx0 or cx - radius > gx1 or \
                         cy + radius < gy0 or cy - radius > gy1:
                     continue
@@ -961,7 +969,7 @@ class KinodynamicAstar:
 
         # Circles: inline point-to-segment, only for a circle whose bbox meets
         # the arc bbox (grown by its radius).
-        for (cx, cy), radius in self._arc_circles:
+        for cx, cy, radius in self._arc_circles:
             if cx + radius < ax0 or cx - radius > ax1 or \
                     cy + radius < ay0 or cy - radius > ay1:
                 continue
