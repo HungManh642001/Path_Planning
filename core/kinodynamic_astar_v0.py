@@ -6,19 +6,14 @@ Core algorithm for missile trajectory planning with dynamic constraints
 import heapq
 import math
 from collections import defaultdict
-from pathlib import Path
 
-import numpy as np
 from shapely.geometry import Polygon, LineString, Point
 from shapely.prepared import prep as shp_prep
 from shapely.ops import unary_union
 
 import config
 import core.spatial_utils as su
-import core.preprocessing as prep
 import core.path_validation as pv
-
-import random
 
 
 def _angle_diff(a, b):
@@ -138,13 +133,17 @@ class KinodynamicAstar:
         )
 
         self._free_goal = preprocessed_scenario.get('goal_heading') is None
-        self.distance_to_target = preprocessed_scenario['goal_state'].get('distance_to_target')
         self._dss = preprocessed_scenario['goal_state'].get('engagement_distance', config.DSS)
 
         # Search variables
         self.open_set = []
         self.closed_set = set()
-        self.came_from = {}
+        # NOTE: deliberately no came_from dict. State hashing quantises to a
+        # coarse lattice, so a lattice-keyed parent map lets two distinct
+        # candidates collide and splice the reconstruction onto a parent whose
+        # transition was never collision-checked. Parents live on the State
+        # object instead. (The dict was still being allocated here, unread,
+        # long after the search stopped using it.)
         self.g_scores = defaultdict(lambda: float('inf'))
         
         self.iteration_count = 0

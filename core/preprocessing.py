@@ -8,30 +8,27 @@ import config
 import core.spatial_utils as su
 
 
-def inflation_offsets(R=config.R, alpha_max_rad=config.ALPHA_MAX_RAD, safe_margin=config.SAFE_MARGIN):
-    """Obstacle boundary offsets for display.
+def inflation_ring(safe_margin=config.SAFE_MARGIN):
+    """Obstacle boundary offset for display: exactly what inflate_obstacles applies.
 
-    There is now a SINGLE ring: `safe_margin`, which is exactly the inflation
-    `inflate_obstacles` applies. The second ring used to add a
-    `R*(1/cos(alpha_max/2)-1)` turn term reserving the worst-case fillet bulge;
-    that term is gone (the search checks each arc exactly instead), so both
-    values coincide. The pair is kept so callers that draw two rings keep
-    working — they simply draw the same circle twice.
+    There is a SINGLE ring, `safe_margin`. This used to return a PAIR because a
+    second ring added a `R*(1/cos(alpha_max/2)-1)` turn term reserving the
+    worst-case fillet bulge; that term is gone (the search checks each arc
+    exactly instead), so the two values had become identical and the only caller
+    was already discarding the second.
     """
-    return safe_margin, safe_margin
+    return safe_margin
 
 
-def inflate_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MARGIN, alpha_max_rad=config.ALPHA_MAX_RAD):
+def inflate_obstacles(obstacles, safe_margin=config.SAFE_MARGIN):
     """
-    Inflate obstacle boundaries by R + SAFE_MARGIN.
+    Inflate obstacle boundaries by SAFE_MARGIN.
     Keeps obstacles independent (no early Convex Hull).
-    
+
     Args:
         obstacles: List of obstacle dicts with 'type', 'polygon' or 'center'/'radius'
-        R: Turn radius
-        safe_margin: Additional safety buffer
-        alpha_max_rad: Maximum turn angle allowed (radians)
-    
+        safe_margin: The operator's minimum stand-off distance (m)
+
     Returns:
         List of inflated obstacles
     """
@@ -144,67 +141,14 @@ def calculate_end_state(target, target_heading, dss=config.DSS, R=config.R, alph
     }
 
 
-def validate_kinodynamics(w_i, heading_i, w_next, heading_next, w_next_next=None, 
-                         heading_next_next=None, R=config.R, alpha_max=config.ALPHA_MAX_RAD):
-    """
-    Validate kinodynamic constraints for a segment.
-    
-    Checks:
-    1. Turn angle α ≤ α_max
-    2. Straight segment length l > 0
-    
-    Args:
-        w_i: Current waypoint (x, y)
-        heading_i: Current heading (radians)
-        w_next: Next waypoint (x, y)
-        heading_next: Next heading (radians)
-        w_next_next: Following waypoint (optional)
-        heading_next_next: Following heading (optional)
-        R: Turn radius
-        alpha_max: Maximum turn angle (radians)
-    
-    Returns:
-        Tuple (is_valid, error_message)
-    """
-    
-    # Check turn angle constraint: |Δheading| ≤ α_max
-    delta_heading = heading_next - heading_i
-    delta_heading = math.atan2(math.sin(delta_heading), math.cos(delta_heading))
-    alpha = abs(delta_heading)
-    
-    if alpha > alpha_max:
-        return False, f"Turn angle {math.degrees(alpha):.2f}° exceeds max {math.degrees(alpha_max):.2f}°"
-    
-    # Check straight segment length
-    # d_{i+1} = l_{i+1} + R * (tan(α_i/2) + tan(α_{i+1}/2))
-    # We need l_{i+1} > 0
-    
-    
-    # Straight-segment (đoản trình) check.
-    if w_next_next is not None and heading_next_next is not None:
-        delta_next = heading_next_next - heading_next
-        alpha_next = abs(math.atan2(math.sin(delta_next), math.cos(delta_next)))
-    else:
-        alpha_next = alpha_max if alpha_max is not None else 0.0
-
-    d_segment = math.hypot(w_next[0] - w_i[0], w_next[1] - w_i[1])
-    l_required = d_segment - R * (math.tan(alpha / 2) + math.tan(alpha_next / 2))
-    if l_required < 10.0:
-        return False, f"Straight segment length {l_required:.2f}m too small (need > 10m)"
-    
-    return True, "OK"
-
-
-def compute_inflated_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MARGIN, alpha_max_rad=config.ALPHA_MAX_RAD):
+def compute_inflated_obstacles(obstacles, safe_margin=config.SAFE_MARGIN):
     """
     Pre-process all obstacles: inflate them and create buffer zones.
     
     Args:
         obstacles: List of raw obstacles
-        R: Turn radius
-        safe_margin: Safety buffer
-        alpha_max_rad: Maximum turn angle allowed (radians)
-    
+        safe_margin: The operator's minimum stand-off distance (m)
+
     Returns:
         Dict with:
             - 'inflated_obstacles': inflated obstacle list
@@ -212,7 +156,7 @@ def compute_inflated_obstacles(obstacles, R=config.R, safe_margin=config.SAFE_MA
             - 'polygon_obstacles': list of polygon coordinates
     """
     
-    inflated = inflate_obstacles(obstacles, R, safe_margin, alpha_max_rad)
+    inflated = inflate_obstacles(obstacles, safe_margin)
     
     circle_obstacles = []
     polygon_obstacles = []
@@ -270,7 +214,7 @@ def prepare_scenario(scenario, R=config.R, L0=config.L0, DSS=config.DSS, safe_ma
         goal_state = calculate_end_state(scenario['goal'], scenario['goal_heading'], DSS, R, alpha_max_rad)
     
     # Process obstacles
-    inflated_data = compute_inflated_obstacles(scenario['obstacles'], R, safe_margin, alpha_max_rad)
+    inflated_data = compute_inflated_obstacles(scenario['obstacles'], safe_margin)
 
     # Raw (uninflated) obstacle sets, threaded through for callers that want to
     # measure or draw the true obstacle. They are NO LONGER the arc-clearance

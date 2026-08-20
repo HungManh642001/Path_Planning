@@ -6,13 +6,11 @@ Core algorithm for autonomous aircraft trajectory planning with dynamic constrai
 import heapq
 import math
 from collections import defaultdict
-import numpy as np
 from shapely.geometry import Polygon, LineString, Point
 from shapely.prepared import prep as shp_prep
 from shapely.ops import unary_union
 import config
 import core.spatial_utils as su
-import core.preprocessing as prep
 import core.arc_geometry as ag
 import core.goal_shot as gshot
 import core.path_validation as pv
@@ -28,8 +26,7 @@ def _angle_diff(a, b):
 _ARC_CLEAR_BULGE = 1.0 / math.cos(math.pi / 8.0)
 
 # Minimum usable straight-flight length (đoản trình) between two waypoints, in
-# metres. Matches the threshold historically used by validate_kinodynamics.
-# The value lives in config so the two planners cannot drift apart; the local
+# metres. The value lives in config so the two planners cannot drift apart; the local
 # alias is kept because it is read on the hot path.
 _MIN_STRAIGHT_M = config.MIN_STRAIGHT_M
 
@@ -178,21 +175,16 @@ class KinodynamicAstar:
             hull = poly.convex_hull.buffer(self._construct_delta, join_style=2)
             self._poly_vertices.extend(hull.exterior.coords[:-1])
 
-        # Obstacle sets for the search-time turn-arc clearance check
-        # (_corner_arc_clear). These are the INFLATED sets, i.e. raw +
-        # SAFE_MARGIN — the same ones the straight-leg check uses.
-        #
-        # They used to be the RAW sets, because inflation carried a
+        # NOTE for _corner_arc_clear: the search-time turn-arc check uses the
+        # INFLATED sets above — the same ones the straight-leg check uses. It
+        # used to have its OWN sets, aliased here, because inflation carried a
         # `R*(1/cos(alpha_max/2)-1)` turn term and a fillet arc was designed to
-        # bulge into exactly that band. With the turn term gone there is no band
-        # to bulge into, and checking arcs against raw would let a turn dip
-        # inside the operator's minimum stand-off (measured: 97.9 m of true
-        # clearance on a run configured for 500 m). Arcs and straights now both
-        # honour SAFE_MARGIN.
-        self._arc_circles = self._circles
-        self._arc_polygons = self._polygons
-        self._arc_poly_bboxes = self._poly_bboxes
-        self._arc_polygons_deep = self._polygons_deep
+        # bulge into exactly that band, so arcs were checked against RAW. With
+        # the turn term gone there is no band to bulge into, and checking arcs
+        # against raw would let a turn dip inside the operator's minimum
+        # stand-off (measured: 97.9 m of true clearance on a run configured for
+        # 500 m). The four _arc_* aliases are gone with the distinction they
+        # encoded; arcs and straights both honour SAFE_MARGIN.
         self._arc_check_n = max(2, int(config.ARC_CHECK_SAMPLES))
 
         # Operating areas (safezones). When one or more polygons are supplied the
@@ -902,8 +894,9 @@ class KinodynamicAstar:
         return True
 
     def _corner_arc_clear(self, h_in, w, w_next, exact=False):
-        """True iff the radius-R fillet arc rounding corner `w` clears all RAW
-        obstacles. `h_in` is the incoming heading (the arc is tangent to it),
+        """True iff the radius-R fillet arc rounding corner `w` clears all
+        INFLATED obstacles (raw + SAFE_MARGIN, the same set the straight legs
+        clear). `h_in` is the incoming heading (the arc is tangent to it),
         `w_next` the next waypoint (the arc is tangent to w->w_next). Mirrors
         path_validation._arc_points GEOMETRY so the search weighs the same arc
         the final oracle will (path_self_collision), instead of committing to it;
@@ -969,7 +962,7 @@ class KinodynamicAstar:
 
         # Circles: inline point-to-segment, only for a circle whose bbox meets
         # the arc bbox (grown by its radius).
-        for cx, cy, radius in self._arc_circles:
+        for cx, cy, radius in self._circles:
             if cx + radius < ax0 or cx - radius > ax1 or \
                     cy + radius < ay0 or cy - radius > ay1:
                 continue
@@ -997,19 +990,19 @@ class KinodynamicAstar:
 
         # Polygons: one LineString for the whole arc polyline, tested only
         # against polygons whose bbox overlaps the arc bbox.
-        if self._arc_poly_bboxes:
+        if self._poly_bboxes:
             line = None
-            for i, (bx0, by0, bx1, by1) in enumerate(self._arc_poly_bboxes):
+            for i, (bx0, by0, bx1, by1) in enumerate(self._poly_bboxes):
                 if ax1 < bx0 or bx1 < ax0 or ay1 < by0 or by1 < ay0:
                     continue
                 if line is None:
                     line = LineString(pts)
-                poly = self._arc_polygons[i]
+                poly = self._polygons[i]
                 if not poly.relate_pattern(line, 'T********'):
                     continue
                 if not exact:
                     return False
-                deep = self._arc_polygons_deep[i]
+                deep = self._polygons_deep[i]
                 if not deep.is_empty and deep.relate_pattern(line, 'T********'):
                     return False
                 if pv.interior_overlap_length(poly, line) > _POLY_TOUCH_TOL_M:
@@ -1248,8 +1241,8 @@ class KinodynamicAstar:
         the searched route itself is stored in self.raw_route).
 
         Walks per-object parent pointers, so every emitted edge is exactly a
-        transition that passed _check_collision / validate_kinodynamics at
-        creation time. In particular, arc_from's frozen arc_start equals the
+        transition that passed _check_collision and the turn / đoản-trình gates
+        at creation time. In particular, arc_from's frozen arc_start equals the
         parent's waypoint by object identity — no healing needed."""
         states = [state]
         current = state

@@ -86,7 +86,6 @@ CONSTRUCTION_CLEARANCE_M = 1.0
 # Map bounds (meters) for simulation
 MAP_WIDTH = 500000.0
 MAP_HEIGHT = 500000.0
-MAP_ORIGIN = (0.0, 0.0)
 
 # ====== A* SEARCH ======
 # Number of seeded start-corner states on the start-heading ray. Corner i

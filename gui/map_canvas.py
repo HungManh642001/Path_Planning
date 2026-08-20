@@ -94,10 +94,8 @@ class MapCanvas:
         #   `R*(1/cos(alpha_max/2)-1)` turn reserve; that term is gone, so there
         #   is nothing left to distinguish.
         if preprocessed:
-            R = preprocessed.get('turn_radius', config.R)
-            alpha = preprocessed.get('alpha_max_rad', config.ALPHA_MAX_RAD)
             sm = preprocessed.get('safe_margin', config.SAFE_MARGIN)
-            ring_off, _ = prep.inflation_offsets(R, alpha, sm)
+            ring_off = prep.inflation_ring(sm)
             labelled = False
             for o in state['obstacles']:
                 lab = 'Safe margin' if not labelled else None

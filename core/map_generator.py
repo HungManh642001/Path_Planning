@@ -6,8 +6,6 @@ Generates synthetic mission scenarios with islands and dynamic obstacles for tes
 import random
 import math
 from shapely import Point, Polygon
-import numpy as np
-from scipy.spatial import distance
 import config
 
 
@@ -28,8 +26,7 @@ def generate_random_islands(num_islands, map_bounds, start=None, goal=None, topo
     """
     if seed is not None:
         random.seed(seed)
-        np.random.seed(seed)
-    
+
     islands = []
     placed = []          # Polygon form of `islands`, for the separation test
     width, height = map_bounds
@@ -124,9 +121,7 @@ def generate_dynamic_obstacles(num_sites, map_bounds, start=None, goal=None, top
     """
     if seed is not None:
         random.seed(seed)
-        np.random.seed(seed)
-    
-    
+
     min_radius, max_radius = config.OBSTACLE_RADIUS_MIN, config.OBSTACLE_RADIUS_MAX
     dynamic_obstacles = []
     width, height = map_bounds
