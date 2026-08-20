@@ -14,6 +14,7 @@ import config
 import core.map_generator as mg
 import core.preprocessing as prep
 import core.kinodynamic_astar as astar
+import core.mission as mission
 import core.path_validation as pv
 
 
@@ -34,7 +35,7 @@ def _length(full):
 
 
 def _validate(pre, result):
-    full = astar._full_mission_path(result['path'], pre)
+    full = mission.full_mission_path(result['path'], pre)
     return full, pv.path_is_valid(
         full, pre['circle_obstacles'], pre['polygon_obstacles'],
         pre['turn_radius'], pre['alpha_max_rad'],
@@ -60,7 +61,7 @@ def test_smoothing_folds_the_maze_and_stays_oracle_valid():
     pre_on, on = _plan(scen(), smooth=True)
     assert off['success'] and on['success']
 
-    full_off = astar._full_mission_path(off['path'], pre_off)
+    full_off = mission.full_mission_path(off['path'], pre_off)
     full_on, (ok, why) = _validate(pre_on, on)
     assert ok, why
     assert len(on['path']) < len(off['path']), 'expected waypoints to be folded away'
@@ -76,7 +77,7 @@ def test_smoothing_never_lengthens_and_stays_valid_across_presets():
         assert on['success'], f'{name}: smoothing lost a solution ({on["failure_reason"]})'
         _full, (ok, why) = _validate(pre_on, on)
         assert ok, f'{name}: {why}'
-        l_off = _length(astar._full_mission_path(off['path'], pre_off))
+        l_off = _length(mission.full_mission_path(off['path'], pre_off))
         l_on = _length(_full)
         assert l_on <= l_off + 1.0, f'{name}: smoothing lengthened {l_off} -> {l_on}'
 
@@ -90,7 +91,7 @@ def test_smoothed_path_keeps_the_takeoff_leg_on_its_ray_and_above_L0():
         pre, res = _plan(fn(), smooth=True)
         if not res['success']:
             continue
-        full = astar._full_mission_path(res['path'], pre)
+        full = mission.full_mission_path(res['path'], pre)
         O = pre['start_pos']
         assert math.dist(O, full[0][0]) < 1.0
 

@@ -25,6 +25,7 @@ import time
 
 import config
 import core.map_generator as mg
+import core.mission as mission
 import core.preprocessing as prep
 import core.spatial_utils as su
 
@@ -73,7 +74,7 @@ def _load_planner(name):
 
 
 def _full_length(module, path, pre):
-    full = module._full_mission_path(path, pre)
+    full = mission.full_mission_path(path, pre)
     return sum(math.dist(full[i][0], full[i + 1][0]) for i in range(len(full) - 1))
 
 

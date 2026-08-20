@@ -26,6 +26,8 @@ planner's path only covers the interior waypoints W_1..W_{n-1}.
 
 import math
 
+import core.mission as mission
+
 _ARC_SAMPLES = 24  # even -> a sample lands exactly on the waypoint (arc midpoint)
 
 
@@ -57,26 +59,14 @@ def turn_markers(path, R):
 
 
 def build_full_path(result_path, preprocessed):
-    """Prepend takeoff O and append goal T (from `preprocessed`) so the drawn
-    path spans the whole mission, not just the interior waypoints.
+    """Prepend takeoff O and append goal T so the drawn path spans the mission.
 
-    The planner searches between W_1 (offset from O) and W_{n-1} (offset from T);
-    the autonomous aircraft still flies O -> W_1 ... W_{n-1} -> T.
+    Thin alias for core.mission.full_mission_path, kept because this is the name
+    the render layer, the GUI and the tests already call. The planners validate
+    the path they emit with the SAME function, which is the point: the drawn
+    trajectory and the oracle's verdict must be about one list of waypoints.
     """
-    wps = list(result_path)
-    O = preprocessed.get('start_pos') if preprocessed else None
-    T = preprocessed.get('goal_pos') if preprocessed else None
-    sh = preprocessed.get('start_heading', 0.0) if preprocessed else 0.0
-    gh = preprocessed.get('goal_heading', 0.0) if preprocessed else 0.0
-    if O is not None and (not wps or math.dist(O, wps[0][0]) > 1.0):
-        wps = [(tuple(O), sh)] + wps
-    if T is not None and (not wps or math.dist(T, wps[-1][0]) > 1.0):
-        # Free-goal mode leaves goal_heading None; the drawn arrival heading is
-        # then the bearing of the final leg into T.
-        if gh is None:
-            gh = math.atan2(T[1] - wps[-1][0][1], T[0] - wps[-1][0][0]) if wps else 0.0
-        wps = wps + [(tuple(T), gh)]
-    return wps
+    return mission.full_mission_path(result_path, preprocessed)
 
 
 # --------------------------------------------------------------------------

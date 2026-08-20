@@ -20,6 +20,19 @@ def angle_to_heading(p1, p2):
     return math.atan2(p2[1] - p1[1], p2[0] - p1[0])
 
 
+def angle_diff(a, b):
+    """Smallest signed difference a-b, normalised to [-pi, pi].
+
+    Both planners alias this at module level (`_angle_diff = su.angle_diff`)
+    because it is read on the hot path. Two other copies stay where they are on
+    purpose, and neither is an oversight: `path_validation._norm` keeps the
+    oracle independent of the code it validates, and `goal_shot._angdiff` keeps
+    that module free of every import but `math` -- importing this one would drag
+    shapely and config into a file whose whole contract is pure geometry.
+    """
+    return math.atan2(math.sin(a - b), math.cos(a - b))
+
+
 def point_to_line_distance(point, line_start, line_end):
     """Perpendicular distance from a point to a line segment."""
     px, py = point

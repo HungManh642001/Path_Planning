@@ -12,13 +12,14 @@ from shapely.prepared import prep as shp_prep
 from shapely.ops import unary_union
 
 import config
+import core.mission as mission
 import core.spatial_utils as su
 import core.path_validation as pv
 
 
-def _angle_diff(a, b):
-    """Smallest signed difference a-b normalised to [-pi, pi]."""
-    return math.atan2(math.sin(a - b), math.cos(a - b))
+# Hot-path alias of su.angle_diff (module-global lookup, called ~10x per
+# candidate). Not a second definition -- see the note in spatial_utils.
+_angle_diff = su.angle_diff
 
 
 class State:
@@ -805,32 +806,6 @@ class KinodynamicAstar:
         }
 
 
-def _full_mission_path(path, preprocessed):
-    """Prepend takeoff O and append goal T so the path spans the whole mission
-    O..T (the search only produces the interior W_1..W_{n-1} waypoints).
-
-    Mirrors render.trajectory.build_full_path exactly so the final oracle here
-    validates the SAME path the render layer / oracle tests build; the two are
-    kept consistent by tests/oracle_validity_test.py (which builds its full
-    path via render.trajectory.build_full_path and asserts this function's
-    verdict). Kept here rather than imported to avoid a core->render dependency.
-    """
-    wps = list(path)
-    O = preprocessed.get('start_pos')
-    T = preprocessed.get('goal_pos')
-    sh = preprocessed.get('start_heading', 0.0)
-    gh = preprocessed.get('goal_heading', 0.0)
-    if O is not None and (not wps or math.dist(O, wps[0][0]) > 1.0):
-        wps = [(tuple(O), sh)] + wps
-    if T is not None and (not wps or math.dist(T, wps[-1][0]) > 1.0):
-        # Free-goal mode leaves goal_heading None; the arrival heading is then
-        # the bearing of the final leg into T.
-        if gh is None:
-            gh = math.atan2(T[1] - wps[-1][0][1], T[0] - wps[-1][0][0]) if wps else 0.0
-        wps = wps + [(tuple(T), gh)]
-    return wps
-
-
 def plan_trajectory(preprocessed_scenario, verbose=False):
     """
     High-level function to plan a autonomous aircraft trajectory.
@@ -896,7 +871,7 @@ def plan_trajectory(preprocessed_scenario, verbose=False):
     # by tests/oracle_validity_test.py. Straight legs are checked against the
     # inflated obstacles (full margin); turn arcs against the raw obstacles
     # (arcs are designed to bulge into the inflation band).
-    full = _full_mission_path(path, preprocessed_scenario)
+    full = mission.full_mission_path(path, preprocessed_scenario)
     valid, failure_reason = pv.path_is_valid(
         full,
         preprocessed_scenario['circle_obstacles'],
