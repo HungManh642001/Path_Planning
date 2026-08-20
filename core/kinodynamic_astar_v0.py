@@ -21,6 +21,10 @@ import core.path_validation as pv
 # candidate). Not a second definition -- see the note in spatial_utils.
 _angle_diff = su.angle_diff
 
+# Squared candidate-distance floor, compared against dx*dx + dy*dy (squared
+# because the quantity is -- see config.CANDIDATE_MIN_DIST_M).
+_CAND_MIN_D2 = max(config.CANDIDATE_MIN_DIST_M, config.GEOM_EPS_M) ** 2
+
 
 class State:
     """Represents a missile state: (waypoint, heading)"""
@@ -258,10 +262,7 @@ class KinodynamicAstar:
         for node in candidates:
             dx = node[0] - P[0]
             dy = node[1] - P[1]
-            # Degenerate zero-length edge. Compared in SQUARED metres, so the
-            # threshold must be squared too — `< config.EPS` was 1e-6 m^2, i.e.
-            # a 1 mm cutoff wearing a 1 um label.
-            if dx * dx + dy * dy < config.GEOM_EPS_M * config.GEOM_EPS_M:
+            if dx * dx + dy * dy < _CAND_MIN_D2:
                 continue
             res = self._pivot_candidate(current_state, node, 0.0)
             if (res is None and config.NUM_PIVOT_SLIDES > 0

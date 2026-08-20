@@ -37,6 +37,35 @@ Two kinds of gate, decided BEFORE the change is written:
   (gained/lost seeds), then `length`, then `iterations`. Read `time` last and
   only from paired repeats: single runs on identical code drift ~5%.
 
+## Two things that will fool you
+
+**1. Wall-clock is not comparable across time on this machine.** Measured: the
+same commit, the same config, the same 300 seeds, twice about two hours apart --
+102.1 s and 165.1 s, +62%, with every path bit-identical and every iteration
+count equal. The cause is environmental (this WSL2 box has 3 GB of RAM, and a
+second editor/agent session was resident). So a time in the table below is a
+snapshot, not a reference value: a later run being 50% slower is not a
+regression, and a later run being 20% faster is not a win. Only **paired
+repeats, run back to back, medians of 3+** say anything about a change, which is
+what the note in the compare output means.
+
+**2. `config.TIME_BUDGET_S` makes the search wall-clock dependent.** `search()`
+breaks out of the loop after 15 s, so on a slower machine the SAME seed explores
+fewer nodes and can return a different answer. On the current 300-seed sweeps
+exactly one seed is budget-bound -- **seed 39 in `fixed` mode** -- and it was
+measured exploring anywhere from 13,624 to 26,183 iterations across runs of
+identical code. It fails with `no_path` either way, which is the only reason
+`bit-identical` still reports 300/300 there: two empty paths are equal.
+
+Consequences for measuring:
+- Prefer **counts** (`iterations`, instrumented call counts) over time; they are
+  exactly reproducible in `free` mode, where nothing is budget-bound.
+- Do NOT take instrumented counts in `fixed` mode without excluding seed 39: it
+  alone moved a `_pivot_candidate` total by 29% between two runs of the same
+  code, which reads exactly like a real effect.
+- `compare` reports length/iterations over BOTH-SOLVED seeds only, so a
+  budget-bound failure is silently outside those sums.
+
 ## Modes
 
 - `free` (default) — `goal_heading = None`. This is what `batch_random_test.py`

@@ -31,6 +31,11 @@ _ARC_CLEAR_BULGE = 1.0 / math.cos(math.pi / 8.0)
 # alias is kept because it is read on the hot path.
 _MIN_STRAIGHT_M = config.MIN_STRAIGHT_M
 
+# Squared candidate-distance floor, compared against dx*dx + dy*dy. Squared
+# because the quantity is: `config.EPS` was once compared against squared metres
+# under a metres name, which turned a "1 um" constant into a 1 mm cutoff.
+_CAND_MIN_D2 = max(config.CANDIDATE_MIN_DIST_M, config.GEOM_EPS_M) ** 2
+
 # Shortest polygon-interior overlap that counts as a collision, in metres --
 # the OWNER of this number is the oracle (core/path_validation), and the planner
 # borrows it on purpose: a planner stricter than its own validator rejects
@@ -427,7 +432,7 @@ class KinodynamicAstar:
         for node in candidates:
             dx = node[0] - P[0]
             dy = node[1] - P[1]
-            if dx * dx + dy * dy < 10000:        # skip ~within 100 m
+            if dx * dx + dy * dy < _CAND_MIN_D2:
                 continue
             res = self._pivot_candidate(current_state, node, 0.0)
             if (res is None and config.NUM_PIVOT_SLIDES > 0

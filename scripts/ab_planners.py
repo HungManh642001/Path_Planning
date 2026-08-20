@@ -78,7 +78,32 @@ def _full_length(module, path, pre):
     return sum(math.dist(full[i][0], full[i + 1][0]) for i in range(len(full) - 1))
 
 
+def _apply_overrides(pairs):
+    """Set config constants BEFORE the planner module is imported.
+
+    Both planners derive module-level constants from config at import time
+    (`_CAND_MIN_D2`, `_MIN_STRAIGHT_M`, ...), so an override applied afterwards
+    would be silently ignored -- the run would look like an A/B and measure
+    nothing. Hence: override, then import.
+    """
+    for pair in pairs or ():
+        key, _, value = pair.partition('=')
+        if not hasattr(config, key):
+            raise SystemExit(f"config has no attribute {key!r}")
+        setattr(config, key, float(value) if _looks_numeric(value) else value)
+        print(f"  config.{key} = {getattr(config, key)!r}")
+
+
+def _looks_numeric(v):
+    try:
+        float(v)
+        return True
+    except ValueError:
+        return False
+
+
 def run(args):
+    _apply_overrides(args.set)
     module = _load_planner(args.planner)
     seeds = list(range(args.start, args.start + args.seeds))
     results = {}
@@ -104,6 +129,7 @@ def run(args):
     payload = {
         'planner': args.planner,
         'mode': args.mode,
+        'overrides': args.set or [],
         'seeds': [args.start, args.start + args.seeds],
         'total_time_s': time.perf_counter() - t_all,
         'results': results,
@@ -174,6 +200,8 @@ def main():
     r.add_argument('--mode', choices=['free', 'fixed'], default='free')
     r.add_argument('--out', required=True)
     r.add_argument('--verbose', action='store_true')
+    r.add_argument('--set', action='append', metavar='KEY=VALUE',
+                   help='override a config constant before importing the planner')
     r.set_defaults(func=run)
 
     c = sub.add_parser('compare', help='diff two run dumps')

@@ -417,6 +417,34 @@ EPS = 1e-6
 # a STAND-OFF, which is what SAFE_MARGIN / CONSTRUCTION_CLEARANCE_M are for.
 GEOM_EPS_M = 1e-8
 
+# Shortest Strategy-A candidate edge worth evaluating (m). A candidate this
+# close to the current waypoint is skipped before _pivot_candidate runs.
+#
+# The two planners disagreed here, and not by style: main skipped anything
+# within 100 m (a bare `< 10000` squared-metres literal in the successor loop),
+# v0 skipped only the genuinely degenerate zero-length edge. So main was
+# discarding candidates v0 evaluated, which is a difference in the search graph,
+# not in taste.
+#
+# The floor is GEOM_EPS_M regardless of this value: a zero-length edge has no
+# heading and must never reach _pivot_candidate. Set 0 for "degenerate only"
+# (v0's historical rule).
+#
+# MEASURED over 300 seeds x both goal modes, main at 100 m vs at 0:
+#   - every path bit-identical, every mission solved, same lengths
+#   - _pivot_candidate calls 3,836,890 -> 3,845,944, i.e. +0.236%
+# So the two rules are outcome-equivalent on this distribution and the 100 m
+# skip was buying 0.2% of candidate evaluations. 0 wins on risk rather than on
+# the clock: 100 m is a number with no derivation, and it silently discards a
+# legitimate tangent point or hull vertex on any map whose features are closer
+# together than that -- these maps have 20-60 km islands, a real one need not.
+#
+# Do not tune by intuition if you revisit this: quality is non-monotone in
+# successor count here (see NUM_FAN_DISTANCES), so re-measure, and measure the
+# CALL COUNTS rather than the clock (config.TIME_BUDGET_S makes wall-clock
+# results machine-dependent -- see scripts/BENCHMARKS.md).
+CANDIDATE_MIN_DIST_M = 0.0
+
 # Angular twin of GEOM_EPS_M. Measured: 0.31% of turn decisions sit within
 # 1e-12 rad of alpha_max (they are the fan rungs and start corners built to
 # afford exactly alpha_max), and widening the band from 1e-12 to 1e-3 rad only
