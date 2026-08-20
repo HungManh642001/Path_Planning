@@ -1,6 +1,0 @@
-# Extra dependencies for the ml_planner ML pipeline.
-# Phase 1 needs none of these at runtime (pure numpy/shapely, already in
-# the root requirements.txt). Listed here for Phase 2:
-#   - inference (this machine, CPU): onnxruntime
-#   - training  (off-machine, Colab/GPU): torch  (installed only on Colab)
-onnxruntime>=1.16
