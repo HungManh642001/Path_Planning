@@ -99,7 +99,7 @@ NUM_START_CORNERS = 4
 MAX_ITERATIONS = 50000
 
 # Wall-clock budget for a single search (seconds). None = no time limit.
-TIME_BUDGET_S = 15  # 0.9
+TIME_BUDGET_S: float | None = 15  # 0.9
 
 # State-lattice quantisation for A* de-duplication
 STATE_POS_QUANTUM = 1000.0          # meters
@@ -384,11 +384,11 @@ SPAWN_CLEARANCE_M = 5000.0
 # ====== UTILS ======
 import math
 
-def deg_to_rad(degrees):
+def deg_to_rad(degrees: float) -> float:
     """Convert degrees to radians"""
     return math.radians(degrees)
 
-def rad_to_deg(radians):
+def rad_to_deg(radians: float) -> float:
     """Convert radians to degrees"""
     return math.degrees(radians)
 

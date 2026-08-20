@@ -59,7 +59,7 @@ def test_path_is_valid_rejects_a_grazing_path():
     path = [(a, 0.0), (b, 0.0)]
     ok, reason = pv.path_is_valid(
         path, circle_obstacles=[(C, R)], polygon_obstacles=[],
-        R=8000.0, alpha_max_rad=math.radians(90), L0=4000.0, dss=23000.0,
+        turn_radius=8000.0, alpha_max_rad=math.radians(90), l0=4000.0, dss=23000.0,
         raw_circle_obstacles=[(C, 1.0)], raw_polygon_obstacles=[])
     assert ok is False, reason
     assert 'segment' in reason

@@ -1,84 +1,140 @@
-"""Pure geometry for the analytic terminal "goal shot": enumerate 2-corner
-vehicle maneuvers that connect a search state (P, h) to the goal waypoint,
-arriving with a heading inside the +-alpha_max terminal cone.
+"""Pure geometry for the analytic terminal "goal shot".
 
-A candidate is: turn <= alpha_max at P onto leg 1 (direction d1), fly straight
-to an intermediate corner C, turn <= alpha_max at C onto leg 2 (direction phi),
-fly straight to the goal, arriving heading phi (within alpha_max of the goal
-heading so the terminal turn onto the approach is feasible). C is the
-intersection of the ray from P along d1 and the back-ray into the goal along
-phi. No planner/config imports; all tolerances are parameters.
+Enumerates 2-corner vehicle manoeuvres that connect a search state
+``(position, heading)`` to the goal waypoint, arriving with a heading inside
+the +-alpha_max terminal cone.
+
+A candidate is: turn <= alpha_max at ``position`` onto leg 1 (direction
+``leg1_heading``), fly straight to an intermediate corner ``corner``, turn
+<= alpha_max there onto leg 2 (direction ``arrival_heading``), fly straight to
+the goal. ``corner`` is the intersection of the ray from ``position`` along
+``leg1_heading`` and the back-ray into the goal along ``arrival_heading``.
+
+No planner or config imports: every tolerance is a parameter, so this module
+stays a pure-geometry leaf that can be tested in isolation.
 """
+
+from __future__ import annotations
+
 import math
+from typing import NamedTuple
+
+from core.types import Point
 
 
-def _angdiff(a, b):
-    """Smallest signed difference a-b normalised to [-pi, pi]."""
+class TwoCornerCandidate(NamedTuple):
+    """One feasible 2-corner manoeuvre to the goal.
+
+    Attributes:
+        total_length: Combined length of both straight legs (m).
+        corner: The intermediate corner ``C`` joining the two legs.
+        leg1_heading: Heading of the leg leaving the current position (rad).
+        arrival_heading: Heading of the leg arriving at the goal (rad).
+        budget_corner: Straight length left on leg 1 after its near reserve (m).
+        budget_goal: Straight length left on leg 2 after its near reserve (m).
+    """
+
+    total_length: float
+    corner: Point
+    leg1_heading: float
+    arrival_heading: float
+    budget_corner: float
+    budget_goal: float
+
+
+def _angdiff(a: float, b: float) -> float:
+    """Return the smallest signed difference ``a - b`` normalised to [-pi, pi]."""
     return math.atan2(math.sin(a - b), math.cos(a - b))
 
 
-def two_corner_candidates(P, h, goal_wp, goal_heading, R, alpha_max,
-                          min_straight, straight_budget_in, min_straight_in,
-                          num_dir=9, num_cone=9):
-    """Feasible (angle + length) 2-corner maneuvers, shortest first.
+def two_corner_candidates(
+    position: Point,
+    heading: float,
+    goal_waypoint: Point,
+    goal_heading: float,
+    turn_radius: float,
+    alpha_max: float,
+    min_straight: float,
+    straight_budget_in: float,
+    min_straight_in: float,
+    num_dir: int = 9,
+    num_cone: int = 9,
+) -> list[TwoCornerCandidate]:
+    """Enumerate feasible 2-corner manoeuvres to the goal, shortest first.
 
     Args:
-        P: current waypoint (x, y).
-        h: current heading (rad).
-        goal_wp: goal waypoint W_{n-1} (x, y).
-        goal_heading: required approach heading at the goal (rad).
-        R: turn radius (m).
-        alpha_max: max turn angle (rad).
-        min_straight: minimum usable straight length per leg (m).
-        straight_budget_in: remaining straight budget of the leg INTO P
-            (deferred đoản-trình: P's incoming leg must still keep
-            min_straight_in after P's turn reserve).
-        min_straight_in: đoản-trình threshold for P's incoming leg.
-        num_dir: number of turn-at-P directions sampled across [h ± alpha_max].
-            Must be >= 2 (the sampler divides by num_dir - 1).
-        num_cone: number of arrival headings sampled across
-            [goal_heading ± alpha_max]. Must be >= 2 (divides by num_cone - 1).
+        position: Current waypoint ``(x, y)``.
+        heading: Current heading (rad).
+        goal_waypoint: Goal waypoint ``W_{n-1}`` ``(x, y)``.
+        goal_heading: Required approach heading at the goal (rad).
+        turn_radius: Vehicle turn radius (m).
+        alpha_max: Maximum turn angle per corner (rad).
+        min_straight: Minimum usable straight length per leg (m).
+        straight_budget_in: Remaining straight budget of the leg INTO
+            ``position`` (deferred đoản-trình: that leg must still keep
+            ``min_straight_in`` after the turn reserve at ``position``).
+        min_straight_in: Đoản-trình threshold for the incoming leg (m).
+        num_dir: Number of turn-at-position directions sampled across
+            ``[heading +- alpha_max]``. Must be >= 2.
+        num_cone: Number of arrival headings sampled across
+            ``[goal_heading +- alpha_max]``. Must be >= 2.
 
     Returns:
-        list of (total_len, C, d1, phi, budget_C, budget_W), sorted by
-        total_len ascending. Empty if nothing is angle/length feasible.
+        Feasible candidates sorted by ``total_length`` ascending; empty if
+        nothing is angle- or length-feasible.
+
+    Raises:
+        ValueError: If ``num_dir`` or ``num_cone`` is below 2, which would make
+            the sampler divide by zero.
     """
-    Px, Py = P
-    Dx, Dy = goal_wp[0] - Px, goal_wp[1] - Py
-    out = []
+    if num_dir < 2 or num_cone < 2:
+        raise ValueError(f"num_dir and num_cone must be >= 2; got {num_dir}, {num_cone}")
+
+    px, py = position
+    delta_x, delta_y = goal_waypoint[0] - px, goal_waypoint[1] - py
+    out: list[TwoCornerCandidate] = []
     for i in range(num_dir):
-        d1 = h - alpha_max + (2.0 * alpha_max) * i / (num_dir - 1)
-        a1 = abs(_angdiff(d1, h))                      # turn at P
-        # Deferred đoản-trình of P's incoming leg (near reserve = R*tan(a1/2)).
-        if straight_budget_in - R * math.tan(a1 / 2.0) < min_straight_in:
+        leg1_heading = heading - alpha_max + (2.0 * alpha_max) * i / (num_dir - 1)
+        turn_at_position = abs(_angdiff(leg1_heading, heading))
+        # Deferred đoản-trình of the incoming leg (near reserve = R*tan(a/2)).
+        if straight_budget_in - turn_radius * math.tan(turn_at_position / 2.0) < min_straight_in:
             continue
-        Ux, Uy = math.cos(d1), math.sin(d1)
-        r1 = R * math.tan(a1 / 2.0)                     # leg1 near reserve (at P)
+        ux, uy = math.cos(leg1_heading), math.sin(leg1_heading)
+        reserve_1 = turn_radius * math.tan(turn_at_position / 2.0)
         for j in range(num_cone):
-            phi = goal_heading - alpha_max + (2.0 * alpha_max) * j / (num_cone - 1)
-            a2 = abs(_angdiff(phi, d1))                 # turn at C
-            if a2 > alpha_max:
+            arrival_heading = goal_heading - alpha_max + (2.0 * alpha_max) * j / (num_cone - 1)
+            turn_at_corner = abs(_angdiff(arrival_heading, leg1_heading))
+            if turn_at_corner > alpha_max:
                 continue
-            at = abs(_angdiff(goal_heading, phi))       # terminal turn at goal
-            if at > alpha_max:                          # (guard float on cone edge)
+            turn_at_goal = abs(_angdiff(goal_heading, arrival_heading))
+            if turn_at_goal > alpha_max:  # guard float noise on the cone edge
                 continue
-            Vx, Vy = math.cos(phi), math.sin(phi)
-            det = Ux * Vy - Uy * Vx
+            vx, vy = math.cos(arrival_heading), math.sin(arrival_heading)
+            det = ux * vy - uy * vx
             if abs(det) < 1e-9:
-                continue                                # legs parallel: no corner
-            t = (Dx * Vy - Dy * Vx) / det               # leg1 length P->C
-            u = (Ux * Dy - Uy * Dx) / det               # leg2 length C->goal
-            if t <= 0.0 or u <= 0.0:
-                continue                                # corner behind an endpoint
-            r2 = R * math.tan(a2 / 2.0)                 # reserve at C
-            rt = R * math.tan(at / 2.0)                 # terminal reserve at goal
-            budget_C = t - r1                           # leg1 minus its near reserve
-            if budget_C - r2 < min_straight:            # leg1 far reserve + straight
+                continue  # legs parallel: no corner
+            leg1_len = (delta_x * vy - delta_y * vx) / det
+            leg2_len = (ux * delta_y - uy * delta_x) / det
+            if leg1_len <= 0.0 or leg2_len <= 0.0:
+                continue  # corner behind an endpoint
+            reserve_2 = turn_radius * math.tan(turn_at_corner / 2.0)
+            reserve_terminal = turn_radius * math.tan(turn_at_goal / 2.0)
+            budget_corner = leg1_len - reserve_1
+            if budget_corner - reserve_2 < min_straight:
                 continue
-            budget_W = u - r2                           # leg2 minus its near reserve
-            if budget_W - rt < min_straight:            # leg2 far reserve + straight
+            budget_goal = leg2_len - reserve_2
+            if budget_goal - reserve_terminal < min_straight:
                 continue
-            C = (Px + t * Ux, Py + t * Uy)
-            out.append((t + u, C, d1, phi, budget_C, budget_W))
-    out.sort(key=lambda c: c[0])
+            corner = (px + leg1_len * ux, py + leg1_len * uy)
+            out.append(
+                TwoCornerCandidate(
+                    leg1_len + leg2_len,
+                    corner,
+                    leg1_heading,
+                    arrival_heading,
+                    budget_corner,
+                    budget_goal,
+                )
+            )
+    out.sort(key=lambda c: c.total_length)
     return out
