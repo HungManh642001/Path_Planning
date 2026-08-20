@@ -5,12 +5,9 @@ Plots mission scenarios, obstacles, and planned trajectories
 
 import math
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 from matplotlib.patches import Polygon as MplPolygon, Circle as MplCircle, Rectangle
-import numpy as np
 
 import config
-import core.spatial_utils as su
 import render.trajectory as tr
 
 
@@ -275,7 +272,7 @@ def plot_scenario(scenario, preprocessed, result=None, title="Mission Scenario",
                     ax.plot([wp1[0], wp2[0]], [wp1[1], wp2[1]], 'b-', linewidth=2.5,
                            label='Trajectory' if i == 0 else '')
 
-        except Exception as e:
+        except Exception:
             # Fallback to straight line segments
             for i in range(len(waypoints) - 1):
                 wp1 = waypoints[i]

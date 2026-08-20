@@ -48,7 +48,6 @@ def inflate_obstacles(obstacles, safe_margin=config.SAFE_MARGIN):
         inflated_obs = obstacle.copy()
         
         if obstacle['type'] == 'circle':
-            center = obstacle['center']
             radius = obstacle['radius']
             inflated_obs['radius'] = radius + inflation
             
