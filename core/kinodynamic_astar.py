@@ -492,14 +492,22 @@ class KinodynamicAstar:
                 distance_m = near_reserve + rung
                 next_waypoint = (P[0] + distance_m * cos_h,
                                  P[1] + distance_m * sin_h)
+                # Cheapest gate first. đoản trình is pure arithmetic and rejects
+                # 12.2% of the legs that used to reach the fillet-arc gate — the
+                # most expensive check in the planner — only AFTER paying for it
+                # (measured over 20 scenarios: 10,014 of the 82,032 fan legs that
+                # passed the arc gate). Strategy A and v0 already order it this
+                # way; this planner was the last one that did not. Pure
+                # reordering of side-effect-free predicates: the emitted
+                # successors are unchanged.
+                budget = self._doan_trinh(current_state, distance_m, turn)
+                if budget is None:
+                    continue
                 if not self._in_bounds(next_waypoint):
                     continue
                 if not self._check_collision(P, next_waypoint):
                     continue
                 if config.ARC_CLEARANCE_CHECK and not self._corner_arc_clear(h, P, next_waypoint):
-                    continue
-                budget = self._doan_trinh(current_state, distance_m, turn)
-                if budget is None:
                     continue
                 cost = distance_m + config.TURN_PENALTY_WEIGHT * turn
                 nxt = State(next_waypoint, next_heading)
