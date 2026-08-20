@@ -24,13 +24,8 @@ def _brute_force_clear(planner, p1, p2):
         if su.point_to_line_distance((cx, cy), p1, p2) < radius:
             return False
     line = LineString([p1, p2])
-    for idx, poly in enumerate(planner._polygons):
-        if not poly.relate_pattern(line, 'T********'):
-            continue
-        deep = planner._polygons_deep[idx]
-        if not deep.is_empty and deep.relate_pattern(line, 'T********'):
-            return False
-        if astar.pv.interior_overlap_length(poly, line) > astar._POLY_TOUCH_TOL_M:
+    for poly in planner._polygons:
+        if poly.relate_pattern(line, 'T********'):
             return False
     if planner._safezone is not None and not planner._safezone.covers(line):
         return False

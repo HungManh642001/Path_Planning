@@ -304,12 +304,25 @@ straight through still 0, path length −0.043% / +0.012% (median per case 0.000
 p10 −0.0002%, p90 +0.0003% — a 1 m lift moves a 250 km mission by fractions of a
 ppm), and **5% FASTER**, because the measuring path is never taken.
 
-Keep the checking machinery anyway. `path_validation` is an independent oracle
-that validates paths from any source and cannot assume the planner's lift, and a
-fillet arc is constructed from the LEGS, not from the lifted vertices, so it can
-still come tangent to some other polygon's edge. The machinery is now dormant,
-not redundant — and "measured zero over 60 scenarios" is exactly the claim this
-file has been wrong about three times.
+**The two planners now differ here, deliberately.** `path_validation` keeps the
+machinery unconditionally — it is an independent oracle, it validates paths from
+any source, and it cannot assume the planner's lift. The MAIN planner keeps it
+too (`_POLY_TOUCH_TOL_M`, `_polygons_deep`, `_corner_arc_clear(..., exact=)`).
+**v0 dropped all of it** and takes `'T********'` at face value: measured over
+600 scenarios in two disjoint halves, every one of the 600 paths is BIT-IDENTICAL
+with the machinery removed, and v0 is **~9% faster** (median of 7 paired repeats;
+one repeat of the seven came out +17%, so read the median, not the mean).
+
+That is a safe divergence in one direction only: the bare predicate also fires
+on a chord merely GRAZING a hull edge, so v0 is now fractionally STRICTER than
+its validator. Strict-planner/permissive-oracle can only cost an opportunity —
+it can never emit a path the oracle then rejects. The reverse would be a bug.
+
+What makes it safe is the CONSTRUCTION-side lift, not the measurement: with the
+vertex lift there is nothing left to resolve (23 → 0 firings over 60 scenarios).
+Reverting the lift without restoring the machinery would bring the artefacts
+straight back. And keep reading "measured zero over N scenarios" with suspicion
+— it is exactly the claim this file has been wrong about three times.
 
 **Rounding is absorbed when CONSTRUCTING, never forgiven when CHECKING.**
 Geometry built to sit exactly on a limit gets rejected by the exact check that

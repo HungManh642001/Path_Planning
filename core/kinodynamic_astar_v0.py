@@ -18,18 +18,6 @@ import core.spatial_utils as su
 import core.preprocessing as prep
 import core.path_validation as pv
 
-# Shortest polygon-interior overlap that counts as a collision, in metres --
-# the OWNER of this number is the oracle (core/path_validation), and the planner
-# borrows it on purpose: a planner stricter than its own validator rejects
-# flyable chords. 'T********' alone matches a zero-extent touch, so a chord that
-# grazes a hull VERTEX reads as a hit. That is not hypothetical -- it made the
-# collision test non-monotone under splitting (batch_random_test seed 0: two
-# collinear chords each clear, their union "blocked" on an overlap of 2.9e-11 m
-# at the shared vertex), which is exactly the chord smooth_path needs in order
-# to drop the pass-through waypoint sitting on that vertex.
-# Hot-path alias, not a second definition.
-_POLY_TOUCH_TOL_M = pv.POLYGON_TOUCH_TOL_M
-
 import random
 
 
@@ -100,11 +88,6 @@ class KinodynamicAstar:
         self._circles = [(c[0], c[1], r) for c, r in
                          preprocessed_scenario['circle_obstacles']]
         self._poly_bboxes = [p.bounds for p in self._polygons]
-        # Shrunk copies for the deep-hit short-circuit in _check_collision (see
-        # config.POLYGON_DEEP_HIT_INSET_M). buffer() can return empty or a
-        # MultiPolygon; an empty one simply never short-circuits.
-        self._polygons_deep = [p.buffer(-config.POLYGON_DEEP_HIT_INSET_M)
-                               for p in self._polygons]
         # Vertex candidates are LIFTED off the hull by the same
         # _construct_delta that circle tangent points are built on. Without it
         # polygons were the one obstacle type whose navigation targets sat
@@ -407,7 +390,7 @@ class KinodynamicAstar:
         if a <= 0.0:                        # abeam or behind: sliding only hurts
             return None
         b = abs(vx * -uy + vy * ux)         # cross-track component
-        if b < 1e-9:                        # collinear: there is no corner
+        if b < config.GEOM_EPS_M:           # collinear: there is no corner
             return None
         alpha0 = math.atan2(b, a)           # the turn without any slide
         K = int(config.NUM_PIVOT_SLIDES)
@@ -416,7 +399,7 @@ class KinodynamicAstar:
             alpha_i = 2.0 * math.atan((i / K) * tan_half_max)
             if alpha_i <= alpha0:
                 continue                    # this bucket is behind us (d <= 0)
-            if alpha_i >= math.pi / 2.0 - 1e-9:
+            if alpha_i >= math.pi / 2.0 - config.GEOM_EPS_RAD:
                 d = a                       # the perpendicular foot
             else:
                 d = a - b / math.tan(alpha_i)
@@ -427,28 +410,22 @@ class KinodynamicAstar:
                 return res
         return None
 
-    def _corner_arc_clear(self, h_in, w, w_next, exact=False):
+    def _corner_arc_clear(self, h_in, w, w_next):
         """True iff the radius-R fillet arc rounding corner `w` is clear, using
         the oracle's own arc GEOMETRY so the search weighs the same arc the final
-        validation will. `h_in` is the incoming heading. Whether a polygon hit on
-        that arc is resolved the same way as the oracle depends on `exact`.
+        validation will. `h_in` is the incoming heading.
 
         The whole arc is tested as ONE polyline rather than segment by segment:
         the shapely work (LineString, tree query, safezone `covers`) is what
         costs, and doing it per sub-segment made this gate 41% of run time.
 
-        `exact` picks how a polygon "hit" is resolved, and it is a MEASURED
-        choice, not a principled one. Bare 'T********' also fires on an arc that
-        merely grazes a hull edge; measuring the true interior overlap (see
-        pv.interior_overlap_length) tells the two apart. The smoother passes
-        exact=True because it has ONE chord per pair of waypoints and a false
-        hit there costs a waypoint that marks no manoeuvre. The search keeps the
-        conservative verdict because it has thousands of alternatives and the
-        dedup lattice makes quality non-monotone in successor count: measured
-        over 300 scenarios, resolving hits exactly in the SEARCH too changed one
-        route from 296.75 km to 319.49 km (+7.7%) and bought nothing on a second
-        300-scenario sample. Conservative here is also the safe direction -- it
-        only ever declines a candidate.
+        A polygon hit is taken at face value from 'T********'. That predicate
+        also fires on an arc merely GRAZING a hull edge, which the oracle would
+        forgive -- so this gate is fractionally stricter than the validator, in
+        the safe direction: it can only ever decline a candidate, never approve
+        one the oracle rejects. Resolving the difference needs
+        pv.interior_overlap_length, and lifting the polygon vertex candidates
+        (see _poly_vertices) removed every occurrence it had to resolve.
         """
         prev = (w[0] - math.cos(h_in), w[1] - math.sin(h_in))
         pts = pv._arc_points(prev, w, w_next, self.R, n=config.ARC_CHECK_SAMPLES)
@@ -478,14 +455,7 @@ class KinodynamicAstar:
             if line is None:
                 line = LineString(pts)
             poly = self._polygons[idx]
-            if not poly.relate_pattern(line, 'T********'):
-                continue
-            if not exact:
-                return False
-            deep = self._polygons_deep[idx]
-            if not deep.is_empty and deep.relate_pattern(line, 'T********'):
-                return False
-            if pv.interior_overlap_length(poly, line) > _POLY_TOUCH_TOL_M:
+            if poly.relate_pattern(line, 'T********'):
                 return False
 
         if self._safezone is not None:
@@ -522,12 +492,7 @@ class KinodynamicAstar:
             if line is None:
                 line = LineString([p1, p2])
             poly = self._polygons[idx]
-            if not poly.relate_pattern(line, 'T********'):
-                continue
-            deep = self._polygons_deep[idx]
-            if not deep.is_empty and deep.relate_pattern(line, 'T********'):
-                return False
-            if pv.interior_overlap_length(poly, line) > _POLY_TOUCH_TOL_M:
+            if poly.relate_pattern(line, 'T********'):
                 return False
         
         if self._safezone is not None:
@@ -742,7 +707,7 @@ class KinodynamicAstar:
                 return True
             hit = arc_memo.get((u, v, w))
             if hit is None:
-                hit = self._corner_arc_clear(brg[u][v], wps[v], wps[w], exact=True)
+                hit = self._corner_arc_clear(brg[u][v], wps[v], wps[w])
                 arc_memo[(u, v, w)] = hit
             return hit
 
