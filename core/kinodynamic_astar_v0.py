@@ -48,13 +48,28 @@ class State:
         # incoming edge when this state was reached by a pivot slide: the
         # aircraft flies straight through the parent and turns only at `pivot`.
         self.via = None
-    
+        # Dedup key cache. waypoint/heading never change after construction, and
+        # the search hashes/compares each state hundreds of times (measured:
+        # 768k state_to_tuple calls, 7.4% of runtime, over 20 scenarios).
+        # Computed LAZILY on first hash/eq, because a free-goal goal_state
+        # carries heading=None and must stay constructible — it is a target,
+        # never hashed.
+        self._key = None
+
     def __hash__(self):
-        return hash(su.state_to_tuple(self.waypoint, self.heading))
-    
+        k = self._key
+        if k is None:
+            k = self._key = su.state_to_tuple(self.waypoint, self.heading)
+        return hash(k)
+
     def __eq__(self, other):
-        return (su.state_to_tuple(self.waypoint, self.heading) ==
-                su.state_to_tuple(other.waypoint, other.heading))
+        k = self._key
+        if k is None:
+            k = self._key = su.state_to_tuple(self.waypoint, self.heading)
+        ko = other._key
+        if ko is None:
+            ko = other._key = su.state_to_tuple(other.waypoint, other.heading)
+        return k == ko
     
     def __lt__(self, other):
         """For priority queue comparison"""
