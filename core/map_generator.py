@@ -9,6 +9,59 @@ from shapely import Point, Polygon
 import config
 
 
+def _start_goal_geometry(start, goal):
+    """Midpoint, start->goal bearing, its perpendicular, and the separation.
+
+    Precomputed once per generator call: the topology samplers below place
+    obstacles relative to the start-goal line.
+    """
+    mx, my = (start[0] + goal[0]) / 2, (start[1] + goal[1]) / 2
+    angle_start_goal = math.atan2(goal[1] - start[1], goal[0] - start[0])
+    return {
+        'mx': mx, 'my': my,
+        'angle_start_goal': angle_start_goal,
+        'angle_perp': angle_start_goal + math.pi / 2,
+        'dist_sg': math.hypot(goal[0] - start[0], goal[1] - start[1]),
+    }
+
+
+def _sample_center(topology, map_bounds, geom):
+    """One candidate obstacle centre, clamped into the middle 80% of the map.
+
+    Shared by both generators -- they placed centres with the same 20 lines and
+    the same three topologies, and a divergence between them would be silent.
+
+    The draw ORDER is part of the contract: scenarios are reproduced from a
+    seed, so every branch must consume exactly the random values it consumed
+    before (two uniforms, two gausses, or t-then-noise).
+    """
+    width, height = map_bounds
+    if topology == 'random':
+        center_x = random.uniform(width * 0.1, width * 0.9)
+        center_y = random.uniform(height * 0.1, height * 0.9)
+    elif topology == 'center_cluster':
+        # Gaussian around the midpoint between start and goal.
+        center_x = random.gauss(geom['mx'], geom['dist_sg'] / 3)
+        center_y = random.gauss(geom['my'], geom['dist_sg'] / 3)
+    elif topology == 'wall_block':
+        # Along a line perpendicular to the start-goal line.
+        t = random.uniform(-150000, 150000)
+        noise = random.uniform(-geom['dist_sg'] / 3, geom['dist_sg'] / 3)
+        center_x = geom['mx'] + t * math.cos(geom['angle_perp']) \
+            + noise * math.cos(geom['angle_start_goal'])
+        center_y = geom['my'] + t * math.sin(geom['angle_perp']) \
+            + noise * math.sin(geom['angle_start_goal'])
+    else:
+        # Previously this fell through with center_x unbound: a NameError on the
+        # first pass, or -- worse -- silently reusing the previous iteration's
+        # centre on later ones, so every obstacle landed on the same spot.
+        raise ValueError(
+            f"unknown topology {topology!r}; expected 'random', "
+            "'center_cluster' or 'wall_block'")
+    return (max(width * 0.1, min(center_x, width * 0.9)),
+            max(height * 0.1, min(center_y, height * 0.9)))
+
+
 def generate_random_islands(num_islands, map_bounds, start=None, goal=None, topology=None, seed=None):
     """
     Generate random island polygons with irregular shapes.
@@ -34,30 +87,10 @@ def generate_random_islands(num_islands, map_bounds, start=None, goal=None, topo
     attempts = 0
     max_attempts = 1000  # Prevent infinite loops in case of tight spacing
 
-    # Calculate the geometric parameters between start and goal 
-    mx, my = (start[0] + goal[0]) / 2, (start[1] + goal[1]) / 2             # midpoint
-    angle_start_goal = math.atan2(goal[1] - start[1], goal[0] - start[0])   # angle from start to goal
-    angle_perp = angle_start_goal + math.pi / 2                             # perpendicular angle
-    dist_sg = math.hypot(goal[0] - start[0], goal[1] - start[1])
-    
+    geom = _start_goal_geometry(start, goal)
+
     while len(islands) < num_islands and attempts < max_attempts:
-        if topology == 'random':
-            # Random center for island
-            center_x = random.uniform(width * 0.1, width * 0.9)
-            center_y = random.uniform(height * 0.1, height * 0.9)
-        elif topology == 'center_cluster':
-            # Place islands around the midpoint between start and goal
-            center_x = random.gauss(mx, dist_sg / 3)  # Gaussian around midpoint
-            center_y = random.gauss(my, dist_sg / 3)  # Gaussian around midpoint
-        elif topology == 'wall_block':
-            # Place islands along a line perpendicular to the start-goal line
-            t = random.uniform(-150000, 150000)  # offset along the perpendicular
-            noise = random.uniform(-dist_sg / 3, dist_sg / 3)
-            center_x = mx + t * math.cos(angle_perp) + noise * math.cos(angle_start_goal)
-            center_y = my + t * math.sin(angle_perp) + noise * math.sin(angle_start_goal)
-        
-        center_x = max(width * 0.1, min(center_x, width * 0.9))
-        center_y = max(height * 0.1, min(center_y, height * 0.9))
+        center_x, center_y = _sample_center(topology, map_bounds, geom)
         
         # Random size
         size = random.uniform(config.ISLAND_SIZE_MIN, config.ISLAND_SIZE_MAX)
@@ -129,31 +162,10 @@ def generate_dynamic_obstacles(num_sites, map_bounds, start=None, goal=None, top
     attempts = 0
     max_attempts = 1000
 
-    # Calculate the geometric parameters between start and goal 
-    mx, my = (start[0] + goal[0]) / 2, (start[1] + goal[1]) / 2             # midpoint
-    angle_start_goal = math.atan2(goal[1] - start[1], goal[0] - start[0])   # angle from start to goal
-    angle_perp = angle_start_goal + math.pi / 2                             # perpendicular angle
-    dist_sg = math.hypot(goal[0] - start[0], goal[1] - start[1])
-    
+    geom = _start_goal_geometry(start, goal)
+
     while len(dynamic_obstacles) < num_sites and attempts < max_attempts:
-        if topology == 'random':
-            # Random center for dynamic obstacle
-            center_x = random.uniform(width * 0.1, width * 0.9)
-            center_y = random.uniform(height * 0.1, height * 0.9)
-        elif topology == 'center_cluster':
-            # Place dynamic obstacles around the midpoint between start and goal
-            center_x = random.gauss(mx, dist_sg / 3)  # Gaussian around midpoint
-            center_y = random.gauss(my, dist_sg / 3)  # Gaussian around midpoint
-        elif topology == 'wall_block':
-            # Place dynamic obstacles along a line perpendicular to the start-goal line
-            t = random.uniform(-150000, 150000)  # offset along the perpendicular
-            noise = random.uniform(-dist_sg / 3, dist_sg / 3)
-            center_x = mx + t * math.cos(angle_perp) + noise * math.cos(angle_start_goal)
-            center_y = my + t * math.sin(angle_perp) + noise * math.sin(angle_start_goal)
-        
-        center_x = max(width * 0.1, min(center_x, width * 0.9))
-        center_y = max(height * 0.1, min(center_y, height * 0.9))
-        center = (center_x, center_y)
+        center = _sample_center(topology, map_bounds, geom)
         
         # Random radius
         radius = random.uniform(min_radius, max_radius)
