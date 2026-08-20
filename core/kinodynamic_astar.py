@@ -152,10 +152,15 @@ class KinodynamicAstar:
         # Circles pre-unpacked to plain floats, as v0 already keeps them. The
         # hot loops read this hundreds of thousands of times and the nested
         # `for (cx, cy), radius in ...` paid a tuple unpack on every circle of
-        # every call. Safe to cache: nothing in the repo mutates an obstacle
-        # after prepare_scenario (grepped), so the "read live so a
-        # post-construction change is seen" note the old loop carried was
-        # protecting a case that does not exist.
+        # every call.
+        #
+        # CONTRACT: the obstacle field is FROZEN at construction. _check_collision
+        # and _corner_arc_clear read this list, not scenario['circle_obstacles'],
+        # so assigning to that key on a live planner has no effect on collision
+        # checking. v0 has worked this way since 494e85d; main now matches.
+        # tests/kinodynamic_arc_hop_test.py does assign to it (to block a fixed
+        # leg), which an earlier version of this comment wrongly claimed nothing
+        # in the repo does -- build a new planner instead of mutating one.
         self._circles = [(c[0], c[1], r)
                          for c, r in preprocessed_scenario['circle_obstacles']]
         # Shrunk copies for the deep-hit short-circuit in _check_collision (see
