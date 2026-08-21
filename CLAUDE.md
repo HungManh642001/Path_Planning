@@ -178,6 +178,26 @@ that `batch_random_test` drifts).
   −0.2219% length** in fixed mode, bit-identical in free (the shot is fixed-goal
   only), and `GOAL_SHOT_ENABLED = False` reproduces the pre-port planner exactly.
 
+  **The shot is INSURANCE, not a speedup, so v0 arms it per MISSION**
+  (`config.GOAL_SHOT_MIN_REVERSAL_DEG`, default `ALPHA_MAX`, `0.0` = always, the
+  A/B knob). The premium is steep: over 300 random fixed seeds it is attempted
+  **55,184 times, connects 4,663 times, and 87 of those (0.16% of attempts) reach
+  the delivered path** — buying −0.22% length for **+26% wall-clock** (paired
+  repeats; +33% excluding the one budget-bound seed). On missions that actually
+  reverse, the same code is worth 10 extra solved missions and −77%. So it now
+  fires only when the angle between `goal_heading` and the start→goal bearing
+  reaches α_max. That threshold is derived, not tuned: below α_max a straight run
+  at the goal can still turn onto `goal_heading` in ONE corner — which the
+  ordinary Strategy-A goal candidate already builds — and above it one corner
+  cannot, so the shot's two are the only way to finish.
+  **Neither benchmark contains a reversed approach** (the 16 named scenarios top
+  out at 45°, the 300-seed sweep at 89.5°), which is why the armed planner is
+  bit-identical to the PRE-port planner on the fixed sweep. Read that as "the
+  benchmarks contain no turn-around mission", not as "the shot is dead": on the
+  adverse suite the reversed group is untouched at 76,686 iterations and all
+  141/144 solves are kept, while the fixed sweep drops **−20.9%** wall-clock
+  against the always-armed shot.
+
   **Do NOT add the alignment gate `tests/goal_shot_align_gate_test.py` asks for.**
   Its premise — "when the approach bearing is already within α_max of
   `goal_heading`, the ordinary Strategy-A goal leg can arrive, so the 625-grid is
