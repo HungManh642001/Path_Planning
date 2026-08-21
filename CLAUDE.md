@@ -154,26 +154,54 @@ that `batch_random_test` drifts).
   Measured over 300 seeds, both goal modes: the two solve the SAME missions
   (294/300 free, 243/300 fixed). Main's paths are 0.53% shorter and cost 2.5x
   the time and 21% more waypoints. Neither dominates; do not "upgrade" one to
-  the other without an A/B. Divergences that remain on purpose: arc-hop and the
-  analytic goal shot (main only — and note the goal shot never runs on the
-  deployed path, since `batch_random_test` plans in free-goal mode where
-  `_try_goal_shot` returns immediately), `STRATEGY_B_CONSECUTIVE` (main only),
-  the interior-overlap machinery (main keeps it, v0 deleted it), and
-  `FAN_SKIP_ON_SHORT_RUNIN` (v0 only, see the Strategy-B note below).
+  the other without an A/B. Divergences that remain on purpose: arc-hop (main
+  only), `STRATEGY_B_CONSECUTIVE` (main only), the interior-overlap machinery
+  (main keeps it, v0 deleted it), and `FAN_SKIP_ON_SHORT_RUNIN` (v0 only, see
+  the Strategy-B note below). **The analytic goal shot used to be on that list
+  and is not any more** — it was ported to v0 on 2026-08-21, where it is also
+  faster than main's copy. Note it still never runs on the `batch_random_test`
+  path, which plans in free-goal mode where `_try_goal_shot` returns
+  immediately; that is why v0 survived so long without it.
 
-  **The goal shot is not a luxury, and its absence is v0's largest single
-  weakness.** On a 144-case adverse-heading suite (obstacle-free and lightly
-  cluttered, 24 start headings × `goal_heading` ∈ {None, +90°, −90°}): main
-  141/144 solved at 106,563 iterations; main with `GOAL_SHOT_ENABLED = False`
-  131/144 at 1,175,528; v0 131/144 at 1,177,550 with **10 cases dying on
-  `MAX_ITERATIONS`**. Turning the shot off in main reproduces v0 almost exactly,
-  so the shot IS the whole gap. It lives in one group — obstacle-free with an
-  adverse `goal_heading` — which alone costs v0 764,528 iterations against main's
-  36,623 (**20.9x**); with the cluttered mirror it is **99.8% of v0's entire
-  effort** on that suite. Adverse *start* headings, by contrast, are a non-issue:
-  all 24 solve in **2–17 iterations** in both planners. Relevant because all 16
-  named scenarios use a FIXED `goal_heading` — free-goal is only what
-  `batch_random_test` sweeps.
+  **The goal shot is not a luxury — v0 went without one until 2026-08-21, and
+  that was its largest single weakness.** On a 144-case adverse-heading suite
+  (obstacle-free and lightly cluttered, 24 start headings × `goal_heading` ∈
+  {None, +90°, −90°}): main 141/144 solved at 106,563 iterations; main with
+  `GOAL_SHOT_ENABLED = False` 131/144 at 1,175,528; v0 **before the port**
+  131/144 at 1,177,550 with **10 cases dying on `MAX_ITERATIONS`**; v0 **after**
+  141/144 at **78,979**, none at the cap. Turning the shot off in main
+  reproduced v0 almost exactly, so the shot was the whole gap. It lived in one
+  group — obstacle-free with an adverse `goal_heading`, where v0 solved 14/24 —
+  costing 764,528 iterations against main's 36,623 (**20.9x**). Adverse *start*
+  headings were never the problem: all 24 solve in **2–17 iterations** in both
+  planners. On the standard 300-seed sweep the port is **−16.16% iterations and
+  −0.2219% length** in fixed mode, bit-identical in free (the shot is fixed-goal
+  only), and `GOAL_SHOT_ENABLED = False` reproduces the pre-port planner exactly.
+
+  **Do NOT add the alignment gate `tests/goal_shot_align_gate_test.py` asks for.**
+  Its premise — "when the approach bearing is already within α_max of
+  `goal_heading`, the ordinary Strategy-A goal leg can arrive, so the 625-grid is
+  redundant" — does not hold. Measured over 300 fixed seeds: 49.4% of shot calls
+  are on aligned states, and **3,788 of the 4,663 successful shots come from
+  them**, because alignment says nothing about whether the Strategy-A goal leg is
+  flyable — it worked in **156 of 52,595** calls. The gate would delete 81% of all
+  working shots. Those two tests stay red for the same reason
+  `test_no_radial_fan_in_open_water` does.
+
+  **The shot is the planner's most expensive single component, so it is
+  optimised twice over, both bit-identical.** `two_corner_candidates` hoists the
+  arrival cone out of the nested loop (it depends only on `j`, so 625 evaluations
+  of each of `cos`, `sin`, `atan2`, `tan` become 25), and
+  `_ray_chord_clear` memoises both legs per ray: every corner sharing a
+  `leg1_heading` lies on ONE ray out of the state and every corner sharing an
+  `arrival_heading` on one back-ray into the goal, so a clear chord proves every
+  shorter one and a blocked chord every longer one. Collision checks per shot
+  **39.06 → 11.38** (2,037,170 → 627,367 over 300 seeds); together **−12.5%**
+  wall-clock, median of 3 paired repeats. Hit rate is only **8.9%**, so cheap
+  misses matter more than fast hits. Capping the candidate list is NOT the way:
+  the mean winning rank is 39.8 of ~39 candidates and only 21.9% of hits are
+  rank 1, so a cap throws away the hits it was meant to reach cheaply.
+
 - **A dead knob is worse than no knob.** `config.CIRCLE_GRAZE_TOL_M` is
   deprecated and pinned at `0.0` — no planner reads it — yet `gui/params.py`
   still renders it as a 0-500 m slider, so an operator can move it and change
