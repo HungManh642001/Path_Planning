@@ -11,7 +11,11 @@ Two invariants are asserted here.
 1. The shot is FIXED-goal only. Free-goal missions do not have the terminal
    heading constraint that makes the Euclid heuristic blind, and the whole
    free-goal sweep is bit-identical with the shot present.
-2. `_ray_chord_clear` is a pure memo. All corners sharing a leg1_heading lie on
+2. The shot is ARMED only on missions whose approach is reversed -- the angle
+   between goal_heading and the start->goal bearing is at least alpha_max.
+   Below that a straight run at the goal can still turn onto goal_heading in one
+   corner, so the ordinary Strategy-A goal candidate covers the terminal.
+3. `_ray_chord_clear` is a pure memo. All corners sharing a leg1_heading lie on
    one ray out of the state, and all corners sharing an arrival_heading lie on
    one back-ray into the goal, so a clear chord proves every shorter one on that
    ray and a blocked chord proves every longer one. It changes how many chords
@@ -30,12 +34,42 @@ import core.preprocessing as prep
 
 
 def _preprocessed(seed, goal_heading):
+    """Start south-west of the goal, so the start->goal bearing is 45 deg."""
     return prep.prepare_scenario(mg.create_scenario({
         'map_bounds': (config.MAP_WIDTH, config.MAP_HEIGHT),
         'start': (60000.0, 60000.0), 'start_heading': math.radians(20.0),
         'goal': (380000.0, 380000.0), 'goal_heading': goal_heading,
         'num_islands': 5, 'num_dynamic_obstacles': 4, 'seed': seed,
     }))
+
+
+REVERSED = math.radians(-135.0)   # 180 deg off the 45 deg travel bearing
+FORWARD = math.radians(30.0)      # 15 deg off it
+
+
+def test_shot_is_armed_only_when_the_approach_reverses():
+    assert astar_v0.KinodynamicAstar(_preprocessed(1, REVERSED))._shot_armed
+    assert not astar_v0.KinodynamicAstar(_preprocessed(1, FORWARD))._shot_armed
+    assert not astar_v0.KinodynamicAstar(_preprocessed(1, None))._shot_armed
+
+
+def test_threshold_zero_arms_every_fixed_goal_mission():
+    """The legacy setting, and the A/B knob."""
+    previous = config.GOAL_SHOT_MIN_REVERSAL_DEG
+    config.GOAL_SHOT_MIN_REVERSAL_DEG = 0.0
+    try:
+        assert astar_v0.KinodynamicAstar(_preprocessed(1, FORWARD))._shot_armed
+        assert not astar_v0.KinodynamicAstar(_preprocessed(1, None))._shot_armed
+    finally:
+        config.GOAL_SHOT_MIN_REVERSAL_DEG = previous
+
+
+def test_the_threshold_is_alpha_max_because_one_corner_stops_working_there():
+    """Just under alpha_max a single corner can still reach goal_heading."""
+    planner = astar_v0.KinodynamicAstar(_preprocessed(1, math.radians(45.0 - 89.0)))
+    assert not planner._shot_armed
+    armed = astar_v0.KinodynamicAstar(_preprocessed(1, math.radians(45.0 - 91.0)))
+    assert armed._shot_armed
 
 
 def test_shot_is_disabled_in_free_goal_mode():
@@ -72,7 +106,7 @@ def test_shot_connects_an_adverse_approach_in_fixed_mode():
 
 
 def test_knob_off_removes_the_shot():
-    pre = _preprocessed(5, math.radians(30.0))
+    pre = _preprocessed(5, REVERSED)
     planner = astar_v0.KinodynamicAstar(pre)
     state = astar_v0.State((200000.0, 200000.0), math.radians(45.0))
     planner.g_scores[state] = 0.0
@@ -88,9 +122,13 @@ def test_knob_off_removes_the_shot():
 
 
 def test_shot_paths_satisfy_the_independent_oracle():
-    """A shot synthesises corners no other gate sees; the oracle must still pass."""
+    """A shot synthesises corners no other gate sees; the oracle must still pass.
+
+    Uses a REVERSED approach, or the gate would disarm the shot and this would
+    quietly test nothing.
+    """
     for seed in range(8):
-        pre = _preprocessed(seed, math.radians(30.0))
+        pre = _preprocessed(seed, REVERSED)
         result = astar_v0.plan_trajectory(pre)
         if not result['success']:
             continue
@@ -109,7 +147,7 @@ def test_shot_paths_satisfy_the_independent_oracle():
 
 def test_ray_memo_never_changes_a_verdict():
     """Random chords on shared rays: memo answer == a fresh _check_collision."""
-    planner = astar_v0.KinodynamicAstar(_preprocessed(2, math.radians(30.0)))
+    planner = astar_v0.KinodynamicAstar(_preprocessed(2, REVERSED))
     rng = random.Random(11)
     for _ in range(60):
         origin = (rng.uniform(0.0, 400000.0), rng.uniform(0.0, 400000.0))
@@ -130,7 +168,7 @@ def test_ray_memo_never_changes_a_verdict():
 
 
 def _counting_planner(seed=2):
-    planner = astar_v0.KinodynamicAstar(_preprocessed(seed, math.radians(30.0)))
+    planner = astar_v0.KinodynamicAstar(_preprocessed(seed, REVERSED))
     calls = [0]
     real = planner._check_collision
 

@@ -317,6 +317,21 @@ class KinodynamicAstar:
 
         self.num_strategy_b = config.NUM_STRATEGY_B
 
+        # Is this mission's approach REVERSED? Resolved once, because it is a
+        # property of the MISSION and not of any state: the angle between
+        # goal_heading and the start -> goal bearing. Below alpha_max a straight
+        # run at the goal can still turn onto goal_heading in one corner, which
+        # the ordinary Strategy-A goal candidate already builds, so the shot is
+        # pure overhead there; above it one corner cannot and the shot's two are
+        # the only way to finish. See the config note for the premium.
+        self._shot_armed = False
+        if not self._free_goal:
+            goal_heading = self.goal_state.heading
+            if goal_heading is not None:
+                travel = su.angle_to_heading(self._origin, self._target)
+                reversal = abs(_angle_diff(goal_heading, travel))
+                self._shot_armed = reversal >= config.deg_to_rad(config.GOAL_SHOT_MIN_REVERSAL_DEG)
+
     def _seed_start_corners(self) -> list[State]:
         """Seed the takeoff corners the search is rooted at.
 
@@ -1037,7 +1052,7 @@ class KinodynamicAstar:
             # heuristic is only blind near a goal that has a required heading.
             if (
                 config.GOAL_SHOT_ENABLED
-                and not self._free_goal
+                and self._shot_armed
                 and (self.iteration_count % config.GOAL_SHOT_EVERY_N) == 0
             ):
                 shot = self._try_goal_shot(current)

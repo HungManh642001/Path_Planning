@@ -336,6 +336,33 @@ GOAL_SHOT_EVERY_N = 1
 GOAL_SHOT_DIRS = 25
 GOAL_SHOT_CONE = 25
 
+# Arm the shot only on missions whose APPROACH IS REVERSED: the angle between
+# goal_heading and the start->goal bearing must be at least this many degrees.
+# Read by core/kinodynamic_astar_v0.py; 0.0 arms it on every fixed-goal mission
+# (the legacy behaviour, and what the main planner still does).
+#
+# ALPHA_MAX is the threshold for a reason, not by tuning. Below it a straight
+# run at the goal can still turn onto goal_heading in ONE corner, which the
+# ordinary Strategy-A goal candidate already builds; above it one corner cannot
+# and the terminal needs the two the shot synthesises. So this arms the shot
+# exactly where it is the only thing that can finish the mission.
+#
+# It matters because the shot is INSURANCE, not a speedup, and the premium is
+# steep. Measured on v0, fixed-goal, 300 random seeds: the shot is attempted
+# 55,184 times, connects 4,663 times, and 87 of those (0.16% of attempts) reach
+# the delivered path -- for -0.22% length at +26% wall-clock. On missions that
+# actually reverse, the same code is worth 10 extra solved missions and -77%
+# wall-clock (144-case adverse suite: 131/144 at 1,177,550 iterations without,
+# 141/144 at 78,979 with).
+#
+# Neither current benchmark contains a reversed approach: the 16 named scenarios
+# top out at 45 deg and the 300-seed sweep at 89.5 deg. So this gate switches the
+# shot OFF everywhere they measure and ON for the case it was written for --
+# which is the point, not an oversight. Do NOT read "it never fires on the
+# benchmarks" as "it is dead"; read it as "the benchmarks contain no
+# turn-around mission".
+GOAL_SHOT_MIN_REVERSAL_DEG = ALPHA_MAX
+
 # ====== TURN-ARC CLEARANCE (search-time) ======
 # During expansion the search only collision-checks the STRAIGHT leg of each
 # successor; the radius-R fillet arc that rounds the corner AT the current
