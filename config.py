@@ -334,7 +334,51 @@ GOAL_SHOT_EVERY_N = 1
 # obstacle-dense map ever makes the every-pop 25x25 scan bite. A/B before
 # changing — quality is non-monotone in successor density here.
 GOAL_SHOT_DIRS = 25
-GOAL_SHOT_CONE = 25
+
+# The two axes are NOT symmetric, and 25x25 hid that for a long time.
+#
+# The 2-corner length has an exact closed form (verified to 1.2e-10 relative
+# error over 50,111 valid configurations):
+#
+#     L = |PG| * cos((a - b)/2) / cos((a + b)/2)
+#
+# with a, b the deviations at P and at G from the P->G bearing. Since |a + b| is
+# exactly the turn at the intermediate corner C, the denominator is
+# cos(turn_C/2): the length is governed by that turn, and reaching a REVERSED
+# goal needs maximum angular swing, which pushes the arrival heading to the EDGE
+# of its cone. Measured on 80 reversed missions, where the winning candidate sat:
+#
+#     arrival cone   90.5% exactly at an edge, 99.99% within 2 samples of one,
+#                    0.0% in the middle          -> 25 samples resolve nothing
+#     turn-at-P      0.13% within 2 of an edge, spread through the interior
+#                    -> this axis genuinely needs its 25
+#
+# So the cone is cut to its three extremes and DIRS is left alone. Measured,
+# adverse suite / 40 reversed benchmark maps, versus 25x25:
+#
+#     25x3 (here)  same missions solved, +0.125% length, grid 625 -> 75 points,
+#                  adverse 27.6s -> 20.0s
+#     13x3         same solved, +0.101%, but 113,951 adverse iterations vs 81,174
+#      9x3         same solved, +0.340%, 136,687 iterations
+#      5x3         same solved, +0.493%, 227,659 iterations and SLOWER overall
+#
+# Note the trap in that table: a smaller grid is not automatically cheaper. The
+# shot connects less often, so the search does more work, and 5x3 ends up slower
+# than 25x25 despite an 8x cheaper grid. Cut the axis that resolves nothing, not
+# the one that does. (The older note that "9x9 -> 38/40 valid" does not conflict:
+# 9x9 cuts BOTH axes, and DIRS is the one that must not be cut.)
+#
+# BOTH planners read this, and they are in different regimes. v0 arms the shot
+# only on reversed approaches (GOAL_SHOT_MIN_REVERSAL_DEG), which is where the
+# cone collapses to its edges, so 3 is free there — both standard sweeps stay
+# bit-identical because the shot never fires on them. The MAIN planner still
+# arms the shot on every fixed-goal mission, including the aligned ones where a
+# finer cone occasionally helps, so it pays a little: measured 300 seeds fixed,
+# 243 -> 243 solved, length +0.0261% (21 seeds longer, 1 shorter, 221 identical,
+# worst seed 138 at +1.457%), iterations +3.23%. Giving main the same reversal
+# gate would remove that cost; until then it is the price of one constant with
+# one meaning.
+GOAL_SHOT_CONE = 3
 
 # Arm the shot only on missions whose APPROACH IS REVERSED: the angle between
 # goal_heading and the start->goal bearing must be at least this many degrees.

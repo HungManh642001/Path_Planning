@@ -90,16 +90,26 @@ def _apply_overrides(pairs):
         key, _, value = pair.partition('=')
         if not hasattr(config, key):
             raise SystemExit(f"config has no attribute {key!r}")
-        setattr(config, key, float(value) if _looks_numeric(value) else value)
+        setattr(config, key, _coerce(value))
         print(f"  config.{key} = {getattr(config, key)!r}")
 
 
-def _looks_numeric(v):
+def _coerce(v):
+    """Parse an override literal, keeping integers INTEGRAL.
+
+    `float()` for everything looks harmless and is not: a count that reaches
+    `range()` raises TypeError, and one that only reaches arithmetic silently
+    measures a different planner than the one you meant to measure. Hit for real
+    with `--set GOAL_SHOT_CONE=25`.
+    """
     try:
-        float(v)
-        return True
+        return int(v)
     except ValueError:
-        return False
+        pass
+    try:
+        return float(v)
+    except ValueError:
+        return v
 
 
 def run(args):

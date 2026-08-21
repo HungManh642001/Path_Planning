@@ -35,13 +35,13 @@ There **is** a pytest suite under `tests/` — run `python -m pytest -q` from th
 
 If a `_ARRAY_API not found` / `numpy.core.multiarray failed to import` ever comes back, it is the same thing: `pip install "numpy==1.26.4"`.
 
-**The real gate is `pytest -q tests/` = 170 passed, 7 failed.** All seven predate this work — verified by running the same files against `5400d9c` in a scratch worktree, which produces the identical seven — so treat them as the baseline, not as breakage:
+**The real gate is `pytest -q tests/` = 188 passed, 6 failed** (as of 2026-08-21; it was 170/7 before the Strategy-B and goal-shot work added tests). The six all predate that work — the original seven were verified against `5400d9c` in a scratch worktree, and one of them has since gone green for a reason unrelated to its feature (see the table) — so treat them as the baseline, not as breakage:
 
 | failing test | why |
 | --- | --- |
-| `goal_shot_align_gate_test` (×2) | feature has tests but no implementation: `config.GOAL_SHOT_ALIGN_GATE` does not exist |
+| `goal_shot_align_gate_test::test_knob_off_restores_aligned_shot` | feature has tests but no implementation: `config.GOAL_SHOT_ALIGN_GATE` does not exist, and it must NOT be built — see the goal-shot note below. Its sibling `test_gate_skips_aligned_shot` went GREEN on 2026-08-21 **by accident**: `GOAL_SHOT_CONE = 3` means main finds no candidate from that particular aligned state, which is not the gate existing. Do not read it as the feature landing |
 | `hard_seeds_test[674-584760.0]` | **seed 674 fails to plan at all.** A real open regression on a seed the suite expects solved; it was invisible while the file could not be collected |
-| `kinodynamic_arc_hop_test::test_no_radial_fan_in_open_water` | asserts 1 successor, gets 7. It encodes the *rejected* design — gating the fan on "goal already reachable" costs seed 4 88 km, see the Strategy-B note below |
+| `kinodynamic_arc_hop_test::test_no_radial_fan_in_open_water` | asserts 1 successor, gets 7. It encodes a *rejected* design — suppressing the fan on every line-of-sight-clear expansion costs seed 51 +73.5%, see the Strategy-B note below |
 | `kinodynamic_arc_hop_test::test_check_fixed_legs_detects_blocked_start_and_goal` | signature drift: calls `_check_fixed_legs(body)` expecting `(ok, reason)`; it now takes no arguments and returns a bool |
 | `kinodynamic_arc_hop_test::test_plan_maps_blocked_leg_to_failure_reason` | same signature drift, via monkeypatch |
 | `strategy_b_valve_test::test_non_corner_expansion_still_consumes_valve_budget` | asserts the global-budget branch decrements `num_strategy_b`; `STRATEGY_B_CONSECUTIVE = True` takes the per-path branch instead, leaving that counter untouched |
