@@ -25,6 +25,7 @@ from shapely.ops import unary_union
 from shapely.prepared import prep as shp_prep
 
 import config
+import core.goal_shot as gshot
 import core.mission as mission
 import core.path_validation as pv
 import core.spatial_utils as su
@@ -849,6 +850,136 @@ class KinodynamicAstar:
         """
         return self._check_collision(self.goal_state.waypoint, self._target)
 
+    def _ray_chord_clear(
+        self,
+        memo: dict[float, list[float]],
+        ray: float,
+        distance: float,
+        p1: Point,
+        p2: Point,
+    ) -> bool:
+        """Collision-test a chord, reusing what is already known about its ray.
+
+        Every chord on one ray is a prefix of every longer chord on that ray, so
+        a CLEAR verdict at some distance proves every shorter chord and a BLOCKED
+        verdict proves every longer one. Pure memoisation: it changes how many
+        chords are tested, never the verdict.
+
+        Args:
+            memo: Ray key -> ``[longest known clear, shortest known blocked]``.
+            ray: The ray's heading, used as its key.
+            distance: How far along the ray ``p2`` sits from ``p1``.
+            p1: Chord start.
+            p2: Chord end.
+
+        Returns:
+            ``True`` if the chord is flyable.
+        """
+        span = memo.get(ray)
+        if span is None:
+            span = memo[ray] = [0.0, float("inf")]
+        if distance <= span[0]:
+            return True
+        if distance >= span[1]:
+            return False
+        if self._check_collision(p1, p2):
+            span[0] = distance
+            return True
+        span[1] = distance
+        return False
+
+    def _try_goal_shot(self, current: State) -> State | None:
+        """Build an analytic 2-corner manoeuvre from ``current`` to the goal.
+
+        Fixed-goal mode only. Returns the goal State with parents linked back to
+        ``current``, or None when nothing angle-, length- or collision-feasible
+        exists.
+
+        Args:
+            current: The state to shoot from.
+
+        Returns:
+            The goal State, ready for reconstruction, or ``None``.
+
+        Raises:
+            TypeError: If ``current`` or the goal carries no heading.
+        """
+        if self._free_goal:
+            return None
+        goal_wp = self.goal_state.waypoint
+        goal_heading = self.goal_state.heading
+        heading = current.heading
+        if goal_heading is None or heading is None:
+            raise TypeError("the goal shot requires both headings in fixed-goal mode")
+
+        candidates = gshot.two_corner_candidates(
+            current.waypoint,
+            heading,
+            goal_wp,
+            goal_heading,
+            self.R,
+            self._alpha_build,
+            config.MIN_STRAIGHT_M,
+            current.straight_budget,
+            current.min_straight_in,
+            num_dir=config.GOAL_SHOT_DIRS,
+            num_cone=config.GOAL_SHOT_CONE,
+        )
+        base_g = self.g_scores[current]
+        # Every corner sharing a leg1_heading lies on ONE ray out of `current`,
+        # and every corner sharing an arrival_heading lies on one back-ray into
+        # the goal, so the two legs are memoised per ray. Measured over 300
+        # fixed-goal seeds: 39.1 collision checks per shot, of which most are
+        # re-tests of a ray already settled by a longer or shorter chord.
+        leg1_memo: dict[float, list[float]] = {}
+        leg2_memo: dict[float, list[float]] = {}
+        position = current.waypoint
+        for candidate in candidates:
+            corner = candidate.corner
+            leg1_heading = candidate.leg1_heading
+            arrival_heading = candidate.arrival_heading
+            if not self._ray_chord_clear(
+                leg1_memo, leg1_heading, math.dist(position, corner), position, corner
+            ):
+                continue
+            if not self._ray_chord_clear(
+                leg2_memo, arrival_heading, math.dist(corner, goal_wp), corner, goal_wp
+            ):
+                continue
+            # The shot SYNTHESISES corners that never pass through
+            # get_next_states, so nothing else arc-checks them. Leaving them
+            # unchecked lets an unflyable fillet reach the final path, which the
+            # oracle then rejects as path_self_collision (measured on seed 964
+            # in the main planner). The third corner, at the goal turning onto
+            # goal_heading, matters too: gw -> T is flown.
+            if config.ARC_CLEARANCE_CHECK:
+                if not self._corner_arc_clear(heading, current.waypoint, corner):
+                    continue
+                if not self._corner_arc_clear(leg1_heading, corner, goal_wp):
+                    continue
+                if not self._corner_arc_clear(arrival_heading, goal_wp, self._target):
+                    continue
+
+            corner_state = State(corner, leg1_heading)
+            corner_state.parent = current
+            turn_1 = abs(_angle_diff(leg1_heading, heading))
+            corner_state.g_cost = (
+                base_g + math.dist(current.waypoint, corner) + config.TURN_PENALTY_WEIGHT * turn_1
+            )
+            corner_state.straight_budget = candidate.budget_corner
+
+            goal_state = State(goal_wp, arrival_heading)
+            goal_state.parent = corner_state
+            turn_2 = abs(_angle_diff(arrival_heading, leg1_heading))
+            goal_state.g_cost = (
+                corner_state.g_cost
+                + math.dist(corner, goal_wp)
+                + config.TURN_PENALTY_WEIGHT * turn_2
+            )
+            goal_state.straight_budget = candidate.budget_goal
+            return goal_state
+        return None
+
     def search(self) -> list[PlannerState] | None:
         """Run the kinodynamic A* search.
 
@@ -897,6 +1028,30 @@ class KinodynamicAstar:
 
             if len(self.open_set) <= 1 and self.num_strategy_b <= 0:
                 self.num_strategy_b = config.NUM_STRATEGY_B
+
+            # Analytic terminal shot, FIXED-goal mode only. The manoeuvre is
+            # INJECTED into OPEN with its true g and h = 0 rather than returned:
+            # A* still has to pick it as the cheapest frontier node, so the shot
+            # prunes the adverse-approach flood without overriding the search.
+            # Free-goal mode does not need it and does not get it — the Euclid
+            # heuristic is only blind near a goal that has a required heading.
+            if (
+                config.GOAL_SHOT_ENABLED
+                and not self._free_goal
+                and (self.iteration_count % config.GOAL_SHOT_EVERY_N) == 0
+            ):
+                shot = self._try_goal_shot(current)
+                if shot is not None and shot.g_cost < self.g_scores.get(shot, float("inf")):
+                    self.g_scores[shot] = shot.g_cost
+                    shot.h_cost = 0.0
+                    heapq.heappush(
+                        self.open_set,
+                        (
+                            shot.g_cost + config.HEURISTIC_WEIGHT * shot.h_cost,
+                            self.iteration_count,
+                            shot,
+                        ),
+                    )
 
             dist_to_goal = math.sqrt(
                 (current.waypoint[0] - self.goal_state.waypoint[0]) ** 2

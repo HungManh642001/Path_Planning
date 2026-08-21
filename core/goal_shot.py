@@ -92,6 +92,27 @@ def two_corner_candidates(
 
     px, py = position
     delta_x, delta_y = goal_waypoint[0] - px, goal_waypoint[1] - py
+
+    # The arrival cone depends only on j, so its trigonometry is hoisted out of
+    # the nested loop: at the default 25x25 it turned 625 evaluations of each of
+    # cos, sin, atan2 and tan into 25. Cone entries whose terminal turn exceeds
+    # alpha_max (float noise on the cone edge) are dropped here rather than
+    # re-tested num_dir times.
+    cone: list[tuple[float, float, float, float]] = []
+    for j in range(num_cone):
+        arrival_heading = goal_heading - alpha_max + (2.0 * alpha_max) * j / (num_cone - 1)
+        turn_at_goal = abs(_angdiff(goal_heading, arrival_heading))
+        if turn_at_goal > alpha_max:
+            continue
+        cone.append(
+            (
+                arrival_heading,
+                math.cos(arrival_heading),
+                math.sin(arrival_heading),
+                turn_radius * math.tan(turn_at_goal / 2.0),
+            )
+        )
+
     out: list[TwoCornerCandidate] = []
     for i in range(num_dir):
         leg1_heading = heading - alpha_max + (2.0 * alpha_max) * i / (num_dir - 1)
@@ -101,15 +122,10 @@ def two_corner_candidates(
             continue
         ux, uy = math.cos(leg1_heading), math.sin(leg1_heading)
         reserve_1 = turn_radius * math.tan(turn_at_position / 2.0)
-        for j in range(num_cone):
-            arrival_heading = goal_heading - alpha_max + (2.0 * alpha_max) * j / (num_cone - 1)
+        for arrival_heading, vx, vy, reserve_terminal in cone:
             turn_at_corner = abs(_angdiff(arrival_heading, leg1_heading))
             if turn_at_corner > alpha_max:
                 continue
-            turn_at_goal = abs(_angdiff(goal_heading, arrival_heading))
-            if turn_at_goal > alpha_max:  # guard float noise on the cone edge
-                continue
-            vx, vy = math.cos(arrival_heading), math.sin(arrival_heading)
             det = ux * vy - uy * vx
             if abs(det) < 1e-9:
                 continue  # legs parallel: no corner
@@ -118,7 +134,6 @@ def two_corner_candidates(
             if leg1_len <= 0.0 or leg2_len <= 0.0:
                 continue  # corner behind an endpoint
             reserve_2 = turn_radius * math.tan(turn_at_corner / 2.0)
-            reserve_terminal = turn_radius * math.tan(turn_at_goal / 2.0)
             budget_corner = leg1_len - reserve_1
             if budget_corner - reserve_2 < min_straight:
                 continue
