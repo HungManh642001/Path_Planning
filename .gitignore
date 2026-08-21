@@ -2,7 +2,7 @@ results*/
 cases/*
 logs/*
 docs/
-tests/
+/tests/
 cases/
 .superpowers/
 .pytest_cache/

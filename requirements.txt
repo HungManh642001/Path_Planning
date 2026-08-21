@@ -1,4 +1,10 @@
-numpy>=1.21.0
+# numpy 2 is NOT usable with the rest of this stack. matplotlib 3.8, pandas
+# 2.1.4, contourpy, numba, pywavelets and scikit-* all pin numpy<2, and with
+# numpy 2.4.6 installed they fail at import with
+# "numpy.core.multiarray failed to import" -- which took six test files out of
+# collection while pytest still reported green on the rest. scipy 1.17 wants
+# numpy>=1.26.4, so 1.26.x is the version that satisfies everything at once.
+numpy>=1.26.4,<2
 scipy>=1.7.0
 shapely>=1.8.0
 matplotlib>=3.4.0

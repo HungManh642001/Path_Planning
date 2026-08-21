@@ -88,33 +88,26 @@ class MapCanvas:
         self._draw_empty()
         overlay = overlay or {}
 
-        # Two boundary rings per obstacle (available after a run):
-        #   ring 1 (orange) = raw + safe_margin               -- safety buffer
-        #   ring 2 (red)    = raw + safe_margin + inflation    -- planner clearance
+        # ONE boundary ring per obstacle (available after a run):
+        #   raw + safe_margin -- the whole flown path, straights AND turn arcs,
+        #   stays outside it. The old second ring showed the extra
+        #   `R*(1/cos(alpha_max/2)-1)` turn reserve; that term is gone, so there
+        #   is nothing left to distinguish.
         if preprocessed:
-            R = preprocessed.get('turn_radius', config.R)
-            alpha = preprocessed.get('alpha_max_rad', config.ALPHA_MAX_RAD)
             sm = preprocessed.get('safe_margin', config.SAFE_MARGIN)
-            ring1_off, ring2_off = prep.inflation_offsets(R, alpha, sm)
+            ring_off = prep.inflation_ring(sm)
             labelled = False
             for o in state['obstacles']:
-                lab1 = 'Safe margin' if not labelled else None
-                lab2 = 'Inflation' if not labelled else None
+                lab = 'Safe margin' if not labelled else None
                 if o['type'] == 'circle':
                     c, rr = o['center'], o['radius']
-                    self.ax.add_patch(MplCircle(c, rr + ring1_off, facecolor='none',
+                    self.ax.add_patch(MplCircle(c, rr + ring_off, facecolor='none',
                                                 edgecolor='orange', linestyle='--', linewidth=1.0,
-                                                alpha=0.7, label=lab1))
-                    self.ax.add_patch(MplCircle(c, rr + ring2_off, facecolor='none',
-                                                edgecolor='red', linestyle='--', linewidth=1.0,
-                                                alpha=0.7, label=lab2))
+                                                alpha=0.7, label=lab))
                 else:
-                    self.ax.add_patch(MplPolygon(su.inflate_polygon(o['polygon'], ring1_off),
+                    self.ax.add_patch(MplPolygon(su.inflate_polygon(o['polygon'], ring_off),
                                                  closed=True, facecolor='none', edgecolor='orange',
-                                                 linestyle='--', linewidth=1.0, alpha=0.7, label=lab1))
-                    self.ax.add_patch(MplPolygon(su.inflate_polygon(o['polygon'], ring2_off),
-                                                 closed=True, facecolor='none', edgecolor='red',
-                                                 linestyle='--', linewidth=1.0, alpha=0.7, label=lab2))
+                                                 linestyle='--', linewidth=1.0, alpha=0.7, label=lab))
                 labelled = True
 
         for o in state['obstacles']:

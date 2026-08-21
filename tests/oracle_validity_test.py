@@ -30,6 +30,5 @@ def test_successful_plan_is_oracle_valid(seed):
     assert pv.path_is_valid(
         full, pre['circle_obstacles'], pre['polygon_obstacles'],
         config.R, config.ALPHA_MAX_RAD, config.L0, config.DSS,
-        raw_circle_obstacles=rawc, raw_polygon_obstacles=rawp,
-        circle_tol=config.CIRCLE_GRAZE_TOL_M), \
+        raw_circle_obstacles=rawc, raw_polygon_obstacles=rawp), \
         f"seed {seed}: reported success but oracle rejected the full path"
