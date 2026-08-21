@@ -426,8 +426,13 @@ class KinodynamicAstar:
         """Generate the successors of a state, with their transition costs.
 
         Three sources, in order: a straight wrap step off a circle boundary;
-        Strategy-A tangent/vertex/goal candidates; and the Strategy-B radial fan,
-        budgeted by ``config.NUM_STRATEGY_B``.
+        Strategy-A tangent/vertex/goal candidates; and the Strategy-B radial fan.
+
+        ``config.NUM_STRATEGY_B`` budgets only ONE of the fan's firing
+        conditions — an occluded goal from a non-start-corner state that already
+        has successors. Start-corner, goal-clear and no-successor firings bypass
+        it entirely (89% of all firings, measured over 100 free seeds), and it
+        is a single counter for the whole search, not a per-path one.
 
         Args:
             current_state: The state being expanded.

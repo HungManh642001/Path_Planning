@@ -240,6 +240,26 @@ TURN_PREFILTER_BAND_RAD = 1e-6
 # while the goal is line-of-sight blocked (cheap reorientation moves, e.g.
 # recovering from an adverse initial heading). Fallback/riding fans are not
 # budgeted.
+#
+# WARNING — ONE NAME, TWO MEANINGS. This is the exception to the "one constant
+# per meaning" rule, and it is not a deliberate one:
+#   v0 (the SHIPPED planner) reads it as a GLOBAL counter for the whole search,
+#     with start corners EXEMPT, re-armed when the frontier nearly dies. v0 does
+#     not read STRATEGY_B_CONSECUTIVE or STRATEGY_B_GLOBAL_CAP at all, so the
+#     block below describes main only.
+#   main reads it as the PER-PATH consecutive cap (State.consec_b), because
+#     STRATEGY_B_CONSECUTIVE is True.
+# So "3" is 3-in-the-whole-search in one planner and 3-in-a-row-per-path in the
+# other. Do not reason about one planner's behaviour from the other's number.
+#
+# What the global form actually does, measured on v0 over 100 free seeds: the
+# gate is reached 8,967 times and SUPPRESSES 8,747 of them (97.5%) — the budget
+# empties almost immediately and then stays empty, so it behaves as an off
+# switch for the occluded-goal fan rather than as an allowance. Only 220 firings
+# ever spent it. Meanwhile 89% of the fan's 2,016 actual firings never consult
+# it (start corner 348, goal already clear, or the no-successor fallback), and
+# it bounds nothing consecutive: fan chains still reach depth 6, and 16% of
+# firings are on a state already 3+ fan legs deep.
 NUM_STRATEGY_B = 3
 
 # FREE-GOAL MODE ONLY: skip the radial fan when the goal is line-of-sight clear
@@ -267,7 +287,8 @@ NUM_STRATEGY_B = 3
 # (+0.0376% length, +0.93% iterations), so zero yield is not zero value here.
 FAN_SKIP_ON_SHORT_RUNIN = True
 
-# Interpretation of NUM_STRATEGY_B:
+# Interpretation of NUM_STRATEGY_B — IN THE MAIN PLANNER ONLY. v0 never reads
+# this flag; it is hard-wired to the "False" branch described below.
 #   False (legacy) = a GLOBAL budget: at most NUM_STRATEGY_B occluded-reorient
 #     fan expansions in the WHOLE search (start corners exempt), re-armed when
 #     the frontier nearly dies.
@@ -280,16 +301,22 @@ FAN_SKIP_ON_SHORT_RUNIN = True
 #     rule causes on pathological maps (e.g. a valid seed that otherwise times
 #     out). Start corners are NOT exempt (consec_b starts at 0).
 #
-# DEFAULT False (global) — the hybrid is OPT-IN, not the default. Validated on
-# 40 random adverse seeds (per-path NUM_STRATEGY_B=3, GLOBAL_CAP=50) vs global5:
-# +6 seeds shorter (net -33.9 km, none longer) and it fixes the scenario_3
-# wide-loop (307.8 -> 291.7 km, 17 -> 7 wp), BUT it is NOT a strict win — one
-# seed regresses valid -> path_self_collision (the extra fan exploration
-# surfaces a shorter path whose FINAL oracle validation fails; search-time
-# checks do not yet perfectly match the oracle). Losing a solve to shorten
-# others is usually the wrong trade for a planner, so the default stays global
-# until the search/oracle mismatch is closed. Flip to True (with NUM_STRATEGY_B
-# = 3) to A/B the quality-vs-one-regression trade.
+# DEFAULT True (hybrid) since fd7584d, which adopted it as part of removing the
+# loiter macro. It was introduced as OPT-IN in 0a0eacf, and this paragraph used
+# to still say so long after the value had flipped — read the value, not the
+# prose. Setting it False gives the legacy global budget, which is also exactly
+# what v0 does.
+#
+# Adopted on 40 random adverse seeds (per-path NUM_STRATEGY_B=3, GLOBAL_CAP=50)
+# vs global5: +6 seeds shorter (net -33.9 km, none longer) and it fixes the
+# scenario_3 wide-loop (307.8 -> 291.7 km, 17 -> 7 wp). It was NOT a strict win
+# at the time — one seed regressed valid -> path_self_collision (the extra fan
+# exploration surfaces a shorter path whose FINAL oracle validation fails;
+# search-time checks did not then match the oracle). That caveat is recorded as
+# HISTORY: it has not been re-measured since, and much of the search/oracle
+# mismatch it blamed has been closed in the meantime (the fillet-arc gate, the
+# interior-overlap measurement, the exact-turn smoother gate). Re-measure before
+# quoting it as a live risk.
 STRATEGY_B_CONSECUTIVE = True
 
 # Global safety valve for the HYBRID Strategy-B mode: the maximum TOTAL number
@@ -297,8 +324,18 @@ STRATEGY_B_CONSECUTIVE = True
 # (hard cap, no re-arm). Large enough that adverse missions (which solve in a
 # few hundred expansions) keep their per-path fan chains; small enough to stop
 # a per-path blow-up before the time budget. Only consulted when
-# STRATEGY_B_CONSECUTIVE is True. 50 is the validated value (fixes seed32/seed18
-# where lower caps still failed/were-longer, no worse than 150 on the rest).
+# STRATEGY_B_CONSECUTIVE is True, i.e. by the MAIN planner only.
+#
+# 50 was the validated value in 0a0eacf (fixes seed32/seed18 where lower caps
+# still failed/were-longer, no worse than 150 on the rest). It is 100 now, and
+# that is NOT a measured number: fd7584d took it to 500 alongside the loiter
+# removal, and 60359b1 — a smooth_path fix whose message never mentions the fan
+# — brought it back to 100. Treat 100 as unvalidated until someone re-runs it.
+#
+# Despite the framing above ("safety valve"), this cap is what actually governs
+# main: over 100 free seeds it suppresses 16,806 firings against the per-path
+# cap's 2,457, so it is the primary limiter and NUM_STRATEGY_B is the secondary
+# one — the reverse of what the two names suggest.
 STRATEGY_B_GLOBAL_CAP = 100
 
 # ====== GOAL SHOT (analytic terminal connect) ======

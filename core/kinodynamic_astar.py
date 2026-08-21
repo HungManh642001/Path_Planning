@@ -617,11 +617,16 @@ class KinodynamicAstar:
         # NOTE: it is tempting to skip the fan entirely when the goal is
         # already a valid successor ("the fan is only branching noise in open
         # water" — tests/kinodynamic_arc_hop_test.py::test_no_radial_fan_in_
-        # open_water). Measured: that costs seed 4 88 km (534.9 vs 446.9).
-        # The search de-duplicates on a coarse lattice (STATE_POS_QUANTUM,
-        # STATE_HEADING_QUANTUM_DEG), so it is NOT exactly optimal, and the
-        # fan's "redundant" pivots act as lattice diversity rather than noise.
-        # Gate the BUDGET here, not whether the fan fires.
+        # open_water). The search de-duplicates on a coarse lattice
+        # (STATE_POS_QUANTUM, STATE_HEADING_QUANTUM_DEG), so it is NOT exactly
+        # optimal, and the fan's "redundant" pivots act as lattice diversity
+        # rather than noise. Gate the BUDGET here, not whether the fan fires.
+        #
+        # The number this comment used to quote — "that costs seed 4 88 km
+        # (534.9 vs 446.9)" — NO LONGER REPRODUCES: re-measured 2026-08-21, that
+        # exact gate costs +0.0376% (free) / +0.0483% (fixed) and saves nothing.
+        # The conclusion stands on a different case: suppressing the fan on
+        # every line-of-sight-clear expansion costs seed 51 +73.5%.
         if successors and not riding and not self._check_collision(position, goal_wp):
             # Escape valve: while the goal is occluded, a few budgeted fan
             # expansions provide cheap reorientation moves (e.g. an adverse
