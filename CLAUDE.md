@@ -40,11 +40,21 @@ If a `_ARRAY_API not found` / `numpy.core.multiarray failed to import` ever come
 | failing test | why |
 | --- | --- |
 | `goal_shot_align_gate_test::test_knob_off_restores_aligned_shot` | feature has tests but no implementation: `config.GOAL_SHOT_ALIGN_GATE` does not exist, and it must NOT be built — see the goal-shot note below. Its sibling `test_gate_skips_aligned_shot` went GREEN on 2026-08-21 **by accident**: `GOAL_SHOT_CONE = 3` means main finds no candidate from that particular aligned state, which is not the gate existing. Do not read it as the feature landing |
-| `hard_seeds_test[674-584760.0]` | **seed 674 fails to plan at all.** A real open regression on a seed the suite expects solved; it was invisible while the file could not be collected |
+| `hard_seeds_test[674-584760.0]` | seed 674 fails to plan. Recorded as a real open regression, but treat that as UNCONFIRMED: this file's maps come from `batch_random_test.generate_random_scenario`, so a scratch edit there silently changes which mission "seed 674" is — see the note under this table |
 | `kinodynamic_arc_hop_test::test_no_radial_fan_in_open_water` | asserts 1 successor, gets 7. It encodes a *rejected* design — suppressing the fan on every line-of-sight-clear expansion costs seed 51 +73.5%, see the Strategy-B note below |
 | `kinodynamic_arc_hop_test::test_check_fixed_legs_detects_blocked_start_and_goal` | signature drift: calls `_check_fixed_legs(body)` expecting `(ok, reason)`; it now takes no arguments and returns a bool |
 | `kinodynamic_arc_hop_test::test_plan_maps_blocked_leg_to_failure_reason` | same signature drift, via monkeypatch |
 | `strategy_b_valve_test::test_non_corner_expansion_still_consumes_valve_budget` | asserts the global-budget branch decrements `num_strategy_b`; `STRATEGY_B_CONSECUTIVE = True` takes the per-path branch instead, leaving that counter untouched |
+
+**That count is not stable, because `hard_seeds_test` imports
+`generate_random_scenario` from `batch_random_test.py` — a file that is
+routinely edited as scratch.** Its four seeds are then DIFFERENT MAPS from the
+ones the recorded ceilings were measured on: with the working copy as of
+2026-08-21, seed 674 is a 232 km free-goal mission where the committed
+generator draws a 470 km fixed-goal one, and 125 / 319 / 981 all move too. The
+test then passes or fails on luck rather than on the planner, so **check
+`git diff batch_random_test.py` before reading anything into that file's
+result** — a 674 that goes green is the likeliest false signal here.
 
 To run/debug a single scenario instead of all 18, call the pieces directly (this is the canonical pipeline):
 
@@ -397,6 +407,75 @@ already an accepted successor 0/0**. Two things follow.
   misaligned" branch: keeping the high-yield arc trigger and dropping that one
   still costs seed 51 **+73%**. Route yield finds candidates; it never justifies
   a removal.
+
+**`NUM_STRATEGY_B` does not mean what its name says, and the obvious fix was
+built, measured on four benchmarks and REVERTED (2026-08-21).** The name reads
+as "the fan may open nodes for the first 3 steps out of the start corner". v0
+keeps one GLOBAL tally instead, spent by whichever expansions reach it first,
+with start corners EXEMPT and a re-arm when the frontier nearly dies. Two
+consequences, both measured over 100 free seeds: it is an off switch rather
+than an allowance — the gate is reached 8,967 times and SUPPRESSES 8,747
+(97.5%), only 220 firings ever spend it, and 89% of the fan's 2,016 firings
+never consult it at all (start corner 348, goal already clear, or the
+no-successor fallback) — and it bounds nothing consecutive despite the name:
+fan runs reach depth 6, with 16% of firings on a state already 3+ fan legs
+deep. It also couples unrelated branches of the tree, since one branch
+spending the tally silences every other.
+
+The replacement was two gates keyed to the state itself. RULE 1: the fan fires
+only within N steps of the start corner (a budget DERIVED from depth, so two
+siblings get the same allowance whatever either did), with the no-successor
+fallback exempt. RULE 2: with Strategy-A candidates in hand and the goal
+occluded, the fan is not consulted — those candidates ARE the way round the
+obstacle — start corners still exempt. Together, against the shipped planner,
+**no mission lost on any benchmark**:
+
+| benchmark | length | iterations | solved |
+| --- | --- | --- | --- |
+| free 300 | +0.449% | **−13.9%** | 294/294 |
+| fixed 300 | +0.852% | **−25.4%** | 243/243 |
+| adverse 144 | +0.134% | **−46.7%** | 141/141 |
+| 18 named presets | +0.007% | **−41.0%** | 18/18 |
+
+`scenario_18_reversed_approach_cluttered` went 3,078 → 258 iterations for
++0.13%, and 15 of the 18 presets kept their length to the last digit.
+
+**It was reverted for the TAIL, which the summary rows hide.** Median 0.000%
+and 204/294 free paths bit-unchanged, but 13 free seeds move >1% and 30 fixed
+ones do — seed 51 **+73.53%** (239 → 414 km), fixed seed 182 **+40.03%**, seed
+206 +35.64%. Nothing meaningful gets shorter (best case −0.76%), so it is a
+one-way trade. For scale, lazy edge validation was rejected over 8 seeds >1%
+at worst +11.9%.
+
+**The two rules split cleanly, and the split is the reusable part.** Rule 2 is
+the whole win on the random distribution and carries a mild tail; rule 1 is a
+COST there and owns the entire tail, earning its keep only on adverse
+missions:
+
+| | free length / iters | fixed length / iters | adverse iters | worst free |
+| --- | --- | --- | --- | --- |
+| rule 2 alone | +0.148% / **−17.5%** | +0.116% / −7.3% | −7.5% | +16.21% |
+| both, horizon 3 | +0.449% / −13.9% | +0.852% / −25.4% | **−46.7%** | **+73.53%** |
+| rule 1 alone | +0.351% / **+4.1%** | +0.740% / −26.6% | **−45.6%** | +73.53% |
+
+Relaxing the horizon removes the tail AND helps free-mode iterations (3 →
+−13.9%, 6 → −17.3%, 10 → −17.3%, none → −17.5%), so on random maps the horizon
+is pure cost; it buys adverse turn-arounds instead. **Rule 2 alone was never
+rejected on its merits** — it went out with the rest — so it is the obvious
+thing to re-measure before inventing something new here.
+
+**And the first reading of that name was WRONG in a way the random sweep could
+not see.** Read as "consecutive FAN legs rooted at a start corner" (resetting
+on any Strategy-A step) rather than plain depth, a cap of 3 is a bit-identical
+**no-op** 300/300, because start-rooted fan runs never get past depth 2.
+Forcing it to bind by capping at 0 — i.e. no fan at start corners — looks
+excellent on the sweep (**−19.1% iterations for +1.0% length, nothing lost**)
+and destroys the adverse suite: **141 → 91 of 144, every loss a genuine
+`no_path`, every one of them in OPEN WATER**, where Strategy A offers no
+candidate but the goal and the fan at takeoff is the only way to turn around.
+The 300-seed sweep cannot see this: its start headings are only ±90° of the
+start→goal bearing. Same blind spot the goal shot had before scenarios 17/18.
+
 The max-turn-angle and đoản-trình (minimum-straight) constraints are enforced
 inline by `_pivot_candidate` and `_doan_trinh` (a `preprocessing.
 validate_kinodynamics` once did this; it was dead code by 2026-08-20 and is
@@ -744,7 +823,13 @@ check, there is no `.gitattributes`); patching with `open(p, 'w').write(s)` in
 Python rewrites the whole file to LF and buries the real change in a 1600-line
 diff. Use `newline='\r\n'`, or the editing tools, which preserve it. And
 `str.replace` with a pattern that does not match is a silent no-op — assert the
-match count when scripting an edit.
+match count when scripting an edit. Note CRLF is not uniform even WITHIN a
+file: resolving a `.gitignore` conflict on 2026-08-21 failed because git had
+written one side of the conflict block with LF and the rest with CRLF, so
+neither an all-LF nor an all-CRLF pattern matched. Match line-wise on
+`rstrip('\r')` rather than on an exact multi-line string — and remember that
+a failed script followed by `git commit` on the NEXT line still commits, which
+is how conflict markers reached a commit that day.
 
 ### Rendering model (render/trajectory.py)
 
