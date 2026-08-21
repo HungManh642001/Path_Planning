@@ -158,7 +158,22 @@ that `batch_random_test` drifts).
   analytic goal shot (main only — and note the goal shot never runs on the
   deployed path, since `batch_random_test` plans in free-goal mode where
   `_try_goal_shot` returns immediately), `STRATEGY_B_CONSECUTIVE` (main only),
-  and the interior-overlap machinery (main keeps it, v0 deleted it).
+  the interior-overlap machinery (main keeps it, v0 deleted it), and
+  `FAN_SKIP_ON_SHORT_RUNIN` (v0 only, see the Strategy-B note below).
+
+  **The goal shot is not a luxury, and its absence is v0's largest single
+  weakness.** On a 144-case adverse-heading suite (obstacle-free and lightly
+  cluttered, 24 start headings × `goal_heading` ∈ {None, +90°, −90°}): main
+  141/144 solved at 106,563 iterations; main with `GOAL_SHOT_ENABLED = False`
+  131/144 at 1,175,528; v0 131/144 at 1,177,550 with **10 cases dying on
+  `MAX_ITERATIONS`**. Turning the shot off in main reproduces v0 almost exactly,
+  so the shot IS the whole gap. It lives in one group — obstacle-free with an
+  adverse `goal_heading` — which alone costs v0 764,528 iterations against main's
+  36,623 (**20.9x**); with the cluttered mirror it is **99.8% of v0's entire
+  effort** on that suite. Adverse *start* headings, by contrast, are a non-issue:
+  all 24 solve in **2–17 iterations** in both planners. Relevant because all 16
+  named scenarios use a FIXED `goal_heading` — free-goal is only what
+  `batch_random_test` sweeps.
 - **A dead knob is worse than no knob.** `config.CIRCLE_GRAZE_TOL_M` is
   deprecated and pinned at `0.0` — no planner reads it — yet `gui/params.py`
   still renders it as a 0-500 m slider, so an operator can move it and change
@@ -254,11 +269,16 @@ clear segment; (3) **Strategy B** — an `±α_max` radial fan that fires when
 boundary (leave-the-boundary options between departure points), or (c) the
 goal is line-of-sight blocked, budgeted globally by `config.NUM_STRATEGY_B`
 (an escape valve against long detours from an adverse initial heading). Note
-`NUM_STRATEGY_B` gates only the **budget**, not whether the fan fires: gating
-the firing itself on "the goal is already reachable" costs seed 4 88 km
-(534.9 vs 446.9), because the dedup lattice (`STATE_POS_QUANTUM`,
-`STATE_HEADING_QUANTUM_DEG`) makes the search only approximately optimal, so
-the fan's redundant-looking pivots act as lattice diversity rather than noise.
+`NUM_STRATEGY_B` gates only the **budget**, not whether the fan fires, and
+gating the FIRING is where this planner punishes intuition: the dedup lattice
+(`STATE_POS_QUANTUM`, `STATE_HEADING_QUANTUM_DEG`) makes the search only
+approximately optimal, so the fan's redundant-looking pivots act as lattice
+diversity rather than noise. Suppressing the fan on every line-of-sight-clear
+expansion costs **seed 51 +73.5%** (measured 2026-08-21, 300 seeds). The older
+figure here — "gating on *the goal is already reachable* costs seed 4 88 km" —
+**no longer reproduces**: that exact gate now costs +0.0376% (free) / +0.0483%
+(fixed) and saves nothing, because it fires ~250 times in 300 seeds. The lesson
+stands, the example is stale; re-measure before quoting a number from this file.
 Each fan direction emits `config.NUM_FAN_DISTANCES` **distance rungs**, not one
 leg: rung `j` is the shortest leg still affording a next turn `β ≤ βⱼ`, with
 tan-uniform buckets `tan(βⱼ/2) = (j/M)·tan(α_max/2)` — the same capability-bucket
@@ -267,6 +287,35 @@ old single worst-case leg exactly). The old code hardcoded `β = α_max`, so eve
 fan leg paid the worst-case far reserve even when the pivot barely turns, which
 bulged fan-routed paths in open water. M is **measured, not tuned by intuition**
 — the relation is not monotone in M (see the note in `config.py`).
+
+**The fan's firing conditions do not line up with the jobs it was written for,
+and the mismatch is measured** (2026-08-21, v0, 300 seeds per goal mode, plus a
+144-case adverse-heading suite). Labelling each firing by its real situation —
+did Strategy A accept the goal, and if not, which gate refused it — gives route
+yield (fan waypoints that reach the delivered path, per 1000 firings), and the
+ranking is the same in both modes: goal refused by the **arc** gate 610/596 ·
+goal occluded + budget 106/107 · start corner 38/44 · no-successor fallback
+13/4 · goal clear but misaligned 2.3/0.9 · **run-in too short 0/7.8** · **goal
+already an accepted successor 0/0**. Two things follow.
+
+- **`config.FAN_SKIP_ON_SHORT_RUNIN` (v0 only, default on, `False` = legacy).**
+  In FREE-goal mode, when the goal is line-of-sight clear and the only thing
+  wrong with the direct leg is that it cannot supply `DSS`, the fan is skipped.
+  It cannot help — every leg departs at `±α_max` or straight ahead at a fixed
+  rung, none is aimed at the goal — and it fired 1,108 times over 300 seeds for
+  ZERO route waypoints. Gate: **bit-identical 300/300 with iterations −11.22%**
+  (wall-clock −8.0%, median of 3 paired repeats); fixed mode untouched, +0.00%.
+  **Do not widen the scope.** In FIXED mode the identical rejection means
+  "cannot turn onto `goal_heading`" — a different problem, 43.6% of firings
+  there, carrying 143 route waypoints; dropping it costs +0.426% with one seed
+  at +40%. The right fix there is the goal shot, which v0 does not have.
+- **Zero route yield is NOT zero value, and only an A/B tells the two apart.**
+  The "goal already an accepted successor" trigger also yields 0 waypoints, but
+  removing it measured **worse on both axes** (+0.0376% length, +0.93%
+  iterations) and was reverted. Same for the near-zero-yield "clear but
+  misaligned" branch: keeping the high-yield arc trigger and dropping that one
+  still costs seed 51 **+73%**. Route yield finds candidates; it never justifies
+  a removal.
 The max-turn-angle and đoản-trình (minimum-straight) constraints are enforced
 inline by `_pivot_candidate` and `_doan_trinh` (a `preprocessing.
 validate_kinodynamics` once did this; it was dead code by 2026-08-20 and is
