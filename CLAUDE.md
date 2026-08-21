@@ -163,6 +163,32 @@ that `batch_random_test` drifts).
   path, which plans in free-goal mode where `_try_goal_shot` returns
   immediately; that is why v0 survived so long without it.
 
+  **That 0.53% gap is Strategy B, and nothing else — measured 2026-08-21 by
+  porting main's fan gate into v0 and then reverting it.** Two things move
+  across: the boundary-riding exemption (`if successors and not riding and ...`,
+  which v0 lacks entirely) and the `STRATEGY_B_CONSECUTIVE` hybrid
+  (`State.consec_b` + `_sb_global`). With both, over 300 free seeds:
+
+  | v0 variant | length vs shipped v0 | iterations | time |
+  | --- | --- | --- | --- |
+  | as shipped | — | 28,670 | 40.8s |
+  | + riding exemption only | **−0.337%** | 75,152 | 73.9s |
+  | + hybrid budget (= main's gate) | **−0.545%** | 113,304 | 110.6s |
+  | *main, for reference* | *−0.531%* | *119,673* | *113.8s* |
+
+  Fixed mode is the same shape (−0.534%, 72,040 → 148,654 iterations), and so is
+  the adverse suite (−0.346%, 81,174 → 147,922, 141/144 either way). **After the
+  port v0 equals or beats main** — 74,336.6 km at 113,304 iterations against
+  main's 74,347.6 km at 119,673 — so arc-hop and the interior-overlap machinery
+  are NOT what makes main's paths shorter. Each half of the port buys about half
+  the quality for about half the time.
+
+  It was reverted because v0 is what `batch_random_test` imports and being the
+  fast one is its reason to exist: the port makes it 2.7x slower (free) / 2.1x
+  (fixed) to buy 0.53%, i.e. it turns v0 into a second copy of main. Keep that
+  trade in mind rather than re-deriving it — and note the middle option, riding
+  exemption alone, is a real point on the curve.
+
   **The goal shot is not a luxury — v0 went without one until 2026-08-21, and
   that was its largest single weakness.** On a 144-case adverse-heading suite
   (obstacle-free and lightly cluttered, 24 start headings × `goal_heading` ∈
