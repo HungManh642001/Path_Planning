@@ -71,6 +71,10 @@ def build_full_path(result_path, preprocessed):
     if O is not None and (not wps or math.dist(O, wps[0][0]) > 1.0):
         wps = [(tuple(O), sh)] + wps
     if T is not None and (not wps or math.dist(T, wps[-1][0]) > 1.0):
+        # Free-goal mode leaves goal_heading None; the drawn arrival heading is
+        # then the bearing of the final leg into T.
+        if gh is None:
+            gh = math.atan2(T[1] - wps[-1][0][1], T[0] - wps[-1][0][0]) if wps else 0.0
         wps = wps + [(tuple(T), gh)]
     return wps
 
