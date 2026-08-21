@@ -11,7 +11,7 @@ A single-process Python research codebase for planning autonomous aircraft traje
 ```bash
 pip install -r requirements.txt          # numpy, scipy, shapely, matplotlib (+ tkinter for the GUI)
 
-python main.py                           # Batch test harness: runs all 16 scenarios, writes PNGs to results/
+python main.py                           # Batch test harness: runs all 18 scenarios, writes PNGs to results/
 python launch_gui.py                     # Interactive Tk GUI: click to place start/goal/obstacles, then plan
 python performance_eval.py               # Performance metric helpers (also imported by main.py)
 
@@ -46,7 +46,7 @@ If a `_ARRAY_API not found` / `numpy.core.multiarray failed to import` ever come
 | `kinodynamic_arc_hop_test::test_plan_maps_blocked_leg_to_failure_reason` | same signature drift, via monkeypatch |
 | `strategy_b_valve_test::test_non_corner_expansion_still_consumes_valve_budget` | asserts the global-budget branch decrements `num_strategy_b`; `STRATEGY_B_CONSECUTIVE = True` takes the per-path branch instead, leaving that counter untouched |
 
-To run/debug a single scenario instead of all 16, call the pieces directly (this is the canonical pipeline):
+To run/debug a single scenario instead of all 18, call the pieces directly (this is the canonical pipeline):
 
 ```python
 import core.map_generator as mg, core.preprocessing as prep
@@ -190,10 +190,17 @@ that `batch_random_test` drifts).
   at the goal can still turn onto `goal_heading` in ONE corner — which the
   ordinary Strategy-A goal candidate already builds — and above it one corner
   cannot, so the shot's two are the only way to finish.
-  **Neither benchmark contains a reversed approach** (the 16 named scenarios top
-  out at 45°, the 300-seed sweep at 89.5°), which is why the armed planner is
-  bit-identical to the PRE-port planner on the fixed sweep. Read that as "the
-  benchmarks contain no turn-around mission", not as "the shot is dead": on the
+  **Until 2026-08-21 neither benchmark contained a reversed approach** (the named
+  scenarios topped out at 45°, the 300-seed sweep still does at 89.5°), which is
+  why the armed planner is
+  bit-identical to the PRE-port planner on the fixed sweep — the sweep still has
+  no turn-around mission, so read that as a gap in the sweep rather than as "the
+  shot is dead". `scenario_17_reversed_approach_open` and
+  `scenario_18_reversed_approach_cluttered` were added to close the gap on the
+  named-scenario side: measured on v0, 17 takes 3,657 iterations with the shot
+  and 10,528 without, and **18 FAILS outright without it** (15,435 iterations),
+  while every pre-existing preset is bit-unchanged either way (scenario_01: 6
+  iterations both, scenario_16: 73 both) because the shot never arms on them. On the
   adverse suite the reversed group is untouched at 76,686 iterations and all
   141/144 solves are kept, while the fixed sweep drops **−20.9%** wall-clock
   against the always-armed shot.

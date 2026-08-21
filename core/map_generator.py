@@ -583,8 +583,45 @@ def scenario16_extreme_complexity() -> Scenario:
     )
 
 
+def scenario17_reversed_approach_open() -> Scenario:
+    """Scenario 17: the seeker must arrive flying BACK along the outbound leg.
+
+    ``goal_heading`` is 180 deg from the start->goal bearing, so no straight run
+    at the goal can turn onto it in one corner (that needs a turn > ALPHA_MAX):
+    the terminal is a genuine turn-around. Every other preset here approaches
+    within 45 deg of the outbound bearing, which left the whole regime
+    unmeasured -- and the analytic goal shot exists precisely for it.
+    """
+    return create_scenario(
+        {
+            "start": (50000, 250000),
+            "start_heading": 0,
+            "goal": (430000, 250000),
+            "goal_heading": math.pi,
+            "num_islands": 0,
+            "num_dynamic_obstacles": 0,
+            "seed": 4242,
+        }
+    )
+
+
+def scenario18_reversed_approach_cluttered() -> Scenario:
+    """Scenario 18: the same turn-around, with obstacles to turn around inside."""
+    return create_scenario(
+        {
+            "start": (50000, 100000),
+            "start_heading": math.pi / 4,
+            "goal": (400000, 400000),
+            "goal_heading": -3 * math.pi / 4,
+            "num_islands": 8,
+            "num_dynamic_obstacles": 5,
+            "seed": 4343,
+        }
+    )
+
+
 def get_all_scenarios() -> dict[str, Callable[[], Scenario]]:
-    """Return all 16 predefined scenarios organized by difficulty."""
+    """Return all 18 predefined scenarios organized by difficulty."""
     return {
         # Original scenarios
         "scenario_01_open_ocean": scenario1_open_ocean,
@@ -606,4 +643,8 @@ def get_all_scenarios() -> dict[str, Callable[[], Scenario]]:
         "scenario_14_combined_obstacles": scenario14_combined_obstacles,
         "scenario_15_narrow_channel": scenario15_narrow_channel,
         "scenario_16_extreme_complexity": scenario16_extreme_complexity,
+        # Reversed approach: goal_heading points back down the outbound leg, so
+        # the terminal needs two corners. Nothing above covers this.
+        "scenario_17_reversed_approach_open": scenario17_reversed_approach_open,
+        "scenario_18_reversed_approach_cluttered": scenario18_reversed_approach_cluttered,
     }
