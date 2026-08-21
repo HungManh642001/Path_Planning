@@ -449,6 +449,11 @@ class KinodynamicAstar:
         candidates.extend(self._poly_vertices)
         candidates.append(goal_wp)
 
+        # Which gate turned the GOAL candidate away, if any. Recorded here rather
+        # than read off `self._last_reject` after the loop: the goal happens to
+        # be the last candidate today, and a gate that depends on that ordering
+        # would break silently the day it is not.
+        goal_reject: str | None = None
         for node in candidates:
             dx = node[0] - position[0]
             dy = node[1] - position[1]
@@ -463,6 +468,8 @@ class KinodynamicAstar:
                 result = self._slide_pivot(current_state, node)
             if result is not None:
                 successors.append(result)
+            elif node is goal_wp:
+                goal_reject = self._last_reject
 
         if (
             successors
@@ -472,6 +479,29 @@ class KinodynamicAstar:
             if self.num_strategy_b <= 0:
                 return successors
             self.num_strategy_b -= 1
+        elif (
+            config.FAN_SKIP_ON_SHORT_RUNIN
+            and self._free_goal
+            and goal_reject == "goal"
+            and successors
+            and not current_state.is_start_corner
+        ):
+            # FREE-goal mode only: the goal is in the clear, and the only thing
+            # wrong with flying straight at it is that the leg cannot supply the
+            # d_ss run-in. The fan cannot fix that -- its legs leave at
+            # +-alpha_max or straight ahead, at fixed rungs, never aimed at the
+            # goal -- so it just floods the lattice near the target. Measured
+            # over 300 free-goal seeds: 1,108 firings, ZERO waypoints on any
+            # delivered route.
+            #
+            # Scoped to free goals ON PURPOSE. In FIXED-goal mode this same
+            # rejection means "cannot turn onto goal_heading", which is a
+            # different and much harder problem: it is 43.6% of all firings
+            # there and DOES carry the route (143 waypoints). The fan is a poor
+            # tool for it, but it is the only tool v0 has until the analytic
+            # goal shot is ported -- dropping it there costs +0.426% with one
+            # seed at +40%.
+            return successors
 
         # --- Strategy B: radial fan, an escape valve against long detours ---
         num_directions = config.RADIAL_FAN_DIRECTIONS

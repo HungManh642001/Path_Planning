@@ -242,6 +242,31 @@ TURN_PREFILTER_BAND_RAD = 1e-6
 # budgeted.
 NUM_STRATEGY_B = 3
 
+# FREE-GOAL MODE ONLY: skip the radial fan when the goal is line-of-sight clear
+# and the only thing wrong with the direct leg is that it cannot supply the DSS
+# run-in. Read by core/kinodynamic_astar_v0.py; False is exactly legacy.
+#
+# The fan cannot solve that problem. Every fan leg departs at +-alpha_max or
+# straight ahead, at a fixed rung distance, and none is aimed at the goal, so
+# firing here only floods the lattice near the target. Measured over 300
+# free-goal seeds: 1,108 firings contributing ZERO waypoints to any delivered
+# route.
+#
+# SCOPED TO FREE GOALS ON PURPOSE, because the same rejection means something
+# else in fixed-goal mode: there it is "cannot turn onto goal_heading", the
+# terminal approach problem. That one is 43.6% of all firings and DOES carry the
+# route (143 waypoints over 300 seeds); dropping the fan there costs +0.426%
+# with one seed at +40%. The fan is a poor tool for it -- the right tool is the
+# analytic goal shot, which v0 does not have -- but a poor tool beats none.
+#
+# Note this is deliberately NARROWER than "the goal is line-of-sight clear".
+# The fan's other goal-clear firings are lattice diversity rather than progress:
+# widening the skip to all of them costs seed 51 +73.5%. And note the negative
+# result next door -- skipping the fan when the goal is ALREADY an accepted
+# successor also looks free (zero route yield) but measured WORSE on both axes
+# (+0.0376% length, +0.93% iterations), so zero yield is not zero value here.
+FAN_SKIP_ON_SHORT_RUNIN = True
+
 # Interpretation of NUM_STRATEGY_B:
 #   False (legacy) = a GLOBAL budget: at most NUM_STRATEGY_B occluded-reorient
 #     fan expansions in the WHOLE search (start corners exempt), re-armed when
