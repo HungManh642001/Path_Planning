@@ -37,6 +37,7 @@ service/
       runtime.py            ngân sách, config_hash, planner_version   (Task 5)
       planner.py            plan(PlanRequest) -> PlanReply            (Task 6)
       codec.py              msgpack + đóng khung length-prefixed      (Task 8)
+      preloaded_map.py      bản đồ nền tĩnh, gộp vào request           (Task 9)
     run_worker.py           vòng lặp Unix socket                      (Task 9)
   tests/
     boundary_test.py        (Task 1)
@@ -47,6 +48,7 @@ service/
     planner_test.py         (Task 6)
     equivalence_test.py     (Task 7)
     codec_test.py           (Task 8)
+    preloaded_map_test.py   (Task 9)
     worker_ipc_test.py      (Task 9)
   deploy/
     worker-requirements.txt (Task 9)
@@ -1416,7 +1418,7 @@ git commit -m "feat(service): per-request budget, discovered config hash, versio
 
 **Interfaces:**
 - Consumes: mọi thứ từ Task 1-5.
-- Produces: `plan(request: PlanRequest) -> PlanReply`. Task 7 và 9 dùng.
+- Produces: `plan(request: PlanRequest, preloaded: PreloadedMap | None = None) -> PlanReply`. Task 7 và 9 dùng. Tham số `preloaded` được thêm ở Task 9; tới lúc đó `plan(request)` là đủ.
 
 - [ ] **Step 1: Viết test**
 
@@ -1791,7 +1793,12 @@ LIMITS = VehicleLimits(
     safe_margin_m=config.SAFE_MARGIN,
     alpha_max_deg=config.ALPHA_MAX,
 )
-BUDGET = SearchBudget(time_budget_s=config.TIME_BUDGET_S, max_iterations=config.MAX_ITERATIONS)
+# config.TIME_BUDGET_S có kiểu `float | None`; None nghĩa là không giới hạn, mà
+# SearchBudget lại đòi một số dương. 15.0 là giá trị đang cấu hình.
+BUDGET = SearchBudget(
+    time_budget_s=float(config.TIME_BUDGET_S if config.TIME_BUDGET_S else 15.0),
+    max_iterations=config.MAX_ITERATIONS,
+)
 SCENARIOS = sorted(mg.get_all_scenarios())
 
 
@@ -2258,7 +2265,294 @@ git commit -m "feat(service): length-prefixed msgpack codec for the internal soc
 - Consumes: `plan` (Task 6), codec (Task 8).
 - Produces: một tiến trình phục vụ trên Unix socket. Part 2 là client của nó.
 
-- [ ] **Step 1: Viết test**
+- [ ] **Step 1: Viết test cho bản đồ nền tĩnh**
+
+Create `service/tests/preloaded_map_test.py`:
+
+```python
+"""Bản đồ nền tĩnh: nạp một lần lúc khởi động, gộp vào request khi được yêu cầu.
+
+Mặc định triển khai là KHÔNG nạp bản đồ nào - request tự chứa thì dễ replay và
+dễ chẩn đoán hơn nhiều. Bản đồ nền là tuỳ chọn, và khi client yêu cầu một thứ
+service không có thì nó bị TỪ CHỐI rõ ràng chứ không âm thầm bỏ qua cờ.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from vtx_planner import plan
+from vtx_planner.messages import Circle, PlanRequest, PlanStatus, SearchBudget, VehicleLimits
+from vtx_planner.preloaded_map import PreloadedMap
+
+LIMITS = VehicleLimits(8000.0, 8000.0, 15000.0, 500.0, 90.0)
+
+
+def _request(**overrides: object) -> PlanRequest:
+    base: dict[str, object] = dict(
+        request_id=b"\x04" * 16,
+        idl_version=1,
+        frame="local_meters",
+        start=(50000.0, 50000.0),
+        start_heading_deg=45.0,
+        goal=(300000.0, 250000.0),
+        goal_heading_deg=45.0,
+        goal_heading_free=True,
+        islands=(),
+        dynamic_obstacles=(),
+        safezones=(),
+        use_preloaded_map=False,
+        limits=LIMITS,
+        budget=SearchBudget(15.0, 50000),
+    )
+    base.update(overrides)
+    return PlanRequest(**base)  # type: ignore[arg-type]
+
+
+def _write_map(tmp_path: Path, frame: str = "local_meters") -> Path:
+    path = tmp_path / "basemap.json"
+    path.write_text(
+        json.dumps(
+            {
+                "frame": frame,
+                "islands": [[[150000.0, 120000.0], [200000.0, 120000.0], [175000.0, 200000.0]]],
+                "dynamic_obstacles": [{"center": [220000.0, 180000.0], "radius_m": 15000.0}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_load_reads_both_obstacle_kinds(tmp_path: Path) -> None:
+    loaded = PreloadedMap.load(_write_map(tmp_path))
+    assert loaded.frame == "local_meters"
+    assert len(loaded.islands) == 1
+    assert loaded.dynamic_obstacles == (Circle(center=(220000.0, 180000.0), radius_m=15000.0),)
+
+
+def test_merge_appends_to_whatever_the_request_carries(tmp_path: Path) -> None:
+    loaded = PreloadedMap.load(_write_map(tmp_path))
+    request = _request(
+        use_preloaded_map=True,
+        dynamic_obstacles=(Circle(center=(100000.0, 100000.0), radius_m=5000.0),),
+    )
+    merged = loaded.merged_into(request)
+    assert len(merged.islands) == 1
+    assert len(merged.dynamic_obstacles) == 2
+    # Chướng ngại vật của request đứng trước, để đọc log dễ đối chiếu.
+    assert merged.dynamic_obstacles[0].radius_m == 5000.0
+
+
+def test_flag_off_leaves_the_request_untouched(tmp_path: Path) -> None:
+    loaded = PreloadedMap.load(_write_map(tmp_path))
+    request = _request(use_preloaded_map=False)
+    assert loaded.merged_into(request) is request
+
+
+def test_asking_for_a_map_the_service_does_not_have_is_refused() -> None:
+    reply = plan(_request(use_preloaded_map=True), preloaded=None)
+    assert reply.status is PlanStatus.INVALID_REQUEST
+    assert "preloaded" in reply.detail
+
+
+def test_a_frame_mismatch_is_refused_not_silently_reinterpreted(tmp_path: Path) -> None:
+    loaded = PreloadedMap.load(_write_map(tmp_path, frame="wgs84"))
+    reply = plan(_request(use_preloaded_map=True), preloaded=loaded)
+    assert reply.status is PlanStatus.INVALID_REQUEST
+    assert "frame" in reply.detail
+
+
+def test_the_merged_map_actually_changes_the_route(tmp_path: Path) -> None:
+    loaded = PreloadedMap.load(_write_map(tmp_path))
+    open_water = plan(_request())
+    with_basemap = plan(_request(use_preloaded_map=True), preloaded=loaded)
+    assert open_water.status is PlanStatus.OK
+    assert with_basemap.status is PlanStatus.OK
+    assert with_basemap.path_length_m > open_water.path_length_m
+
+
+def test_load_rejects_a_file_without_a_frame(tmp_path: Path) -> None:
+    path = tmp_path / "bad.json"
+    path.write_text(json.dumps({"islands": [], "dynamic_obstacles": []}), encoding="utf-8")
+    with pytest.raises(ValueError, match="frame"):
+        PreloadedMap.load(path)
+```
+
+- [ ] **Step 2: Chạy để xác nhận đỏ**
+
+Run: `python -m pytest service/tests/preloaded_map_test.py -v`
+Expected: FAIL — `ModuleNotFoundError: No module named 'vtx_planner.preloaded_map'`.
+
+- [ ] **Step 3: Viết `preloaded_map.py`**
+
+Create `service/worker/vtx_planner/preloaded_map.py`:
+
+```python
+"""Bản đồ nền tĩnh, nạp một lần lúc worker khởi động.
+
+Mặc định triển khai là không có bản đồ nào: một request tự chứa thì replay được
+và chẩn đoán được, còn state ẩn trong service thì không. Bản đồ nền tồn tại cho
+trường hợp bản đồ nền quá lớn để gửi kèm mỗi request.
+
+File khai báo frame CỦA CHÍNH NÓ, và frame đó phải khớp request. Diễn giải lại
+toạ độ mét thành độ, hay ngược lại, sẽ tạo ra một bản đồ hợp lệ về cú pháp và
+vô nghĩa về vị trí - loại lỗi không có test hình học nào bắt được.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import json
+from dataclasses import dataclass
+from pathlib import Path
+
+from vtx_planner.messages import FRAMES, Circle, PlanRequest, Point
+
+
+@dataclass(frozen=True)
+class PreloadedMap:
+    """Chướng ngại vật nền, trong một frame đã khai báo."""
+
+    frame: str
+    islands: tuple[tuple[Point, ...], ...]
+    dynamic_obstacles: tuple[Circle, ...]
+
+    @classmethod
+    def load(cls, path: Path) -> PreloadedMap:
+        """Đọc một bản đồ nền từ file JSON.
+
+        Args:
+            path: File JSON có các khoá ``frame``, ``islands``,
+                ``dynamic_obstacles``.
+
+        Returns:
+            Bản đồ đã nạp.
+
+        Raises:
+            ValueError: Khi thiếu ``frame`` hoặc frame không hợp lệ.
+        """
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        frame = raw.get("frame")
+        if frame not in FRAMES:
+            raise ValueError(
+                f"bản đồ nền phải khai báo frame thuộc {FRAMES}, nhận {frame!r}"
+            )
+        return cls(
+            frame=frame,
+            islands=tuple(
+                tuple((float(v[0]), float(v[1])) for v in polygon)
+                for polygon in raw.get("islands", [])
+            ),
+            dynamic_obstacles=tuple(
+                Circle(
+                    center=(float(c["center"][0]), float(c["center"][1])),
+                    radius_m=float(c["radius_m"]),
+                )
+                for c in raw.get("dynamic_obstacles", [])
+            ),
+        )
+
+    def merged_into(self, request: PlanRequest) -> PlanRequest:
+        """Gộp bản đồ nền vào một request, nếu request yêu cầu.
+
+        Args:
+            request: Request gốc.
+
+        Returns:
+            Request đã gộp, hoặc CHÍNH ``request`` khi cờ tắt - trả về cùng đối
+            tượng để chỗ gọi phân biệt được "không gộp" với "gộp rỗng".
+
+        Raises:
+            ValueError: Khi frame của bản đồ khác frame của request.
+        """
+        if not request.use_preloaded_map:
+            return request
+        if self.frame != request.frame:
+            raise ValueError(
+                f"frame của bản đồ nền ({self.frame}) khác request ({request.frame})"
+            )
+        return dataclasses.replace(
+            request,
+            islands=request.islands + self.islands,
+            dynamic_obstacles=request.dynamic_obstacles + self.dynamic_obstacles,
+        )
+```
+
+- [ ] **Step 4: Nối vào `plan()`**
+
+Modify `service/worker/vtx_planner/planner.py`. Thêm import:
+
+```python
+from vtx_planner.preloaded_map import PreloadedMap
+```
+
+Đổi chữ ký và xử lý cờ ngay đầu hàm, TRƯỚC khi dựng phép chiếu:
+
+```python
+def plan(request: PlanRequest, preloaded: PreloadedMap | None = None) -> PlanReply:
+    """Lập kế hoạch cho một mission.
+
+    Args:
+        request: Mission cần giải, ở frame mét phẳng hoặc WGS84.
+        preloaded: Bản đồ nền tĩnh, hoặc ``None`` khi service không nạp bản đồ
+            nào. Chỉ được dùng khi ``request.use_preloaded_map`` bật.
+
+    Returns:
+        Đường bay đầy đủ ``O..T`` trong hệ toạ độ của request, kèm trạng thái,
+        bộ đếm search và nhận dạng phiên bản/cấu hình.
+    """
+    started = time.perf_counter()
+
+    if request.use_preloaded_map:
+        if preloaded is None:
+            return _refusal(
+                request, "yêu cầu preloaded map nhưng service không nạp bản đồ nào"
+            )
+        try:
+            request = preloaded.merged_into(request)
+        except ValueError as exc:
+            return _refusal(request, str(exc))
+
+    projector = projector_for(request)
+    # ... phần còn lại giữ nguyên
+```
+
+Thêm hàm phụ ở cuối module:
+
+```python
+def _refusal(request: PlanRequest, detail: str) -> PlanReply:
+    """Từ chối một request không hợp lệ, không chạy search."""
+    return PlanReply(
+        request_id=request.request_id,
+        idl_version=IDL_VERSION,
+        status=PlanStatus.INVALID_REQUEST,
+        detail=detail,
+        waypoints=(),
+        path_length_m=0.0,
+        plan_wall_time_s=0.0,
+        stats=SearchStats(0, 0, 0, True, False),
+        planner_version=planner_version(),
+        config_hash=config_hash(),
+    )
+```
+
+- [ ] **Step 5: Chạy test**
+
+Run: `python -m pytest service/tests/preloaded_map_test.py service/tests/planner_test.py service/tests/equivalence_test.py -q`
+Expected: tất cả PASS. Test tương đương phải VẪN xanh: `plan(request)` không truyền `preloaded` giữ nguyên hành vi cũ từng bit.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add service/worker/vtx_planner/preloaded_map.py service/worker/vtx_planner/planner.py service/tests/preloaded_map_test.py
+git commit -m "feat(service): optional static base map, refused loudly when it is missing"
+```
+
+- [ ] **Step 7: Viết test cho worker**
 
 Create `service/tests/worker_ipc_test.py`:
 
@@ -2395,12 +2689,12 @@ def test_worker_survives_a_client_that_disconnects_mid_request(worker: Path) -> 
     assert _round_trip(worker, _request()).status is PlanStatus.OK
 ```
 
-- [ ] **Step 2: Chạy để xác nhận đỏ**
+- [ ] **Step 8: Chạy để xác nhận đỏ**
 
 Run: `python -m pytest service/tests/worker_ipc_test.py -v`
 Expected: FAIL — worker chết khi khởi động, `can't open file .../run_worker.py`.
 
-- [ ] **Step 3: Viết `run_worker.py`**
+- [ ] **Step 9: Viết `run_worker.py`**
 
 Create `service/worker/run_worker.py`:
 
@@ -2441,8 +2735,9 @@ def _bootstrap_import_path(repo_root: Path) -> None:
             sys.path.insert(0, str(path))
 
 
-def _serve(sock_path: Path, log: logging.Logger) -> None:
+def _serve(sock_path: Path, preloaded_map_path: Path | None, log: logging.Logger) -> None:
     from vtx_planner import plan
+    from vtx_planner.preloaded_map import PreloadedMap
     from vtx_planner.codec import (
         MAX_FRAME_BYTES,
         decode_request,
@@ -2472,6 +2767,15 @@ def _serve(sock_path: Path, log: logging.Logger) -> None:
                 planner_version=planner_version(),
                 config_hash=config_hash(),
             )
+        )
+
+    preloaded = PreloadedMap.load(preloaded_map_path) if preloaded_map_path else None
+    if preloaded is not None:
+        log.info(
+            "bản đồ nền: %d đảo, %d vòng tròn, frame %s",
+            len(preloaded.islands),
+            len(preloaded.dynamic_obstacles),
+            preloaded.frame,
         )
 
     with contextlib.suppress(FileNotFoundError):
@@ -2520,7 +2824,7 @@ def _serve(sock_path: Path, log: logging.Logger) -> None:
                     continue
 
                 try:
-                    reply = plan(request)
+                    reply = plan(request, preloaded=preloaded)
                 except Exception as exc:  # noqa: BLE001 - báo lỗi thay vì chết
                     log.exception("lập kế hoạch thất bại")
                     connection.sendall(
@@ -2545,6 +2849,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="VTX path planning worker")
     parser.add_argument("--socket", required=True, type=Path, help="đường dẫn Unix socket")
     parser.add_argument("--repo-root", required=True, type=Path, help="gốc repo chứa core/")
+    parser.add_argument(
+        "--preloaded-map",
+        type=Path,
+        default=None,
+        help="file JSON bản đồ nền tĩnh; bỏ trống thì mọi request phải tự chứa",
+    )
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args()
 
@@ -2557,7 +2867,7 @@ def main() -> int:
 
     _bootstrap_import_path(args.repo_root.resolve())
     try:
-        _serve(args.socket, log)
+        _serve(args.socket, args.preloaded_map, log)
     except KeyboardInterrupt:
         log.info("nhận tín hiệu dừng")
     return 0
@@ -2567,12 +2877,12 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 4: Chạy test**
+- [ ] **Step 10: Chạy test**
 
 Run: `python -m pytest service/tests/worker_ipc_test.py -v`
 Expected: PASS, 6 passed.
 
-- [ ] **Step 5: Ghi lại phụ thuộc**
+- [ ] **Step 11: Ghi lại phụ thuộc**
 
 Create `service/deploy/worker-requirements.txt`:
 
@@ -2589,7 +2899,7 @@ msgpack==1.2.1
 pyproj==3.7.2
 ```
 
-- [ ] **Step 6: Xác minh trong một venv sạch**
+- [ ] **Step 12: Xác minh trong một venv sạch**
 
 ```bash
 python3.11 -m venv /tmp/vtx-worker-venv
@@ -2598,17 +2908,17 @@ PYTHONPATH=. /tmp/vtx-worker-venv/bin/python -m pytest -q service/tests/
 ```
 Expected: mọi test PASS. Nếu có `ModuleNotFoundError`, nghĩa là service đã lỡ phụ thuộc vào một gói ngoài danh sách — thêm nó vào file requirements HOẶC bỏ chỗ dùng nó, đừng cài lén vào venv.
 
-- [ ] **Step 7: Chạy toàn bộ và xác nhận baseline**
+- [ ] **Step 13: Chạy toàn bộ và xác nhận baseline**
 
 Run: `python -m pytest -q service/tests/ && python -m pytest -q tests/ 2>&1 | tail -3`
 Expected: service toàn PASS; `tests/` vẫn `188 passed, 6 failed`.
 
-- [ ] **Step 8: Kiểm tra lại ranh giới**
+- [ ] **Step 14: Kiểm tra lại ranh giới**
 
 Run: `git diff --stat main -- core/ render/ config.py`
 Expected: không có dòng nào.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 15: Commit**
 
 ```bash
 git add service/worker/run_worker.py service/deploy/worker-requirements.txt service/tests/worker_ipc_test.py
