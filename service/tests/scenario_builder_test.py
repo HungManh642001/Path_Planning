@@ -11,6 +11,7 @@ from typing import get_type_hints
 
 from core.types import Scenario
 
+from vtx_service.angles import bearing_deg_to_math_rad
 from vtx_service.messages import Circle, PlanRequest, SearchBudget, VehicleLimits
 from vtx_service.scenario_builder import build_scenario
 
@@ -53,6 +54,12 @@ def test_coordinates_pass_through_bit_identically() -> None:
 def test_headings_are_converted_to_the_planner_convention() -> None:
     # phương vị 90 = đông = +x = 0 rad
     assert math.isclose(build_scenario(_request())["start_heading"], 0.0, abs_tol=1e-12)
+
+
+def test_goal_heading_is_converted_to_the_planner_convention_when_fixed() -> None:
+    # goal_heading_deg=45.0 trong fixture; so với angles.py, không tự suy công thức.
+    built = build_scenario(_request())
+    assert built["goal_heading"] == bearing_deg_to_math_rad(45.0)
 
 
 def test_free_goal_becomes_none_not_a_sentinel_number() -> None:
