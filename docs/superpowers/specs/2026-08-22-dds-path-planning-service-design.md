@@ -1,27 +1,43 @@
-# Thiết kế: đóng gói thuật toán path planning thành service Fast DDS
+# Thiết kế: service path planning độc lập, giao tiếp qua DDS
 
-Ngày: 2026-08-22
+Ngày: 2026-08-22 (sửa lần 2)
 Nhánh: `feature/dds-service`
+
+## 0. Bản sửa này thay đổi gì
+
+Bản đầu đề xuất một node C++ Fast DDS cầu nối sang worker Python. Chủ sở hữu
+chất vấn, và **chất vấn đúng**: mục tiêu là một service thuật toán **bằng
+Python, độc lập** với hệ thống đang triển khai, tự khởi động cùng Ubuntu.
+
+Lập luận cũ chọn C++ vì "bên gọi là C++, đã có IDL/toolchain" - một lợi ích tổ
+chức, không phải bắt buộc kỹ thuật. Lý do *kỹ thuật* duy nhất là planner Python
+không hủy được từ bên ngoài nên cần một tiến trình khác giữ quyền `SIGKILL`.
+Điều đó giải quyết trọn vẹn trong Python thuần bằng `multiprocessing`, nên C++
+bị loại, và cùng với nó là toàn bộ lớp giao thức nội bộ (Unix socket, msgpack,
+đóng khung).
+
+Bốn thay đổi khác do chủ sở hữu đặt ra:
+
+1. **Chỉ hệ toạ độ Oxy phẳng, mét.** WGS84 để sau. Xoá phép chiếu và `pyproj`.
+2. **Bản đồ nạp sẵn là file XML**, mang `safezones` + obstacles, **không**
+   `map_bounds`.
+3. **`time_budget_s` có trên dây nhưng chưa được tôn trọng**: service dùng
+   `config.TIME_BUDGET_S`. Sau này thuật toán sẽ nhận nó như một tham số thật.
+4. **Stack DDS chưa chốt**: một spike đo cả Fast DDS Python binding lẫn Cyclone
+   DDS rồi mới quyết. Lớp transport được cô lập để kết quả spike chỉ ảnh hưởng
+   một module.
 
 ## 1. Mục tiêu và phạm vi
 
-Một hệ thống ngoài (C++, đã chạy Fast DDS) gửi một mission và nhận về danh sách
-waypoint. Thuật toán hiện tại được bọc thành một service độc lập, giao tiếp qua
-Fast DDS.
+Một hệ thống ngoài gửi một mission và nhận về danh sách waypoint, qua DDS.
+Thuật toán hiện tại được bọc thành một service Python độc lập.
 
-Trong phạm vi:
+Trong phạm vi: hợp đồng dữ liệu, lớp transport DDS, bọc thuật toán, bản đồ nền
+XML, thời hạn cứng, và một unit systemd tự khởi động.
 
-- Định nghĩa IDL cho cặp topic request/reply.
-- Một node C++ cầu nối Fast DDS.
-- Một worker Python bọc `core/` và trả về đường bay đầy đủ `O..T`.
-- Quy đổi hệ toạ độ WGS84 <-> mặt phẳng mét.
-- Đóng gói, triển khai bằng systemd, và bộ kiểm thử.
-
-Ngoài phạm vi:
-
-- Replan liên tục theo tick, streaming, hoặc nhiều mission song song.
-- Bất kỳ thay đổi nào trong `core/`, `render/`, `config.py`.
-- Port thuật toán sang C++.
+Ngoài phạm vi: WGS84; replan liên tục theo tick; nhiều mission song song; mọi
+thay đổi trong `core/`, `render/`, `config.py`; đóng gói phân phối (sẽ phân tích
+riêng).
 
 ### Ràng buộc do chủ sở hữu đặt ra
 
@@ -30,499 +46,367 @@ Ngoài phạm vi:
 3. Khi thuật toán thay đổi, service phải tự động đi theo, không cần sửa tay.
 
 Ràng buộc 3 được cưỡng chế bằng một nguyên tắc và ba cơ chế: **adapter chỉ gọi,
-tuyệt đối không sao chép**. Không copy công thức hình học, không copy TypedDict,
-không hardcode danh sách hằng số. Ba cơ chế nằm ở mục 7.
+tuyệt đối không sao chép** (mục 7).
 
 ## 2. Bối cảnh từ codebase
 
-Bốn sự thật định hình thiết kế này.
-
-**Điểm vào rất gọn.** Toàn bộ pipeline là
-`prepare_scenario(scenario)` -> `plan_trajectory(preprocessed)` ->
-`result['path']`, một list các `((x, y), heading)`. Hai dict shape đã có
-TypedDict trong `core/types.py`, nên hợp đồng dữ liệu không phải phát minh lại.
+**Điểm vào rất gọn.** `prepare_scenario(scenario)` -> `plan_trajectory(pre)` ->
+`result['path']`, một list `((x, y), heading)`. Hai dict shape đã có TypedDict
+trong `core/types.py`.
 
 **Planner đang ship là `core/kinodynamic_astar_v0.py`**, không phải
-`kinodynamic_astar.py`. Service gọi v0.
+`kinodynamic_astar.py`.
 
 **`success` nghĩa là oracle độc lập đã chấp nhận toàn bộ đường bay**, không phải
-"search trả về cái gì đó". Hợp đồng "trả về nghĩa là bay được" đã có sẵn và
-service kế thừa nguyên vẹn.
+"search trả về cái gì đó". Service kế thừa hợp đồng đó nguyên vẹn.
 
 **Planner không tất định giữa các máy.** `config.TIME_BUDGET_S = 15` cắt theo
-đồng hồ, nên cùng một input trên máy tải nặng có thể ra đường bay khác. Đây là
-vấn đề hợp đồng của service, không chỉ là vấn đề đo đạc, và được phơi ra bằng
-trường `budget_bound`.
+đồng hồ. Phơi ra bằng `budget_bound` trong reply.
 
-Số đo tham chiếu, 18 preset trên v0 (2026-08-22, máy này):
-median 16 ms, `scenario_18_reversed_approach_cluttered` 3,9 s, trần cứng 15 s.
+Số đo tham chiếu, 18 preset trên v0 (2026-08-22, máy này): median 16 ms,
+`scenario_18_reversed_approach_cluttered` 3,9 s, trần cứng 15 s.
 
-**35 hằng số global.** `kinodynamic_astar_v0.py` đọc 35 hằng số từ `config.py`.
-Chỉ 5 giá trị là tham số hàm của `prepare_scenario`
-(`turn_radius`, `l0`, `dss`, `safe_margin`, `alpha_max_rad`). Đây là lý do chỉ
-5+2 tham số được override theo request (mục 4).
+**35 hằng số global.** Chỉ 5 giá trị là tham số hàm của `prepare_scenario`
+(`turn_radius`, `l0`, `dss`, `safe_margin`, `alpha_max_rad`). Đã xác minh trên
+code: `prepare_scenario` ghi `l0` vào `start_state['straight_length']` và `dss`
+vào `goal_state['engagement_distance']` (`preprocessing.py:118,154,219`), planner
+đọc lại đúng hai khoá đó và chỉ rơi về config khi chúng vắng
+(`kinodynamic_astar_v0.py:212,267`). Ngược lại `max_iterations` và
+`TIME_BUDGET_S` chỉ tồn tại như global (`:283`, `:1017`).
 
-**Thuật toán chỉ phụ thuộc vào shapely.** Đã kiểm chứng: `core/` không import
-numpy ở bất kỳ đâu (0 lần), cũng không scipy, cũng không matplotlib. Toàn bộ
-pipeline chạy trên thư viện chuẩn (`math`, `heapq`, `time`, `collections`,
-`typing`) cộng với `shapely`. numpy chỉ vào theo đường phụ thuộc bắc cầu của
-shapely; matplotlib chỉ nằm trong `render/`, mà service không dùng.
-
-Hệ quả trực tiếp, và nó gỡ bỏ ràng buộc nặng nhất của repo này: **cái pin
-`numpy==1.26.4` không áp dụng cho service.** Pin đó là ràng buộc của matplotlib
-3.8 và pandas 2.1.4 trong stack test/benchmark/GUI. Đã kiểm chứng bằng một venv
-sạch chỉ cài `shapely 2.1.2` + `msgpack 1.2.1`, kéo theo **numpy 2.4.6** - đúng
-phiên bản bị cảnh báo là làm vỡ cả stack - và cả **18/18 preset đều giải được**
-với thời gian trùng khớp phép đo trên môi trường gốc.
-
-Phụ thuộc thật của worker vì vậy là ba gói: `shapely`, `msgpack`, và `pyproj`
-(chỉ cần khi dùng `FRAME_WGS84`).
+**Thuật toán chỉ phụ thuộc vào shapely.** `core/` không import numpy ở đâu cả
+(0 lần), cũng không scipy, cũng không matplotlib. Đã kiểm chứng bằng venv sạch
+chỉ có `shapely 2.1.2`, kéo theo **numpy 2.4.6** - đúng phiên bản mà `CLAUDE.md`
+cảnh báo làm vỡ stack - và cả **18/18 preset đều giải được**. Cái pin
+`numpy==1.26.4` là ràng buộc của matplotlib/pandas trong stack test-GUI và
+**không áp dụng cho service**.
 
 ## 3. Kiến trúc
 
+Một tiến trình Python, cộng một tiến trình con dùng-một-lần cho mỗi lần lập kế
+hoạch.
+
 ```
-Hệ thống gọi (C++, Fast DDS có sẵn)
-  publish VtxPathPlanRequest / subscribe VtxPathPlanReply
-        |
-        |  DDS domain, 2 topic, tương quan bằng request_id
-        v
-vtx_planner_dds_node  (C++)
-  - type support sinh từ IDL bằng fastddsgen
-  - QoS, discovery, correlation, thời hạn cứng
-  - không chứa logic hình học
-        |
-        |  Unix domain socket, khung length-prefixed, payload MessagePack
-        v
-vtx_planner_worker  (Python 3.11)
-  - adapter: msgpack <-> dataclass, quy đổi đơn vị và hệ toạ độ
-  - vtx_planner: API thuần  plan(PlanRequest) -> PlanReply
-        |
-        v
-  core/preprocessing + core/kinodynamic_astar_v0 + core/mission   (không sửa)
+Hệ thống gọi (DDS)
+   |  publish VtxPathPlanRequest / subscribe VtxPathPlanReply
+   v
+vtx_planner_service  (Python 3.11, một tiến trình)
+   |
+   +-- transport/           lớp DDS cô lập (Cyclone hoặc Fast DDS binding)
+   +-- service loop         tuần tự, một request tại một thời điểm
+   +-- PreloadedMap         XML nạp một lần lúc khởi động
+   +-- PlanRunner  --fork--> tiến trình con: vtx_planner.plan(request)
+   |                         thời hạn cứng -> kill -> PLAN_TIMEOUT
+   v
+core/preprocessing + core/kinodynamic_astar_v0 + core/mission   (không sửa)
 ```
 
-### Vì sao tách hai tiến trình
+### Vì sao vẫn có một tiến trình con
 
-Bên gọi đã có Fast DDS C++ và toolchain IDL, nên node C++ tái dùng được hạ tầng
-đó và tránh phải build Fast DDS Python binding (không có trên PyPI, phải dựng
-bằng colcon + SWIG).
+Planner là Python thuần, CPU-bound, và chỉ kiểm tra ngân sách tại các điểm trong
+vòng lặp search - nó **không hủy được từ bên ngoài một cách lịch sự**. Một tiến
+trình con là cách duy nhất để có thời hạn cứng thật, và nó cũng cách ly hoàn
+toàn 35 hằng số global: tiến trình con sửa `config` thoải mái rồi chết.
 
-Quan trọng hơn: planner là Python thuần, CPU-bound, và **không hủy được từ bên
-ngoài một cách lịch sự** - nó chỉ kiểm tra ngân sách tại các điểm trong vòng lặp
-search. Tiến trình tách rời cho node quyền `SIGKILL` và trả về một reply lỗi tử
-tế thay vì để client treo.
+### Vì sao `forkserver`, và vì sao nó phải lên trước DDS
 
-### Vì sao Unix socket, không phải TCP
+Đây là chỗ đo đạc đổi quyết định.
 
-Hai tiến trình luôn ở cùng máy: chúng dùng chung cấu hình bản đồ và cùng một bản
-thuật toán. Unix socket loại bỏ toàn bộ câu hỏi về cổng, tường lửa và bảo mật
-mạng ở lớp này. Bề mặt mạng duy nhất của hệ thống là DDS.
+DDS chạy thread nền ở tầng C. `fork()` từ một tiến trình có thread là công thức
+kinh điển của deadlock trong tiến trình con: fork chỉ mang theo thread đang gọi,
+nên một mutex do thread khác đang giữ sẽ bị giữ vĩnh viễn trong bản sao.
+
+Đo được, cùng máy, plan `scenario_01`:
+
+| cách tạo tiến trình con | median | ghi chú |
+| --- | --- | --- |
+| `fork`, cha chưa import `core` | 1012 ms | trả giá import trong mỗi con |
+| `fork`, cha đã import `core` | 37,7 ms | kế thừa module đã nạp |
+| `fork`, có participant DDS sống, dưới lưu lượng | 16,6 ms | 15/15 lần chạy được |
+| `spawn` | 907-989 ms | interpreter mới, import lại |
+| `forkserver` không preload | 1132-1247 ms | |
+| **`forkserver` + preload `core`, khởi động TRƯỚC DDS** | **56,4 ms** | min 38,5 / max 84,7 |
+
+**Chọn dòng cuối.** `fork` trần nhanh hơn 40 ms, nhưng 15 lần chạy thành công
+không phải bằng chứng an toàn cho một deadlock xác suất - đó đúng là loại lỗi
+chỉ hiện ra dưới tải, không hiện ra trong một phép thử. Và 40 ms là vô nghĩa so
+với 16 ms - 4 s thời gian lập kế hoạch thật.
+
+`forkserver` an toàn về **cấu trúc**, không phải nhờ may mắn: tiến trình
+forkserver được khởi động **trước khi DDS tồn tại**, nên không tiến trình con
+nào từng fork từ một tiến trình có thread DDS. `set_forkserver_preload` nạp sẵn
+`core.*` để trả giá import một lần thay vì mỗi request.
 
 ### Cái cố tình không có
 
-Không hàng đợi, không worker pool. Yêu cầu đã chốt là 1 request/lúc. Node xử lý
-tuần tự và trả `PLAN_BUSY` khi đang bận: rõ ràng hơn một hàng đợi ẩn với độ trễ
-không đoán được.
+Không hàng đợi, không worker pool: 1 request/lúc. Bận thì trả `PLAN_BUSY`.
+Không C++, không giao thức nội bộ, không msgpack, không Unix socket.
 
 ## 4. Hợp đồng dữ liệu
 
 ### Topic và QoS
 
 Hai topic, `VtxPathPlanRequest` và `VtxPathPlanReply`, tương quan bằng
-`request_id` do client sinh và service trả nguyên. Không dùng RPC-over-DDS vì
-Fast DDS chưa ổn định phần này.
+`request_id` do client sinh và service trả nguyên.
 
 | Topic | Reliability | History | Durability |
 | --- | --- | --- | --- |
 | Request | RELIABLE | KEEP_ALL | **VOLATILE** |
 | Reply | RELIABLE | KEEP_LAST(8) | **VOLATILE** |
 
-`VOLATILE` là bắt buộc, không phải mặc định tuỳ tiện. `TRANSIENT_LOCAL` trên
-topic request nghĩa là node service khởi động lại sẽ nhận và lập kế hoạch lại
-một mission cũ đã hết hiệu lực. Một lệnh bay không được phép phát lại.
+`VOLATILE` là bắt buộc. `TRANSIENT_LOCAL` trên topic request nghĩa là service
+khởi động lại sẽ nhận và lập kế hoạch lại một mission cũ đã hết hiệu lực. Một
+lệnh bay không được phép phát lại.
 
-### IDL
+### Kiểu dữ liệu
 
-```idl
-module vtx { module planning {
+Khai báo một lần trong `service/vtx_service/messages.py` bằng dataclass, và
+lớp transport dịch sang kiểu của stack DDS được chọn. IDL `.idl` tương đương
+được sinh ra để bên gọi dùng.
 
-enum Frame      { FRAME_LOCAL_METERS, FRAME_WGS84 };
-enum PlanStatus { PLAN_OK, PLAN_NO_PATH, PLAN_START_LEG_BLOCKED,
-                  PLAN_GOAL_LEG_BLOCKED, PLAN_ORACLE_REJECTED,
-                  PLAN_INVALID_REQUEST, PLAN_TIMEOUT, PLAN_INTERNAL_ERROR,
-                  PLAN_BUSY };
+```
+PlanStatus:  OK=0, NO_PATH=1, START_LEG_BLOCKED=2, GOAL_LEG_BLOCKED=3,
+             ORACLE_REJECTED=4, INVALID_REQUEST=5, TIMEOUT=6,
+             INTERNAL_ERROR=7, BUSY=8
 
-struct Point2D  { double x; double y; };
-struct Polygon  { sequence<Point2D> vertices; };
-struct Circle   { Point2D center; double radius_m; };
+Point2D            x, y                                    (mét)
+Polygon            vertices: sequence<Point2D>             (vành mở)
+Circle             center: Point2D, radius_m
+VehicleLimits      turn_radius_m, l0_m, dss_m, safe_margin_m, alpha_max_deg
+SearchBudget       time_budget_s, max_iterations           (xem mục 4.3)
 
-struct VehicleLimits {
-  double turn_radius_m;  double l0_m;  double dss_m;
-  double safe_margin_m;  double alpha_max_deg;
-};
+VtxPathPlanRequest
+  @key request_id[16], idl_version
+  start: Point2D, start_heading_deg
+  goal:  Point2D, goal_heading_deg, goal_heading_free
+  islands:           sequence<Polygon>
+  dynamic_obstacles: sequence<Circle>
+  safezones:         sequence<Polygon>
+  use_preloaded_map: boolean
+  limits: VehicleLimits
+  budget: SearchBudget
 
-struct SearchBudget { double time_budget_s; unsigned long max_iterations; };
+Waypoint     position: Point2D, heading_deg
+SearchStats  iterations, max_iterations, open_set_size, search_failed, budget_bound
 
-struct VtxPathPlanRequest {
-  @key octet          request_id[16];
-  unsigned long       idl_version;
-  Frame               frame;
-  Point2D             start;   double start_heading_deg;
-  Point2D             goal;    double goal_heading_deg;
-  boolean             goal_heading_free;
-  sequence<Polygon>   islands;
-  sequence<Circle>    dynamic_obstacles;
-  sequence<Polygon>   safezones;
-  boolean             use_preloaded_map;
-  VehicleLimits       limits;
-  SearchBudget        budget;
-};
-
-struct Waypoint { Point2D position; double heading_deg; };
-
-struct SearchStats {
-  unsigned long iterations;  unsigned long max_iterations;
-  unsigned long open_set_size;  boolean search_failed;
-  boolean budget_bound;
-};
-
-struct VtxPathPlanReply {
-  @key octet          request_id[16];
-  unsigned long       idl_version;
-  PlanStatus          status;
-  string              detail;
-  sequence<Waypoint>  waypoints;
-  double              path_length_m;
-  double              plan_wall_time_s;
-  SearchStats         stats;
-  string              planner_version;
-  string              config_hash;
-};
-}; };
+VtxPathPlanReply
+  @key request_id[16], idl_version
+  status: PlanStatus, detail: string
+  waypoints: sequence<Waypoint>
+  path_length_m, plan_wall_time_s
+  applied_time_budget_s                    (xem mục 4.3)
+  stats: SearchStats
+  planner_version: string, config_hash: string
 ```
 
-`idl_version` bắt đầu ở 1 và tăng khi bố cục struct đổi. Node từ chối request có
-`idl_version` không khớp bằng `PLAN_INVALID_REQUEST`, thay vì diễn giải sai
-những byte lệch pha.
+### 4.1 Đơn vị và quy ước
 
-### Đơn vị và quy ước
+**Khoảng cách: mét, trên mặt phẳng Oxy. Góc: độ, phương vị thật, thuận chiều kim
+đồng hồ từ chính bắc.** Quy ước `+y` là bắc, `+x` là đông.
 
-**Khoảng cách: mét. Góc: độ, và luôn là phương vị thật, thuận chiều kim đồng hồ
-từ chính bắc**, ở cả hai frame. `FRAME_LOCAL_METERS` quy ước `+y` là bắc, `+x`
-là đông.
+Thuật toán bên trong dùng radian ngược chiều kim đồng hồ từ `+x`, nên quy đổi là
+`theta = deg_to_rad(90 - bearing_deg)`, thực hiện tại đúng **một** module.
 
-Thuật toán bên trong dùng radian, ngược chiều kim đồng hồ từ `+x`, nên quy đổi
-là `theta = deg_to_rad(90 - bearing_deg)`, thực hiện tại đúng **một** hàm trong
-adapter.
+Một quy ước duy nhất trên dây. Loại lỗi này - đường bay lệch 90 độ hoặc bị gương
+- vẫn là đường bay hợp lệ về hình học, nên mọi test hình học đều bỏ lọt.
 
-Một quy ước duy nhất trên dây, không phải mỗi frame một kiểu. Hai quy ước trên
-cùng một trường sinh ra đúng loại lỗi mà mọi test hình học đều bỏ lọt: đường bay
-lệch 90 độ hoặc bị gương vẫn là một đường bay hợp lệ.
+Không có trường `frame`: chỉ có một hệ toạ độ. Thêm WGS84 sau này là một lần
+tăng `idl_version`.
 
-`config.ALPHA_MAX` và `START_ANGLE_*` vốn đã lưu bằng độ và chỉ đổi sang radian
-ở biên, nên giao diện đối ngoại theo cùng quy ước đó. Mọi trường góc mang hậu tố
-`_deg`.
+### 4.2 `map_bounds` cố tình không có
 
-### Các quyết định trong IDL, và lý do
+`core.types.Scenario` có khoá này, nhưng nó là hình chữ nhật `(w, h)` neo tại
+gốc toạ độ và test là `0 < x < w` (`kinodynamic_astar_v0.py:863`), tức phụ thuộc
+vào việc gốc toạ độ nằm ở đâu. `safezones` biểu diễn được đúng vùng đó, mạnh hơn
+hẳn, và bất biến với tịnh tiến. Khi thiếu cả hai, `_in_bounds` trả `True`
+(`:860`), nên bỏ trường này không mất tính năng nào.
+
+Hệ quả cần biết trước: 18 preset trong `map_generator` **có** `map_bounds`, nên
+đường bay qua service có thể khác đường bay khi chạy preset trực tiếp. Test
+tương đương xử lý điều này bằng hai khẳng định tách bạch (mục 7).
+
+### 4.3 `time_budget_s` chưa được tôn trọng, và reply nói thật về điều đó
+
+Trường có mặt trên dây để sau này không phải tăng `idl_version`, nhưng service
+hiện dùng `config.TIME_BUDGET_S`. Chủ sở hữu sẽ sửa thuật toán để nhận nó như
+một tham số thật.
+
+Đã đo: override `config.TIME_BUDGET_S` lúc chạy **có** hiệu lực (v0 đọc nó trong
+vòng lặp search, không phải lúc import), và với tiến trình con thì hoàn toàn
+cách ly. Nên đây là lựa chọn thiết kế, không phải giới hạn kỹ thuật.
+
+Reply mang `applied_time_budget_s` = giá trị service **thực sự** đã dùng. Nhận
+một trường rồi lặng lẽ bỏ qua là cách chắc chắn để client tin vào một điều không
+đúng; báo cáo ngược giá trị thật thì client tự đối chiếu được.
+
+`max_iterations` được đối xử y hệt, và `stats.max_iterations` trong reply là giá
+trị thật đã dùng. Hai trường cạnh nhau mà một cái được tôn trọng, một cái không,
+là một cái bẫy không cần thiết.
+
+### 4.4 Các quyết định còn lại
 
 **`goal_heading_free` là cờ riêng, không phải giá trị canh gác.** Python dùng
-`goal_heading = None` để chọn chế độ free-goal; IDL không có optional, và mã hoá
-bằng NaN là mời gọi tai nạn. Khi cờ bật, `goal_heading_deg` bị bỏ qua hoàn toàn.
+`goal_heading = None` cho chế độ free-goal; IDL không có optional và mã hoá bằng
+NaN là mời gọi tai nạn.
 
-**Trả về đường bay đầy đủ `O..T`, không phải waypoint nội bộ.** Planner trả về
-các waypoint đã tìm kiếm; điểm cất cánh `O` và mục tiêu `T` do
-`core.mission.full_mission_path` ghép vào. Service gọi đúng hàm đó chứ không tự
+**Trả về đường bay đầy đủ `O..T`.** Điểm cất cánh và mục tiêu do
+`core.mission.full_mission_path` ghép vào; service gọi đúng hàm đó chứ không tự
 ghép.
 
-**Chỉ 5+2 tham số override được theo request.** Năm tham số trong
-`VehicleLimits` là tham số hàm của `prepare_scenario`, an toàn tuyệt đối. Hai
-tham số trong `SearchBudget` là hằng số global, xử lý ở mục 5. Ba mươi ba hằng
-số còn lại cố định lúc triển khai.
+**`config_hash` báo cáo ngược cấu hình đã dùng.** Băm SHA-256 rút gọn của các
+hằng số mà `kinodynamic_astar_v0` thực sự đọc, phát hiện bằng cách quét mã nguồn
+planner chứ không hardcode. Trên một codebase nghiên cứu nơi hằng số được A/B
+liên tục, đây là điều kiện để reply có nghĩa.
 
-Đã xác minh trên code chứ không phải suy đoán, vì đây là chỗ override dễ âm
-thầm không có tác dụng: `prepare_scenario` ghi `l0` vào
-`start_state['straight_length']` và `dss` vào `goal_state['engagement_distance']`
-(`core/preprocessing.py:118`, `:154`, `:219`), còn planner đọc lại đúng hai khoá
-đó và chỉ rơi về `config.L0`/`config.DSS` khi chúng vắng mặt
-(`kinodynamic_astar_v0.py:212`, `:267`). `turn_radius` và `alpha_max_rad` nằm
-thẳng trong dict preprocessed; `safe_margin` chỉ dùng lúc inflate. Cả năm đều
-tới được planner mà không đụng tới global nào.
+**`detail` giữ nguyên văn chuỗi từ oracle**, kể cả những chuỗi mang tham số như
+`first W1..W2 l=7421.3 < L0=8000`. Enum để máy rẽ nhánh, `detail` để người đọc.
+Một `failure_reason` mới trong `core/` rơi vào `PLAN_ORACLE_REJECTED` thay vì
+làm sập adapter - suy giảm êm, không vỡ.
 
-Ngược lại, hai tham số trong `SearchBudget` **không** có đường nào khác ngoài
-global: `self.max_iterations = config.MAX_ITERATIONS` đọc lúc khởi tạo
-(`:283`) và `budget_s = config.TIME_BUDGET_S` đọc trong vòng lặp search
-(`:1017`). Đây chính là lý do chúng cần context manager ở mục 5 thay vì đi kèm
-`VehicleLimits`.
+## 5. Bản đồ nền XML
 
-**`map_bounds` cố tình không có trong IDL.** `Scenario` có khoá này, nhưng nó là
-một hình chữ nhật `(w, h)` neo tại gốc toạ độ và test là `0 < x < w`, tức phụ
-thuộc vào việc gốc toạ độ nằm ở đâu - một khái niệm không có nghĩa ổn định sau
-phép chiếu (mục 6). `safezones` biểu diễn được đúng vùng đó và mạnh hơn hẳn, vì
-là đa giác nên bất biến với phép tịnh tiến. Khi thiếu cả hai, `_in_bounds` trả
-`True` (`kinodynamic_astar_v0.py:860`), nên bỏ trường này không mất tính năng
-nào.
+Nạp một lần lúc khởi động. Mặc định triển khai là **không có** bản đồ nào:
+request tự chứa thì replay được và chẩn đoán được, còn state ẩn trong service thì
+không.
 
-**`config_hash` báo cáo ngược cấu hình đã dùng.** Băm SHA-256 rút gọn của 35
-hằng số mà `kinodynamic_astar_v0` thật sự đọc, liệt kê bằng cách quét module
-`config` lúc chạy chứ không hardcode. Client nhờ đó luôn phân biệt được hai
-đường bay khác nhau là do input khác hay do cấu hình planner khác - điều mà một
-service dựng trên codebase nghiên cứu bắt buộc phải trả lời được.
+Schema tối giản, toạ độ mét trong hệ Oxy:
 
-**`budget_bound` là trường hạng nhất.** Che giấu tính không tất định sẽ khiến
-client tin vào một sự đảm bảo không tồn tại. Phơi ra thì client biết khi nào nên
-hỏi lại.
+```xml
+<vtx-map version="1">
+  <safezones>
+    <polygon>
+      <point x="0" y="0"/>
+      <point x="500000" y="0"/>
+      <point x="500000" y="500000"/>
+      <point x="0" y="500000"/>
+    </polygon>
+  </safezones>
+  <obstacles>
+    <polygon>
+      <point x="150000" y="120000"/>
+      <point x="200000" y="120000"/>
+      <point x="175000" y="200000"/>
+    </polygon>
+    <circle cx="220000" cy="180000" r="15000"/>
+  </obstacles>
+</vtx-map>
+```
 
-**`detail` giữ nguyên văn chuỗi từ oracle.** Enum bắt được `no_path`,
-`start_leg_blocked`, `goal_leg_blocked`, nhưng `path_validation` còn trả về
-những chuỗi có tham số như `segment 3 blocked (...)` hay
-`first W1..W2 l=7421.3 < L0=8000`. Ép chúng vào enum là làm mất đúng phần thông
-tin giúp chẩn đoán. Enum để máy rẽ nhánh, `detail` để người đọc.
+Đọc bằng `xml.etree.ElementTree` của thư viện chuẩn - không thêm phụ thuộc.
 
-### Ánh xạ `PlanStatus`
+Ba quy tắc:
 
-| Nguồn | Status |
-| --- | --- |
-| `success = True` | `PLAN_OK` |
-| `failure_reason = "no_path"` | `PLAN_NO_PATH` |
-| `failure_reason = "start_leg_blocked"` | `PLAN_START_LEG_BLOCKED` |
-| `failure_reason = "goal_leg_blocked"` | `PLAN_GOAL_LEG_BLOCKED` |
-| chuỗi khác từ oracle | `PLAN_ORACLE_REJECTED`, nguyên văn vào `detail` |
-| worker quá hạn, bị `SIGKILL` | `PLAN_TIMEOUT` |
-| worker chết bất thường / lỗi adapter | `PLAN_INTERNAL_ERROR` |
-| request sai `idl_version` hoặc hình học vô lý | `PLAN_INVALID_REQUEST` |
-| đang xử lý request khác | `PLAN_BUSY` |
+- **Đa giác là vành MỞ**: không lặp lại đỉnh đóng. Nếu file lặp, parser cắt bỏ,
+  vì `core/` giả định vành mở và một đỉnh trùng lặp tạo ra cạnh dài 0.
+- **Gộp là NỐI THÊM, không thay thế.** `safezones` và obstacles của request đứng
+  trước, của bản đồ nền đứng sau. Với `safezones` thì planner lấy HỢP của chúng,
+  nên thêm một safezone là **nới rộng** vùng bay chứ không thu hẹp - điều này
+  phải nói rõ trong tài liệu vận hành, vì trực giác thường ngược lại.
+- **`version` không khớp là lỗi**, không phải cảnh báo.
 
-Ánh xạ này dựa trên tập hằng chuỗi hiện có; nếu `core/` thêm một
-`failure_reason` mới, nó rơi vào `PLAN_ORACLE_REJECTED` với nguyên văn trong
-`detail` thay vì làm sập adapter. Đây là hành vi mong muốn: service suy giảm êm,
-không vỡ.
-
-## 5. Vòng đời request
+## 6. Vòng đời request
 
 ```
-DDS request --> node C++
-                 |- idl_version sai / hình học vô lý --> PLAN_INVALID_REQUEST
-                 |- đang bận                          --> PLAN_BUSY
-                 `- msgpack --> worker Python
-                                 |- quy đổi hệ toạ độ (nếu WGS84)
-                                 |- dựng Scenario --> prepare_scenario
-                                 |                --> plan_trajectory (v0)
-                                 `- full_mission_path --> kết quả
-                 <-- kết quả, hoặc quá hạn --> SIGKILL, respawn, PLAN_TIMEOUT
-DDS reply   <----'
+DDS request --> service loop
+  |- idl_version sai / hình học vô lý     --> PLAN_INVALID_REQUEST
+  |- đang bận                             --> PLAN_BUSY
+  |- use_preloaded_map nhưng không có map --> PLAN_INVALID_REQUEST
+  `- PlanRunner.submit()
+        |- forkserver tạo con (median 56 ms)
+        |- con: build_scenario -> prepare_scenario -> plan_trajectory
+        |        -> full_mission_path -> gửi PlanReply qua Pipe -> thoát
+        `- quá hạn --> kill(SIGKILL) --> PLAN_TIMEOUT
+DDS reply  <---'
 ```
 
 ### Ba tầng thời hạn
 
-Lồng nhau và có chủ đích:
-
 1. `config.TIME_BUDGET_S` - planner tự dừng, êm, đặt `budget_bound = true`.
-2. Thời hạn của node dành cho worker, `= time_budget_s + 2 s` - cứng, `SIGKILL`.
-3. Thời hạn của client trên DDS - ngoài phạm vi service, nhưng phải lớn hơn (2).
+2. Thời hạn của `PlanRunner`, `= config.TIME_BUDGET_S + 2 s` - cứng, `SIGKILL`.
+3. Thời hạn của client trên DDS - ngoài phạm vi service, phải lớn hơn (2).
 
-Tầng 2 tồn tại vì planner không hủy được từ bên ngoài. Giết rồi spawn lại là
-cách trung thực duy nhất; chi phí là ~1-2 s import, chấp nhận được vì đây là
-đường hiếm.
-
-### Worker là tiến trình sống lâu, không fork theo request
-
-Hai knob duy nhất override được (`time_budget_s`, `max_iterations`) được đặt
-rồi khôi phục trong `try/finally` bằng một context manager có test riêng. Với 1
-request/lúc và một luồng, cách này an toàn; tầng `SIGKILL` đã lo phần hủy.
-
-**Phương án đã cân nhắc và loại: fork-per-request.** Nó cách ly hoàn hảo 35
-hằng số global và cho phép hủy tức thì, nhưng thêm một tầng cho một yêu cầu chưa
-tồn tại. Đây là chỗ quay lại nếu sau này cần chạy song song - lúc đó `config`
-global mới thật sự thành vấn đề.
-
-### Bản đồ nạp sẵn
-
-Khi `use_preloaded_map = true`, worker gộp bản đồ nền tĩnh (đọc từ một file
-GeoJSON lúc khởi động, đường dẫn nằm trong cấu hình worker) với chướng ngại vật
-trong request. Khi `false`, request là tự chứa hoàn toàn.
-
-Mặc định triển khai là **không** nạp sẵn bản đồ nào: request tự chứa thì dễ
-replay và dễ chẩn đoán hơn nhiều.
-
-## 6. Quy đổi hệ toạ độ
-
-`FRAME_LOCAL_METERS` đi thẳng, chỉ quy đổi góc.
-
-`FRAME_WGS84` dùng phép chiếu phương vị cách đều (AEQD, qua `pyproj`) **neo tại
-trung điểm start-goal**. Phép chiếu này bảo toàn chính xác khoảng cách theo
-phương xuyên tâm từ tâm chiếu; sai số theo phương tiếp tuyến xấp xỉ
-`(c/R)^2 / 6`, tức khoảng 0,03% (~65 m) ở mép một mission 500 km.
-
-Với bán kính lượn 8 km và biên an toàn tính bằng km, sai số này chấp nhận được -
-nhưng nó là con số phải ghi vào tài liệu và phải có test cận trên, không phải
-giấu đi.
-
-UTM bị loại: múi UTM rộng 6 độ (~670 km ở xích đạo), nên một mission 500 km có
-thể cắt qua hai múi.
-
-### Tịnh tiến về góc phần tư dương
-
-AEQD neo tại trung điểm sinh ra toạ độ **quanh gốc 0, tức khoảng một nửa là số
-âm**. Thuật toán chấp nhận được điều đó trong cấu hình mặc định, vì `_in_bounds`
-trả `True` khi không có `safezones` lẫn `map_bounds`. Nhưng phép kiểm tra hình
-chữ nhật của nó là `0 < x < w and 0 < y < h`
-(`core/kinodynamic_astar_v0.py:863`) - neo tại gốc và đòi hỏi dương ngặt - nên
-toạ độ âm là một cái bẫy đang chờ: chỉ cần sau này có ai đó thêm bound là toàn
-bộ mission bị loại sạch, và triệu chứng sẽ là `no_path` chứ không phải một lỗi
-nói thật.
-
-Vì vậy adapter, sau khi chiếu, **tịnh tiến toàn bộ hình học sao cho hộp bao nằm
-trọn trong góc phần tư dương** với một khoảng đệm, rồi tịnh tiến ngược waypoint
-trên đường ra. Phép tịnh tiến không đổi khoảng cách hay phương vị nên không ảnh
-hưởng gì tới đường bay; nó chỉ đưa mission về đúng quy ước toạ độ mà thuật toán
-ngầm giả định.
-
-Ở `FRAME_LOCAL_METERS` adapter không tịnh tiến - client đang nói bằng chính hệ
-toạ độ của thuật toán - nhưng tài liệu phải nêu rõ quy ước gốc toạ độ ở góc tây
-nam và toạ độ dương.
-
-Phép chiếu là một component riêng, thuần hàm, test được độc lập.
+Tầng 2 tồn tại vì planner không hủy được từ bên ngoài. Chi phí của nó bằng 0 ở
+đường thường: tiến trình con vẫn được tạo cho mọi request, giết chỉ là bỏ chờ.
 
 ## 7. Ba cơ chế cưỡng chế "tự động cập nhật"
 
-Nguyên tắc: adapter chỉ gọi, không sao chép. Ba cơ chế biến nguyên tắc thành
-thứ kiểm tra được.
+Nguyên tắc: adapter chỉ gọi, không sao chép.
 
-**Cơ chế 1 - test hợp đồng khoá.** Đọc `core.types.Scenario` và
-`PreprocessedScenario` qua `typing.get_type_hints` và so với tập khoá adapter
-điền. Thêm một khoá bắt buộc vào `Scenario` mà adapter chưa biết thì test đỏ
-ngay, thay vì `KeyError` lúc chạy thật.
+**Cơ chế 1 - test hợp đồng khoá.** Đọc `core.types.Scenario` qua
+`typing.get_type_hints` và so với tập khoá adapter điền. Thêm một khoá bắt buộc
+bên đó thì test đỏ ngay, thay vì `KeyError` lúc chạy thật.
 
-**Cơ chế 2 - test tương đương.** Chạy 18 preset qua `vtx_planner.plan()` và so
-với việc gọi trực tiếp `prepare_scenario` + `plan_trajectory`. Waypoint phải
-**bit-identical**.
+**Cơ chế 2 - test tương đương.** Hai khẳng định tách bạch, và việc tách là có lý
+do:
 
-Đây là cơ chế cốt lõi. Cả hai vế của phép so đều gọi thuật toán *hiện hành*, nên
-test không bao giờ lỗi thời: thuật toán đổi thì cả hai vế đổi cùng nhau và test
-vẫn xanh; adapter lệch khỏi thuật toán thì đỏ ngay. Nó bắt được đúng loại thay
-đổi từng xảy ra trong repo này - `prepare_scenario` đã có lần đổi tham số từ
-`R=/L0=/DSS=` sang `turn_radius=/l0=/dss=`.
+- *Adapter trong suốt*: đường bay qua `vtx_service.plan()` phải **bit-identical**
+  với việc gọi thẳng thuật toán TRÊN CÙNG dict `Scenario`. Cả hai vế gọi thuật
+  toán hiện hành, nên test không bao giờ lỗi thời.
+- *Không mất mission*: 18 preset qua service phải giải được hết và không dài hơn
+  0,5%. KHÔNG đòi bit-identical, vì preset mang `map_bounds` mà IDL cố tình bỏ
+  (mục 4.2). Ép hai thứ khác nhau phải giống nhau là một test nói dối.
 
-**Cơ chế 3 - test ranh giới.** `git diff --stat core/ render/ config.py` phải
-rỗng trên mọi commit của nhánh này.
+**Cơ chế 3 - test ranh giới.** `git diff --stat main -- core/ render/ config.py`
+phải rỗng.
 
-## 8. Đóng gói và triển khai
+## 8. Stack DDS: chưa chốt, và lớp transport được cô lập vì thế
 
-Hai giai đoạn: **systemd trước, Docker sau.** systemd chạy được sớm và gỡ lỗi
-DDS dễ hơn hẳn; Dockerfile viết sau khi interface đã ổn định thì chỉ còn là việc
-đóng gói lại đúng các bước đã chạy được, chứ không phải vừa dựng vừa đoán.
+Đã đo:
 
-```
-service/
-  idl/vtx_path_planning.idl        nguồn duy nhất của hợp đồng
-  dds_node/    CMakeLists.txt, src/
-  worker/      vtx_planner/        package Python, không biết DDS là gì
-  deploy/      vtx-planner.service, worker-requirements.txt, README.md
-               Dockerfile          (giai đoạn 2)
-  tests/
-```
+| | Fast DDS Python | Cyclone DDS Python |
+| --- | --- | --- |
+| Trên PyPI | **Không** (thử `fastdds`, `fastdds-python`, `eprosima-fastdds`) | **Có**, wheel binary 7,7 MB gói sẵn core |
+| Cài đặt | colcon: Fast-CDR + Fast-DDS + Fast-DDS-python (SWIG) + fastddsgen (cần Java) | `pip install cyclonedds` |
+| Sinh mã từ IDL | `fastddsgen -python`, compile lại mỗi lần đổi IDL | **Không cần**: kiểu khai báo bằng dataclass |
+| Cùng bản với hệ thống gọi | Chắc chắn | RTPS 2.x, **phải chứng minh** |
+| Đã chạy thử ở đây | Chưa cài được gì | **Rồi**: participant, sequence lồng, `@key` 16 byte, double bit-identical |
 
-### Giai đoạn 1 - systemd + venv
+Máy này chưa có Fast DDS, fastddsgen hay ROS 2.
 
-```bash
-git clone <repo> /opt/vtx/path_planning
-cd /opt/vtx/path_planning && git checkout <tag>
+Rủi ro của Cyclone là **interop giữa hai bản cài DDS khác nhau**. Cả hai đều nói
+RTPS 2.x nên trên nguyên tắc chạy được, nhưng type consistency của XTypes, tên
+kiểu và cấu hình discovery là những chỗ hay vênh. Đây là thứ phải chứng minh
+bằng spike với hệ thống thật, không phải thứ suy ra từ lý thuyết.
 
-python3.11 -m venv /opt/vtx/venv
-/opt/vtx/venv/bin/pip install shapely==2.1.2 msgpack==1.2.1 pyproj==3.7.2
-
-cd service/dds_node
-fastddsgen -replace -d build/gen ../idl/vtx_path_planning.idl
-cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
-
-sudo cp ../deploy/vtx-planner.service /etc/systemd/system/
-sudo systemctl enable --now vtx-planner
-```
-
-```ini
-[Service]
-ExecStart=/opt/vtx/path_planning/service/dds_node/build/vtx_planner_dds_node \
-    --worker-python /opt/vtx/venv/bin/python \
-    --worker-script /opt/vtx/path_planning/service/worker/run_worker.py \
-    --repo-root    /opt/vtx/path_planning \
-    --socket /run/vtx/planner.sock --domain-id 0
-Restart=on-failure
-RuntimeDirectory=vtx
-User=vtx
-```
-
-Một unit duy nhất: node C++ tự spawn worker như tiến trình con, nên vòng đời gắn
-liền và node giữ quyền `SIGKILL`/dựng lại.
-
-Worker import `core.*` thẳng từ repo qua `PYTHONPATH`, không đóng gói thành
-wheel. **Đây là cơ chế cập nhật tự động ở mức triển khai**: nâng cấp thuật toán
-là `git pull && systemctl restart vtx-planner`, không build lại gì bên Python.
-Chỉ khi IDL đổi mới phải build lại C++ - và IDL đổi hiếm hơn thuật toán rất
-nhiều. `planner_version` (`git describe --always --dirty`) nói đúng bản nào đang
-chạy, `config_hash` nói đúng cấu hình nào sinh ra đường bay.
-
-### Giai đoạn 2 - Docker
-
-Một image chứa cả node và worker. Ba điều kiện bắt buộc, đều là chỗ dễ mất một
-ngày để gỡ nếu không biết trước:
-
-- **`--network host`.** Discovery mặc định của Fast DDS dùng multicast. Trên
-  bridge network, discovery chết lặng: không lỗi, không cảnh báo, chỉ là không
-  ai thấy ai.
-- **`--ipc host` và chia sẻ `/dev/shm`**, nếu muốn giữ transport shared-memory.
-- **Ghim đúng phiên bản Fast DDS của bên gọi** trong image.
-
-Cần thấy rõ cái giá: `--network host --ipc host` đã bỏ gần hết sự cách ly vốn là
-lý do dùng Docker. Cái còn lại là khả năng tái lập môi trường build và triển
-khai lên máy mới mà không phải cài toolchain Fast DDS - đó là lợi ích thật,
-nhưng nó là lợi ích về vận hành, không phải về cách ly.
-
-### Một đính chính
-
-Lập luận ban đầu của tài liệu này - "phải build với đúng bản Fast DDS của bên
-gọi, nên không container hoá được" - là **nói quá**. RTPS tương thích trên dây
-khá tốt giữa các bản Fast DDS, nên hai bản khác nhau vẫn nói chuyện được qua
-UDP. Phần đúng hẹp hơn: transport shared-memory nhạy với phiên bản và sẽ âm thầm
-rơi về UDP khi lệch - mà đây đúng là trường hợp hai tiến trình cùng máy, nơi SHM
-đáng giá nhất. Cộng thêm việc tái dùng IDL, quy ước domain/QoS và toolchain sẵn
-có. Đó là lý do chọn systemd trước, không phải lý do cấm Docker.
+**Vì thế lớp transport là một module cô lập sau một interface hẹp**
+(`Transport.serve(handler)`), và spike là task đầu tiên. Kết quả spike chỉ ảnh
+hưởng một file; mọi thứ khác - hợp đồng dữ liệu, adapter, PlanRunner, bản đồ,
+toàn bộ test - độc lập với nó và làm được song song.
 
 ## 9. Kiểm thử
 
 | Tầng | Chạy gì | Bắt được gì |
 | --- | --- | --- |
 | 1. Hợp đồng | `get_type_hints` vs khoá adapter điền | khoá bắt buộc mới trong `Scenario` |
-| 2. Tương đương | 18 preset, `vtx_planner.plan()` vs gọi trực tiếp, bit-identical | sai lệch adapter, đơn vị, tên tham số |
-| 3. Round-trip DDS | node + worker thật, request qua loopback | lỗi IDL, tương quan `request_id`, QoS |
-| 4. Phép chiếu | xuôi-ngược < 1e-6 m; cận biến dạng mission 500 km; mọi toạ độ sau chiếu đều dương | lỗi hệ toạ độ, lỗi quy ước phương vị, toạ độ âm |
-| 5. Ranh giới | `git diff --stat core/ render/ config.py` rỗng | vi phạm ràng buộc 1 |
-| 6. Thời hạn | worker giả treo -> node trả `PLAN_TIMEOUT` và respawn | lỗi tầng thời hạn 2 |
+| 2. Tương đương | 18 preset, bit-identical + không mất mission | sai lệch adapter, đơn vị, tên tham số |
+| 3. Góc | phương vị <-> heading, dải giá trị, chiều quay | lỗi quy ước hướng |
+| 4. Bản đồ XML | parse, vành mở, gộp nối thêm, version sai | lỗi định dạng, lỗi ngữ nghĩa gộp |
+| 5. PlanRunner | con treo -> `PLAN_TIMEOUT` và service vẫn phục vụ tiếp | lỗi tầng thời hạn 2 |
+| 6. Transport | round-trip qua DDS thật, so với gọi trong tiến trình | lỗi dịch kiểu, tương quan, QoS |
+| 7. Ranh giới | `git diff --stat main -- core/ render/ config.py` rỗng | vi phạm ràng buộc 1 |
 
-Tầng 1, 2, 4 chạy được không cần DDS. Chỉ tầng 3 và 6 cần node đã build.
-
-Bộ test của service nằm ở `service/tests/`, tách khỏi `tests/` ở gốc (vốn nằm
-trong `.gitignore` và chỉ được track bằng force-add).
+Tầng 1-5 và 7 chạy được không cần DDS.
 
 **Baseline hiện có phải giữ nguyên:** `pytest -q tests/` = 188 passed, 6 failed
-(2026-08-21). Sáu ca đỏ đó có từ trước và không liên quan; công việc này không
-được thêm ca đỏ nào.
+(2026-08-21). Sáu ca đỏ có từ trước và không liên quan.
 
 ## 10. Rủi ro đã biết
 
-**Payload lớn.** Sequence không giới hạn trong IDL: một bản đồ nhiều đa giác có
-thể vượt ngưỡng phân mảnh UDP mặc định. Cần bật publish bất đồng bộ và flow
-controller trên writer, hoặc nâng `max_message_size`. Phải đo với bản đồ thật
-trước khi chốt cấu hình transport.
+**Interop Cyclone <-> Fast DDS.** Rủi ro lớn nhất, và spike ở Task 1 tồn tại
+chính vì nó. Nếu spike đỏ thì quay về Fast DDS Python binding - mất một buổi,
+không mất cả kế hoạch.
 
-**Tính không tất định.** Đã phơi ra bằng `budget_bound`, nhưng client phải được
-tài liệu hoá là *không* nên coi service như một hàm thuần.
+**Payload lớn.** Sequence không giới hạn: bản đồ nhiều đa giác có thể vượt
+ngưỡng phân mảnh UDP mặc định. Phải đo với bản đồ thật trước khi chốt cấu hình
+transport.
 
-**Sai lệch phiên bản Fast DDS.** Trên dây thì RTPS tha thứ, nhưng transport
-shared-memory thì không: lệch phiên bản làm nó âm thầm rơi về UDP, tức mất hiệu
-năng mà không có lỗi nào. Ghi lại phiên bản trong `service/deploy/README.md`, in
-nó lúc node khởi động, và **kiểm tra transport thực tế đang dùng là SHM hay
-UDP** trong log khởi động thay vì giả định.
+**Tính không tất định.** Đã phơi ra bằng `budget_bound`, nhưng tài liệu phải nói
+rõ với client rằng service *không* phải một hàm thuần.
 
-**Chi phí import khi respawn.** ~1-2 s sau mỗi `PLAN_TIMEOUT`. Nếu timeout trở
-nên thường xuyên chứ không hiếm, đó là tín hiệu phải xem lại ngân sách chứ không
-phải tối ưu đường respawn.
+**`fork` và thread DDS.** Đã tránh bằng forkserver-trước-DDS (mục 3). Nếu ai đó
+sau này đổi sang `fork` trần vì nó nhanh hơn 40 ms, đây là chỗ ghi lại vì sao
+không nên.
+
+**Ngữ nghĩa gộp safezone.** Thêm safezone là NỚI RỘNG vùng bay, không thu hẹp.
+Trực giác thường ngược, nên nó phải nằm trong tài liệu vận hành chứ không chỉ
+trong docstring.
