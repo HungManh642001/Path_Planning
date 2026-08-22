@@ -7,7 +7,11 @@ service báo cáo ngược giá trị thật.
 
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
 import config
+import pytest
 
 from vtx_service.runtime import (
     config_hash,
@@ -16,6 +20,11 @@ from vtx_service.runtime import (
     planner_config_snapshot,
     planner_version,
 )
+
+# Derived independently of vtx_service.runtime._REPO_ROOT: this must locate
+# the real repo root on its own, so the test can tell a correct root from a
+# broken one instead of trusting the same value it is meant to check.
+_TRUE_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_snapshot_is_discovered_not_hardcoded() -> None:
@@ -46,6 +55,27 @@ def test_hash_is_stable_and_sensitive() -> None:
 
 def test_version_is_a_non_empty_string() -> None:
     assert isinstance(planner_version(), str) and planner_version()
+
+
+def test_version_matches_git_describe_inside_a_checkout() -> None:
+    """Pins planner_version() to the real `git describe`, not merely non-empty.
+
+    `test_version_is_a_non_empty_string` cannot tell a correct root from a
+    broken one: `planner_version()`'s own fallback ("unknown") is itself a
+    non-empty string. This test computes the expected value from an
+    independently-derived repo root (not from `runtime._REPO_ROOT`), so it
+    goes red if `_REPO_ROOT` is ever pointed somewhere without a `.git`.
+    """
+    if not (_TRUE_REPO_ROOT / ".git").exists():
+        pytest.skip("not running inside a git checkout")
+    expected = subprocess.run(
+        ["git", "describe", "--always", "--dirty"],
+        cwd=_TRUE_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert planner_version() == expected
 
 
 def test_effective_budget_comes_from_config_not_from_the_request() -> None:
