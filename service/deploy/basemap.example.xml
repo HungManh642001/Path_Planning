@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bản đồ nền mẫu. Toạ độ MÉT trong hệ Oxy phẳng; +y là bắc, +x là đông.
+
+     Đa giác là vành MỞ: không lặp lại đỉnh đầu ở cuối.
+
+     LƯU Ý về ngữ nghĩa: safezone của bản đồ nền được NỐI THÊM vào safezone của
+     request, và planner lấy HỢP của chúng. Thêm một safezone là NỚI RỘNG vùng
+     bay, không phải thu hẹp. -->
+<vtx-map version="1">
+  <safezones>
+    <polygon>
+      <point x="0" y="0"/>
+      <point x="500000" y="0"/>
+      <point x="500000" y="500000"/>
+      <point x="0" y="500000"/>
+    </polygon>
+  </safezones>
+  <obstacles>
+    <polygon>
+      <point x="150000" y="120000"/>
+      <point x="200000" y="120000"/>
+      <point x="175000" y="200000"/>
+    </polygon>
+    <circle cx="220000" cy="180000" r="15000"/>
+  </obstacles>
+</vtx-map>
