@@ -1170,6 +1170,7 @@ from typing import get_type_hints
 
 from core.types import Scenario
 
+from vtx_service.angles import bearing_deg_to_math_rad
 from vtx_service.messages import Circle, PlanRequest, SearchBudget, VehicleLimits
 from vtx_service.scenario_builder import build_scenario
 
@@ -1212,6 +1213,22 @@ def test_coordinates_pass_through_bit_identically() -> None:
 def test_headings_are_converted_to_the_planner_convention() -> None:
     # phương vị 90 = đông = +x = 0 rad
     assert math.isclose(build_scenario(_request())["start_heading"], 0.0, abs_tol=1e-12)
+
+
+def test_goal_heading_is_converted_to_the_planner_convention_when_fixed() -> None:
+    """Anh em sinh đôi của test trên, và nó từng THIẾU.
+
+    Đo được trong lúc thực thi kế hoạch này: để `goal_heading` nguyên đơn vị độ
+    thì cả 55 test vẫn xanh, kể cả test chạy planner thật — mission trong fixture
+    tình cờ vẫn giải được nhờ góc bị wrap. `goal_heading` là hướng máy bay phải
+    đang bay khi tới mục tiêu, nên sai đơn vị ở đây cho ra một đường bay hợp lệ
+    về hình học mà tiếp cận sai hướng: đúng loại lỗi mục 4.1 của spec cảnh báo.
+
+    So với `bearing_deg_to_math_rad`, KHÔNG so với hằng số tự tính — một con số
+    viết tay sẽ trôi nếu quy ước đổi, mà `angles.py` là nguồn sự thật duy nhất.
+    """
+    built = build_scenario(_request())
+    assert built["goal_heading"] == bearing_deg_to_math_rad(45.0)
 
 
 def test_free_goal_becomes_none_not_a_sentinel_number() -> None:
@@ -1327,7 +1344,7 @@ def build_scenario(request: PlanRequest) -> dict[str, Any]:
 - [ ] **Step 4: Chạy test**
 
 Run: `python -m pytest service/tests/scenario_builder_test.py -v`
-Expected: PASS, 9 passed.
+Expected: PASS, 10 passed.
 
 - [ ] **Step 5: Commit**
 
