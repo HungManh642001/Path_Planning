@@ -115,8 +115,36 @@ def test_a_polygon_with_two_points_is_rejected(tmp_path: Path) -> None:
 
 
 def test_a_non_positive_radius_is_rejected(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="radius"):
-        PreloadedMap.load(_write(tmp_path, MAP_XML.replace('r="15000"', 'r="0"')))
+    path = _write(tmp_path, MAP_XML.replace('r="15000"', 'r="0"'))
+    with pytest.raises(ValueError, match="radius") as exc_info:
+        PreloadedMap.load(path)
+    # Phải phân biệt được với lỗi bare "radius_m" của Circle.__post_init__ -
+    # thông báo phải nêu đích danh file.
+    assert str(path) in str(exc_info.value)
+
+
+def test_a_missing_point_attribute_is_rejected(tmp_path: Path) -> None:
+    bad = MAP_XML.replace('<point x="175000" y="200000"/>', '<point y="200000"/>')
+    path = _write(tmp_path, bad)
+    with pytest.raises(ValueError) as exc_info:
+        PreloadedMap.load(path)
+    assert str(path) in str(exc_info.value)
+
+
+def test_a_missing_circle_attribute_is_rejected(tmp_path: Path) -> None:
+    bad = MAP_XML.replace('cx="220000" cy="180000" r="15000"', 'cy="180000" r="15000"')
+    path = _write(tmp_path, bad)
+    with pytest.raises(ValueError) as exc_info:
+        PreloadedMap.load(path)
+    assert str(path) in str(exc_info.value)
+
+
+def test_a_non_numeric_coordinate_is_rejected(tmp_path: Path) -> None:
+    bad = MAP_XML.replace('x="175000"', 'x="not-a-number"')
+    path = _write(tmp_path, bad)
+    with pytest.raises(ValueError) as exc_info:
+        PreloadedMap.load(path)
+    assert str(path) in str(exc_info.value)
 
 
 def test_empty_sections_are_allowed(tmp_path: Path) -> None:

@@ -47,15 +47,15 @@ class PreloadedMap:
         """
         root = ElementTree.parse(path).getroot()
         if root.tag != "vtx-map":
-            raise ValueError(f"tag gốc phải là vtx-map, nhận {root.tag!r}")
+            raise ValueError(f"{path}: tag gốc phải là vtx-map, nhận {root.tag!r}")
         version = root.get("version")
         if version != MAP_VERSION:
-            raise ValueError(f"version bản đồ {version!r} != {MAP_VERSION!r}")
+            raise ValueError(f"{path}: version bản đồ {version!r} != {MAP_VERSION!r}")
 
         return cls(
-            safezones=tuple(_polygons(root.find("safezones"))),
-            islands=tuple(_polygons(root.find("obstacles"))),
-            dynamic_obstacles=tuple(_circles(root.find("obstacles"))),
+            safezones=tuple(_polygons(root.find("safezones"), path)),
+            islands=tuple(_polygons(root.find("obstacles"), path)),
+            dynamic_obstacles=tuple(_circles(root.find("obstacles"), path)),
         )
 
     def merged_into(self, request: PlanRequest) -> PlanRequest:
@@ -78,37 +78,50 @@ class PreloadedMap:
         )
 
 
-def _polygons(section: ElementTree.Element | None) -> list[tuple[Point, ...]]:
+def _polygons(section: ElementTree.Element | None, path: Path) -> list[tuple[Point, ...]]:
     if section is None:
         return []
-    return [_ring(node) for node in section.findall("polygon")]
+    return [_ring(node, path) for node in section.findall("polygon")]
 
 
-def _ring(node: ElementTree.Element) -> tuple[Point, ...]:
+def _ring(node: ElementTree.Element, path: Path) -> tuple[Point, ...]:
     points: list[Point] = [
-        (float(p.get("x", "nan")), float(p.get("y", "nan"))) for p in node.findall("point")
+        (_float_attr(p, "x", path), _float_attr(p, "y", path)) for p in node.findall("point")
     ]
     # Vành MỞ: `core/` giả định không có đỉnh đóng lặp lại, và một đỉnh trùng
     # lặp tạo ra cạnh dài 0 mà oracle sẽ từ chối.
     if len(points) >= 2 and math.dist(points[0], points[-1]) < _CLOSING_TOL_M:
         points.pop()
     if len(points) < 3:
-        raise ValueError(f"đa giác cần ít nhất 3 đỉnh, nhận {len(points)}")
+        raise ValueError(f"{path}: đa giác cần ít nhất 3 đỉnh, nhận {len(points)}")
     return tuple(points)
 
 
-def _circles(section: ElementTree.Element | None) -> list[Circle]:
+def _circles(section: ElementTree.Element | None, path: Path) -> list[Circle]:
     if section is None:
         return []
     circles: list[Circle] = []
     for node in section.findall("circle"):
-        radius = float(node.get("r", "nan"))
+        radius = _float_attr(node, "r", path)
         if not radius > 0.0:
-            raise ValueError(f"radius phải dương, nhận {radius}")
+            raise ValueError(f"{path}: radius phải dương, nhận {radius}")
         circles.append(
             Circle(
-                center=(float(node.get("cx", "nan")), float(node.get("cy", "nan"))),
+                center=(_float_attr(node, "cx", path), _float_attr(node, "cy", path)),
                 radius_m=radius,
             )
         )
     return circles
+
+
+def _float_attr(node: ElementTree.Element, name: str, path: Path) -> float:
+    """Đọc một thuộc tính số thực, báo lỗi kèm tên file thay vì trả về NaN."""
+    raw = node.get(name)
+    if raw is None:
+        raise ValueError(f"{path}: thiếu thuộc tính {name!r} trên <{node.tag}>")
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ValueError(
+            f"{path}: thuộc tính {name!r} trên <{node.tag}> không phải số, nhận {raw!r}"
+        ) from exc
