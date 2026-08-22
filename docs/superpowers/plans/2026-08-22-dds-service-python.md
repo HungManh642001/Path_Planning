@@ -1423,7 +1423,7 @@ import config
 import core.kinodynamic_astar_v0 as astar
 
 _CONFIG_REF = re.compile(r"\bconfig\.([A-Z][A-Z0-9_]*)\b")
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def planner_config_snapshot() -> dict[str, object]:
@@ -2573,8 +2573,8 @@ def test_a_reply_for_another_request_is_ignored() -> None:
     def handler(incoming: PlanRequest) -> PlanReply:
         return _reply(incoming)
 
-    service = DdsTransport(domain_id=DOMAIN + 1)
-    client = DdsTransport(domain_id=DOMAIN + 1)
+    service = DdsTransport(domain_id=DOMAIN + 3)
+    client = DdsTransport(domain_id=DOMAIN + 3)
     threading.Thread(target=service.serve, args=(handler,), daemon=True).start()
     try:
         assert client.wait_for_service(timeout_s=20.0)
@@ -2606,9 +2606,13 @@ QoS: cả hai topic RELIABLE + VOLATILE; request KEEP_ALL, reply KEEP_LAST(8).
 VOLATILE là bắt buộc, không phải mặc định tuỳ tiện: TRANSIENT_LOCAL trên topic
 request nghĩa là service khởi động lại sẽ nhận và lập kế hoạch lại một mission
 cũ đã hết hiệu lực. Một lệnh bay không được phép phát lại.
-"""
 
-from __future__ import annotations
+KHÔNG dùng `from __future__ import annotations` trong file này. cyclonedds phân
+giải chú thích kiểu LÚC CHẠY, còn PEP 563 biến chúng thành chuỗi, nên
+`Topic(...)` ném `TypeError: Type array[uint8, 16] ... cannot be resolved`. Đã
+đo: có dòng đó thì hỏng, bỏ ra thì chạy. Mọi module khác trong service vẫn dùng
+bình thường - chỉ module khai báo IdlStruct mới bị.
+"""
 
 import time
 from collections.abc import Callable
@@ -2638,8 +2642,13 @@ REQUEST_TOPIC = "VtxPathPlanRequest"
 REPLY_TOPIC = "VtxPathPlanReply"
 
 _RELIABLE = Policy.Reliability.Reliable(duration(seconds=10))
-REQUEST_QOS = Qos(_RELIABLE, Policy.History.KeepAll, Policy.Durability.Volatile)
-REPLY_QOS = Qos(_RELIABLE, Policy.History.KeepLast(8), Policy.Durability.Volatile)
+# IgnoreLocal.Participant là BẮT BUỘC, không phải tuỳ chọn. Không có nó, một
+# DataWriter khớp với DataReader của CHÍNH participant mình, nên
+# `wait_for_service` trả True ngay cả khi không có service nào - đã đo:
+# current_count = 1 với một participant duy nhất, = 0 khi bật IgnoreLocal.
+_IGNORE_SELF = Policy.IgnoreLocal.Participant
+REQUEST_QOS = Qos(_RELIABLE, Policy.History.KeepAll, Policy.Durability.Volatile, _IGNORE_SELF)
+REPLY_QOS = Qos(_RELIABLE, Policy.History.KeepLast(8), Policy.Durability.Volatile, _IGNORE_SELF)
 
 
 # --- kiểu trên dây, khớp service/idl/vtx_path_planning.idl --------------------
