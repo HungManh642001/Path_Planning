@@ -1338,7 +1338,11 @@ service báo cáo ngược giá trị thật.
 
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
 import config
+import pytest
 
 from vtx_service.runtime import (
     config_hash,
@@ -1347,6 +1351,10 @@ from vtx_service.runtime import (
     planner_config_snapshot,
     planner_version,
 )
+
+# Suy ra ĐỘC LẬP, không đọc runtime._REPO_ROOT. Nếu lấy từ module đang test thì
+# test sẽ trôi theo lỗi thay vì bắt được lỗi.
+_TRUE_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_snapshot_is_discovered_not_hardcoded() -> None:
@@ -1377,6 +1385,29 @@ def test_hash_is_stable_and_sensitive() -> None:
 
 def test_version_is_a_non_empty_string() -> None:
     assert isinstance(planner_version(), str) and planner_version()
+
+
+def test_version_matches_git_describe_inside_a_checkout() -> None:
+    """Ghim `planner_version()` vào `git describe` THẬT, không chỉ "khác rỗng".
+
+    `test_version_is_a_non_empty_string` không phân biệt được gốc repo đúng với
+    gốc sai: chính giá trị dự phòng "unknown" cũng là một chuỗi khác rỗng. Đã đo
+    trong lúc thực thi kế hoạch này — `_REPO_ROOT` sai một mức khiến
+    `planner_version()` im lặng trả "unknown" mãi mãi, mà bộ test vẫn xanh.
+
+    Test này tính giá trị mong đợi từ một gốc repo suy ra ĐỘC LẬP, nên nó đỏ
+    khi `_REPO_ROOT` bị trỏ tới chỗ không có `.git`.
+    """
+    if not (_TRUE_REPO_ROOT / ".git").exists():
+        pytest.skip("không chạy trong một checkout git")
+    expected = subprocess.run(
+        ["git", "describe", "--always", "--dirty"],
+        cwd=_TRUE_REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert planner_version() == expected
 
 
 def test_effective_budget_comes_from_config_not_from_the_request() -> None:
@@ -1490,7 +1521,7 @@ def effective_max_iterations() -> int:
 - [ ] **Step 4: Chạy test**
 
 Run: `python -m pytest service/tests/runtime_test.py -v`
-Expected: PASS, 6 passed.
+Expected: PASS, 7 passed.
 
 - [ ] **Step 5: Commit**
 
