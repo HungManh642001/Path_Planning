@@ -62,6 +62,22 @@ Chỉ 5 giá trị là tham số hàm của `prepare_scenario`
 (`turn_radius`, `l0`, `dss`, `safe_margin`, `alpha_max_rad`). Đây là lý do chỉ
 5+2 tham số được override theo request (mục 4).
 
+**Thuật toán chỉ phụ thuộc vào shapely.** Đã kiểm chứng: `core/` không import
+numpy ở bất kỳ đâu (0 lần), cũng không scipy, cũng không matplotlib. Toàn bộ
+pipeline chạy trên thư viện chuẩn (`math`, `heapq`, `time`, `collections`,
+`typing`) cộng với `shapely`. numpy chỉ vào theo đường phụ thuộc bắc cầu của
+shapely; matplotlib chỉ nằm trong `render/`, mà service không dùng.
+
+Hệ quả trực tiếp, và nó gỡ bỏ ràng buộc nặng nhất của repo này: **cái pin
+`numpy==1.26.4` không áp dụng cho service.** Pin đó là ràng buộc của matplotlib
+3.8 và pandas 2.1.4 trong stack test/benchmark/GUI. Đã kiểm chứng bằng một venv
+sạch chỉ cài `shapely 2.1.2` + `msgpack 1.2.1`, kéo theo **numpy 2.4.6** - đúng
+phiên bản bị cảnh báo là làm vỡ cả stack - và cả **18/18 preset đều giải được**
+với thời gian trùng khớp phép đo trên môi trường gốc.
+
+Phụ thuộc thật của worker vì vậy là ba gói: `shapely`, `msgpack`, và `pyproj`
+(chỉ cần khi dùng `FRAME_WGS84`).
+
 ## 3. Kiến trúc
 
 ```
@@ -392,9 +408,9 @@ rỗng trên mọi commit của nhánh này.
 
 ## 8. Đóng gói và triển khai
 
-**Không Docker.** Lý do chính là lý do đã chọn kiến trúc này: node C++ phải build
-với đúng bản Fast DDS mà hệ thống gọi đang dùng. Đóng nó vào container là mời
-lại đúng vấn đề lệch phiên bản mà thiết kế sinh ra để tránh.
+Hai giai đoạn: **systemd trước, Docker sau.** systemd chạy được sớm và gỡ lỗi
+DDS dễ hơn hẳn; Dockerfile viết sau khi interface đã ổn định thì chỉ còn là việc
+đóng gói lại đúng các bước đã chạy được, chứ không phải vừa dựng vừa đoán.
 
 ```
 service/
@@ -402,20 +418,74 @@ service/
   dds_node/    CMakeLists.txt, src/
   worker/      vtx_planner/        package Python, không biết DDS là gì
   deploy/      vtx-planner.service, worker-requirements.txt, README.md
+               Dockerfile          (giai đoạn 2)
   tests/
 ```
 
-Worker chạy trong venv riêng, ghim `numpy==1.26.4` theo đúng ghi chú trong
-`requirements.txt` gốc, và import `core.*` từ chính repo này qua `PYTHONPATH`.
+### Giai đoạn 1 - systemd + venv
 
-Node C++ **tự spawn worker** như tiến trình con, nên vòng đời gắn liền và node
-giữ quyền giết/dựng lại. systemd chỉ quản một unit.
+```bash
+git clone <repo> /opt/vtx/path_planning
+cd /opt/vtx/path_planning && git checkout <tag>
 
-Việc import thẳng từ repo, không đóng gói `core/` thành wheel, **chính là cơ chế
-cập nhật tự động ở mức triển khai**: nâng cấp thuật toán là
-`git pull && systemctl restart vtx-planner`. `planner_version` trong reply
-(`git describe --always --dirty`) nói đúng bản nào đang chạy, và `config_hash`
-nói đúng cấu hình nào đã sinh ra đường bay.
+python3.11 -m venv /opt/vtx/venv
+/opt/vtx/venv/bin/pip install shapely==2.1.2 msgpack==1.2.1 pyproj==3.7.2
+
+cd service/dds_node
+fastddsgen -replace -d build/gen ../idl/vtx_path_planning.idl
+cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j
+
+sudo cp ../deploy/vtx-planner.service /etc/systemd/system/
+sudo systemctl enable --now vtx-planner
+```
+
+```ini
+[Service]
+ExecStart=/opt/vtx/path_planning/service/dds_node/build/vtx_planner_dds_node \
+    --worker-python /opt/vtx/venv/bin/python \
+    --worker-script /opt/vtx/path_planning/service/worker/run_worker.py \
+    --repo-root    /opt/vtx/path_planning \
+    --socket /run/vtx/planner.sock --domain-id 0
+Restart=on-failure
+RuntimeDirectory=vtx
+User=vtx
+```
+
+Một unit duy nhất: node C++ tự spawn worker như tiến trình con, nên vòng đời gắn
+liền và node giữ quyền `SIGKILL`/dựng lại.
+
+Worker import `core.*` thẳng từ repo qua `PYTHONPATH`, không đóng gói thành
+wheel. **Đây là cơ chế cập nhật tự động ở mức triển khai**: nâng cấp thuật toán
+là `git pull && systemctl restart vtx-planner`, không build lại gì bên Python.
+Chỉ khi IDL đổi mới phải build lại C++ - và IDL đổi hiếm hơn thuật toán rất
+nhiều. `planner_version` (`git describe --always --dirty`) nói đúng bản nào đang
+chạy, `config_hash` nói đúng cấu hình nào sinh ra đường bay.
+
+### Giai đoạn 2 - Docker
+
+Một image chứa cả node và worker. Ba điều kiện bắt buộc, đều là chỗ dễ mất một
+ngày để gỡ nếu không biết trước:
+
+- **`--network host`.** Discovery mặc định của Fast DDS dùng multicast. Trên
+  bridge network, discovery chết lặng: không lỗi, không cảnh báo, chỉ là không
+  ai thấy ai.
+- **`--ipc host` và chia sẻ `/dev/shm`**, nếu muốn giữ transport shared-memory.
+- **Ghim đúng phiên bản Fast DDS của bên gọi** trong image.
+
+Cần thấy rõ cái giá: `--network host --ipc host` đã bỏ gần hết sự cách ly vốn là
+lý do dùng Docker. Cái còn lại là khả năng tái lập môi trường build và triển
+khai lên máy mới mà không phải cài toolchain Fast DDS - đó là lợi ích thật,
+nhưng nó là lợi ích về vận hành, không phải về cách ly.
+
+### Một đính chính
+
+Lập luận ban đầu của tài liệu này - "phải build với đúng bản Fast DDS của bên
+gọi, nên không container hoá được" - là **nói quá**. RTPS tương thích trên dây
+khá tốt giữa các bản Fast DDS, nên hai bản khác nhau vẫn nói chuyện được qua
+UDP. Phần đúng hẹp hơn: transport shared-memory nhạy với phiên bản và sẽ âm thầm
+rơi về UDP khi lệch - mà đây đúng là trường hợp hai tiến trình cùng máy, nơi SHM
+đáng giá nhất. Cộng thêm việc tái dùng IDL, quy ước domain/QoS và toolchain sẵn
+có. Đó là lý do chọn systemd trước, không phải lý do cấm Docker.
 
 ## 9. Kiểm thử
 
@@ -447,9 +517,11 @@ trước khi chốt cấu hình transport.
 **Tính không tất định.** Đã phơi ra bằng `budget_bound`, nhưng client phải được
 tài liệu hoá là *không* nên coi service như một hàm thuần.
 
-**Sai lệch phiên bản Fast DDS.** Node phải build với cùng bản Fast DDS như bên
-gọi. Ghi lại phiên bản trong `service/deploy/README.md`, và in nó lúc node khởi
-động.
+**Sai lệch phiên bản Fast DDS.** Trên dây thì RTPS tha thứ, nhưng transport
+shared-memory thì không: lệch phiên bản làm nó âm thầm rơi về UDP, tức mất hiệu
+năng mà không có lỗi nào. Ghi lại phiên bản trong `service/deploy/README.md`, in
+nó lúc node khởi động, và **kiểm tra transport thực tế đang dùng là SHM hay
+UDP** trong log khởi động thay vì giả định.
 
 **Chi phí import khi respawn.** ~1-2 s sau mỗi `PLAN_TIMEOUT`. Nếu timeout trở
 nên thường xuyên chứ không hiếm, đó là tín hiệu phải xem lại ngân sách chứ không
