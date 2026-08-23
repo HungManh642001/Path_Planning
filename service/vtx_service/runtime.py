@@ -10,12 +10,15 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import logging
 import re
 import subprocess
 from pathlib import Path
 
 import config
 import core.kinodynamic_astar_v0 as astar
+
+_log = logging.getLogger("vtx-planner")
 
 _CONFIG_REF = re.compile(r"\bconfig\.([A-Z][A-Z0-9_]*)\b")
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -45,17 +48,38 @@ def config_hash() -> str:
 
 
 def _describe_version() -> str:
-    """Chạy ``git describe`` thật. Chỉ gọi một lần, ngay dưới đây, lúc import."""
+    """Chạy ``git describe`` thật. Chỉ gọi một lần, ngay dưới đây, lúc import.
+
+    R26: timeout 30 s, không phải 5 s. ĐO ĐƯỢC ``git describe`` trên mount này
+    mất 3,60-4,84 s NGAY CẢ Ở TRẠNG THÁI BÌNH THƯỜNG (không phải sự cố) - dưới
+    tải của cả bộ test full suite chạy song song nó vượt qua 5 s, rơi vào
+    ``except`` bên dưới, và hàm ÂM THẦM trả về ``"unknown"``. Đây CHÍNH XÁC là
+    thất bại mà R9/R10 tồn tại để ngăn (một dấu phiên bản vô nghĩa đi vào MỌI
+    reply mà không ai biết), chỉ khác hướng tới: lần này do timeout đua với
+    tải hệ thống, không phải do chỉ số thư mục sai. Chi phí trả MỘT LẦN lúc
+    import, không nằm trên đường request (xem docstring của
+    ``_PLANNER_VERSION`` bên dưới), nên một ngân sách rộng rãi không tốn gì về
+    vận hành - cái không chấp nhận được là SỰ IM LẶNG, không phải thời lượng.
+    Vì vậy timeout được nới rộng THAY VÌ giữ chặt, và mọi lần thật sự rơi vào
+    fallback đều phải LOG, không được trôi qua không dấu vết. ĐỪNG chỉnh số
+    này xuống lại dựa trên trực giác "5 s là đủ" - nó đã đo được KHÔNG đủ ngay
+    cả không có tải bất thường.
+    """
     try:
         proc = subprocess.run(
             ["git", "describe", "--always", "--dirty"],
             cwd=_REPO_ROOT,
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=30,
             check=True,
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as exc:
+        _log.warning(
+            "planner_version(): 'git describe' thất bại (%s) - dùng 'unknown'. "
+            "Mọi reply từ tiến trình này sẽ mang một dấu phiên bản vô nghĩa.",
+            exc,
+        )
         return "unknown"
     return proc.stdout.strip() or "unknown"
 

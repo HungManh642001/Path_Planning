@@ -32,6 +32,7 @@ pytest.importorskip(
 
 from cyclonedds.idl.types import uint32  # noqa: E402
 
+import vtx_service.transport as transport_module  # noqa: E402
 from vtx_service.transport import (  # noqa: E402
     DdsTransport,
     VehicleLimits as WireVehicleLimits,
@@ -263,3 +264,51 @@ def test_invalid_geometry_becomes_invalid_request_not_internal_error() -> None:
     reply = fake_writer.written[0]
     assert reply.status == int(PlanStatus.INVALID_REQUEST)  # type: ignore[attr-defined]
     assert "turn_radius_m" in reply.detail  # type: ignore[attr-defined]
+
+
+def test_a_non_value_error_during_translation_becomes_internal_error_not_a_dead_serve_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R25: F2 narrowed ``_handle_one``'s catch around ``_to_domain`` from
+    ``except Exception`` to ``except ValueError``, which reopened the exact
+    hole R18(a) closed - a non-``ValueError`` exception during translation
+    now has nowhere to land, since ``serve()`` does not wrap
+    ``_handle_one``. Every current ``__post_init__`` happens to raise only
+    ``ValueError``, so this was latent, not visible - but a future validator
+    raising ``TypeError``/``KeyError``/... would kill ``serve()``
+    permanently. Simulate that by monkeypatching ``_to_domain`` to raise a
+    non-``ValueError``, and assert both that the bad request gets
+    ``INTERNAL_ERROR`` and that the loop survives to answer a good request
+    right after.
+    """
+    real_to_domain = transport_module._to_domain
+
+    def _boom(wire: object) -> PlanRequest:
+        raise TypeError("hình học không phải ValueError - lỗi giả lập cho R25")
+
+    def handler(incoming: PlanRequest) -> PlanReply:
+        return _reply(incoming)
+
+    service = DdsTransport(domain_id=DOMAIN + 12)
+    client = DdsTransport(domain_id=DOMAIN + 12)
+    thread = threading.Thread(target=service.serve, args=(handler,), daemon=True)
+    thread.start()
+    try:
+        assert client.wait_for_service(timeout_s=20.0)
+
+        monkeypatch.setattr(transport_module, "_to_domain", _boom)
+        bad_id = uuid.uuid4().bytes
+        bad_reply = client.request(_request(bad_id), timeout_s=30.0)
+        assert bad_reply.request_id == bad_id
+        assert bad_reply.status is PlanStatus.INTERNAL_ERROR
+
+        # Vòng phục vụ phải vẫn sống: một request TỐT ngay sau đó vẫn được
+        # trả lời đúng - nếu R25 chưa sửa, serve() đã chết ở request trên.
+        monkeypatch.setattr(transport_module, "_to_domain", real_to_domain)
+        good_id = uuid.uuid4().bytes
+        good_reply = client.request(_request(good_id), timeout_s=30.0)
+        assert good_reply.request_id == good_id
+        assert good_reply.status is PlanStatus.ORACLE_REJECTED
+    finally:
+        service.close()
+        client.close()

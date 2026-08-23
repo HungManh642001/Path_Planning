@@ -369,14 +369,23 @@ class DdsTransport:
     ) -> None:
         """Xử lý một request, không bao giờ để lỗi thoát ra ngoài.
 
-        Ba tầng lỗi tách bạch, phân loại KHÁC nhau:
+        Bốn tầng lỗi tách bạch, phân loại KHÁC nhau:
 
         - ``_to_domain`` ném ``ValueError`` - client gửi hình học vô lý (vd.
           ``VehicleLimits`` toàn 0). Đây là PLAN_INVALID_REQUEST, giữ nguyên
           thông báo validate gốc (mục 6 của spec) - KHÔNG rơi vào catch chung
           bên dưới, nơi nó từng bị nuốt thành INTERNAL_ERROR mất hết thông tin.
+        - ``_to_domain`` ném bất kỳ lỗi KHÁC ``ValueError`` - PLAN_INTERNAL_ERROR.
+          (R25) Hẹp catch ở nhánh trên từ ``Exception`` xuống ``ValueError`` mở
+          lại đúng lỗ hổng R18(a) đã đóng: mọi ``__post_init__`` hiện tại chỉ
+          ném ``ValueError``, nên lỗ hổng này còn ẩn - nhưng nếu một validator
+          sau này ném thứ khác (``TypeError``, ``KeyError``...), nó sẽ THOÁT
+          KHỎI ``_handle_one`` hoàn toàn (``serve()`` không bọc lời gọi này) và
+          hạ vòng phục vụ VĨNH VIỄN. Bất biến "không ngoại lệ nào hạ được
+          ``serve()``" phải giữ ở CẢ HAI hướng phân loại, không chỉ hướng vừa
+          sửa.
         - ``handler`` ném lỗi bất kỳ khác - PLAN_INTERNAL_ERROR.
-        - dịch reply (của handler hoặc của hai nhánh trên) ra kiểu trên dây
+        - dịch reply (của handler hoặc của ba nhánh trên) ra kiểu trên dây
           thất bại - cũng PLAN_INTERNAL_ERROR.
 
         Không nhánh nào được phép hạ cả service: mọi lỗi trả về một reply
@@ -389,6 +398,13 @@ class DdsTransport:
             domain_request = _to_domain(wire)  # type: ignore[arg-type]
         except ValueError as exc:
             reply = _invalid_request_reply(request_id, str(exc))
+        except Exception:  # noqa: BLE001 - R25: bất kỳ lỗi KHÁC nào ở đây cũng không được hạ service
+            print(
+                f"[transport] request {request_id.hex()} lỗi khi dịch request từ dây:\n"
+                f"{traceback.format_exc(limit=5)}",
+                file=sys.stderr,
+            )
+            reply = _internal_error_reply(request_id, "internal error khi dịch request")
         else:
             try:
                 reply = handler(domain_request)
