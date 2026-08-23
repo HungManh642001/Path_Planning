@@ -1,0 +1,77 @@
+// Hợp đồng dữ liệu của service lập kế hoạch đường bay VTX.
+//
+// Toạ độ: MÉT trên mặt phẳng Oxy, +y là bắc, +x là đông.
+// Góc: ĐỘ, phương vị thật, thuận chiều kim đồng hồ từ chính bắc.
+//
+// Giá trị PlanStatus khớp chính xác service/vtx_service/messages.py.
+// Không có trường hệ quy chiếu: chỉ có một hệ toạ độ. Không có map_bounds: safezones
+// biểu diễn được đúng vùng đó và không phụ thuộc vào vị trí gốc toạ độ.
+//
+// budget CHƯA được tôn trọng; reply mang applied_time_budget_s là giá trị
+// service thực sự đã dùng.
+
+module vtx { module planning {
+
+enum PlanStatus { PLAN_OK, PLAN_NO_PATH, PLAN_START_LEG_BLOCKED,
+                  PLAN_GOAL_LEG_BLOCKED, PLAN_ORACLE_REJECTED,
+                  PLAN_INVALID_REQUEST, PLAN_TIMEOUT, PLAN_INTERNAL_ERROR,
+                  PLAN_BUSY };
+
+struct Point2D  { double x; double y; };
+struct Polygon  { sequence<Point2D> vertices; };   // vành mở
+struct Circle   { Point2D center; double radius_m; };
+
+struct VehicleLimits {
+  double turn_radius_m;
+  double l0_m;
+  double dss_m;
+  double safe_margin_m;
+  double alpha_max_deg;
+};
+
+struct SearchBudget {
+  double        time_budget_s;
+  unsigned long max_iterations;
+};
+
+struct VtxPathPlanRequest {
+  @key octet          request_id[16];
+  unsigned long       idl_version;
+  Point2D             start;
+  double              start_heading_deg;
+  Point2D             goal;
+  double              goal_heading_deg;
+  boolean             goal_heading_free;
+  sequence<Polygon>   islands;
+  sequence<Circle>    dynamic_obstacles;
+  sequence<Polygon>   safezones;
+  boolean             use_preloaded_map;
+  VehicleLimits       limits;
+  SearchBudget        budget;
+};
+
+struct Waypoint { Point2D position; double heading_deg; };
+
+struct SearchStats {
+  unsigned long iterations;
+  unsigned long max_iterations;
+  unsigned long open_set_size;
+  boolean       search_failed;
+  boolean       budget_bound;
+};
+
+struct VtxPathPlanReply {
+  @key octet          request_id[16];
+  unsigned long       idl_version;
+  PlanStatus          status;
+  string              detail;
+  sequence<Waypoint>  waypoints;      // đường bay đầy đủ O..T
+  double              path_length_m;
+  double              plan_wall_time_s;
+  double              applied_time_budget_s;
+  SearchStats         stats;
+  string              planner_version;
+  string              config_hash;
+};
+
+}; };
