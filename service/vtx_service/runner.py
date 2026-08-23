@@ -25,9 +25,11 @@ thứ gì thuộc DDS.
 from __future__ import annotations
 
 import multiprocessing as mp
+import os
 import time
 import traceback
 from multiprocessing.connection import Connection
+from pathlib import Path
 
 from vtx_service.map_file import PreloadedMap
 from vtx_service.messages import (
@@ -54,6 +56,45 @@ _PRELOAD = [
 
 Trả giá import một lần thay vì mỗi request: đo được 1012 ms xuống 56 ms.
 """
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_SERVICE_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _ensure_pythonpath_for_forkserver() -> None:
+    """Đảm bảo tiến trình forkserver import được ``_PRELOAD`` - ĐO ĐƯỢC cái giá
+    của việc không làm điều này: ~50x mỗi request, ÂM THẦM.
+
+    ``forkserver`` là fork+exec một interpreter HOÀN TOÀN MỚI (xem docstring
+    module), nên nó đọc biến môi trường ``PYTHONPATH`` của tiến trình cha -
+    KHÔNG thấy được các mục ``sys.path`` mà cha thêm LÚC CHẠY (ví dụ
+    ``conftest.py`` chèn gốc repo và ``service/`` vào ``sys.path`` mỗi lần
+    pytest chạy, nhưng không đặt biến môi trường). Khi forkserver không import
+    được một module trong ``_PRELOAD``, ``multiprocessing`` NUỐT ImportError
+    ÂM THẦM - không lỗi, không log - và mỗi tiến trình con dùng-một-lần quay về
+    tự import mọi thứ từ đầu, kể cả ``git describe`` lúc import module
+    (``runtime._PLANNER_VERSION`` - chính thứ R15 định loại khỏi đường
+    request). ĐO ĐƯỢC trên máy này, 3 lần submit mỗi cách:
+    ``sys.path`` sửa lúc chạy (như conftest.py làm)  -> 3,52 / 3,69 / 4,05 s
+    ``PYTHONPATH`` đặt qua biến môi trường            -> 0,07 / 0,07 / 0,08 s
+    ~50x, và KHÔNG hiện ra ở đâu cả trừ đồng hồ treo tường.
+
+    Production tình cờ ổn vì unit systemd đặt ``PYTHONPATH``. Nhưng phụ thuộc
+    đó VÔ HÌNH: chạy service theo cách khác (vd. gọi tay ``python -m
+    vtx_service.main`` từ một checkout không đặt biến) là chậm hơn 50x mà
+    không một cảnh báo nào. Nên KHÔNG dựa vào chỗ gọi đã đặt đúng biến -
+    ``start()`` tự đảm bảo lấy, PHẢI gọi TRƯỚC ``mp.get_context("forkserver")``.
+
+    NỐI THÊM vào ``PYTHONPATH`` đã có, không THAY THẾ: một chỗ gọi có thể có
+    mục riêng hợp lệ trong đó. Bỏ qua mục nào đã có sẵn.
+    """
+    existing = os.environ.get("PYTHONPATH", "")
+    entries = [p for p in existing.split(os.pathsep) if p]
+    for required in (str(_REPO_ROOT), str(_SERVICE_ROOT)):
+        if required not in entries:
+            entries.append(required)
+    os.environ["PYTHONPATH"] = os.pathsep.join(entries)
 
 
 def _child(pipe: Connection, request: PlanRequest, preloaded: PreloadedMap | None,
@@ -111,6 +152,7 @@ class PlanRunner:
 
     def start(self) -> None:
         """Khởi động forkserver. PHẢI gọi trước khi khởi tạo DDS."""
+        _ensure_pythonpath_for_forkserver()
         mp.set_forkserver_preload(_PRELOAD)
         self._ctx = mp.get_context("forkserver")
         # Ép forkserver ra đời NGAY BÂY GIỜ, trong khi tiến trình này còn sạch

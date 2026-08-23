@@ -7,7 +7,9 @@ con là cách duy nhất để có thời hạn cứng thật.
 
 from __future__ import annotations
 
+import os
 import time
+from pathlib import Path
 
 import pytest
 
@@ -76,17 +78,32 @@ def test_child_start_cost_is_within_the_measured_envelope(runner: PlanRunner) ->
     fork+exec một interpreter mới). Từ khi `_PLANNER_VERSION` chuyển sang
     tính lúc IMPORT MODULE (một lần, trong tiến trình forkserver, trước khi
     có tiến trình con nào - xem `runtime.py`), subprocess đó biến mất hoàn
-    toàn khỏi đường request: đo lại 4 submit liên tiếp trên máy này ra
-    1.03-1.09 s mỗi lần, gần như không dao động. 2.0 s giữ khoảng 2x biên độ
-    an toàn cho máy chậm/dao động tải, và vẫn đủ chặt để bắt được đúng kiểu
-    hồi quy test này sinh ra để bắt: lỡ ai "tối ưu" _PLANNER_VERSION trở lại
-    thành lazy/`lru_cache`, chi phí subprocess-trên-mỗi-request quay lại và
-    đẩy con số này lên 3.5 s+, thất bại rõ ràng trước ngưỡng 2.0 s.
+    toàn khỏi đường request.
+
+    MỘT LẦN NỮA nới ngưỡng này trông như flake trước khi lộ ra là chính XÁC
+    cùng một họ lỗi: `sys.path` bị `conftest.py` sửa LÚC CHẠY, mà forkserver
+    là fork+exec - một interpreter MỚI đọc `PYTHONPATH` từ biến môi trường,
+    KHÔNG thấy được `sys.path` cha thêm lúc chạy. Khi forkserver không import
+    được `_PRELOAD`, `multiprocessing` NUỐT ImportError ÂM THẦM, quay về tự
+    import mọi thứ trong tiến trình con - kể cả `git describe` mà đoạn trên
+    tưởng đã loại bỏ. ĐO ĐƯỢC trên máy này, 3 submit mỗi cách: `sys.path` sửa
+    lúc chạy 3.52 / 3.69 / 4.05 s; `PYTHONPATH` đặt qua biến môi trường 0.07 /
+    0.07 / 0.08 s - khoảng 50x. Sửa ở `PlanRunner.start()`
+    (`_ensure_pythonpath_for_forkserver`), không phải ở đây.
+
+    Sau sửa, `--durations` đo được submit thứ hai ~0.2-0.3 s trên máy này.
+    NGƯỠNG SIẾT từ 2.0 s xuống 1.0 s: 2.0 s không còn "đủ chặt" theo đúng
+    nghĩa test này tồn tại để bắt - nó vẫn bắt được kiểu hồi quy CŨ (import
+    thất bại quay về ~3.5 s+) nhưng sẽ bỏ lọt một hồi quy NHỎ hơn, ví dụ một
+    chi phí ~500 ms-1 s mới bị thêm vào đường request mà không đủ lớn để chạm
+    2.0 s. 1.0 s vẫn giữ ~3-5x biên độ an toàn trên số đo thực tế (~0.2-0.3 s)
+    cho máy chậm/dao động tải, và thấp hơn MỘT BẬC ĐỘ LỚN so với sàn của cả
+    hai kiểu hồi quy đã biết (~3.5 s).
     """
     runner.submit(_request())  # bỏ lần đầu (khởi động forkserver)
     started = time.perf_counter()
     runner.submit(_request())
-    assert time.perf_counter() - started < 2.0
+    assert time.perf_counter() - started < 1.0
 
 
 def test_a_hung_child_becomes_timeout_and_the_runner_keeps_working() -> None:
@@ -175,4 +192,47 @@ def test_unlimited_budget_does_not_get_killed_by_the_grace_period() -> None:
         assert reply.detail == ""
     finally:
         config.TIME_BUDGET_S = saved
+        instance.stop()
+
+
+def test_start_ensures_pythonpath_for_the_forkserver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pins the MECHANISM, not the clock.
+
+    ``forkserver`` is fork+exec - a fresh interpreter that reads
+    ``PYTHONPATH`` from the environment, not the parent's runtime
+    ``sys.path`` (exactly what pytest's ``conftest.py`` sets up: it inserts
+    the repo root and ``service/`` into ``sys.path`` at import time, without
+    touching the environment). When the forkserver cannot import
+    ``_PRELOAD`` because of that, ``multiprocessing`` swallows the
+    ``ImportError`` SILENTLY, and every child falls back to importing
+    everything itself - including the import-time ``git describe`` R15 was
+    supposed to remove from the request path.
+
+    Measured on this machine, 3 submits each: ``sys.path`` edited at runtime
+    (the broken case) 3.52 / 3.69 / 4.05 s; ``PYTHONPATH`` set as an
+    environment variable (the fixed case) 0.07 / 0.07 / 0.08 s - roughly 50x,
+    invisible anywhere except the wall clock.
+
+    ``PYTHONPATH`` is pre-seeded with an unrelated sentinel entry here to
+    pin the other half of the contract: ``start()`` must APPEND, never
+    replace - a caller may have legitimate entries of its own.
+    """
+    sentinel = "/some/unrelated/caller/entry"
+    monkeypatch.setenv("PYTHONPATH", sentinel)
+
+    instance = PlanRunner(preloaded=None)
+    instance.start()
+    try:
+        # Derived independently of runner._REPO_ROOT / _SERVICE_ROOT, so this
+        # test can tell a correct value from a broken one instead of trusting
+        # the same computation it means to check.
+        repo_root = str(Path(__file__).resolve().parents[2])
+        service_root = str(Path(__file__).resolve().parents[1])
+        entries = os.environ["PYTHONPATH"].split(os.pathsep)
+        assert repo_root in entries
+        assert service_root in entries
+        assert sentinel in entries
+    finally:
         instance.stop()

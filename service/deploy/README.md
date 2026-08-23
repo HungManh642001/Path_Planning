@@ -29,6 +29,27 @@ sudo systemctl enable --now vtx-planner
 không matplotlib, không pyproj. Xem `requirements.txt` để biết vì sao cái pin
 `numpy==1.26.4` ở gốc repo không áp dụng ở đây.
 
+## `PYTHONPATH`
+
+`vtx-planner.service` đặt `PYTHONPATH=/opt/vtx/path_planning:.../service` và
+NÊN tiếp tục làm vậy - tiến trình top-level (`python -m vtx_service.main`) vẫn
+cần nó để tìm ra package `vtx_service`/`core` khi khởi động.
+
+Nhưng service KHÔNG còn PHỤ THUỘC vào biến này để tiến trình con lập kế hoạch
+import đúng: `PlanRunner.start()` tự đảm bảo `PYTHONPATH` chứa gốc repo và
+`service/` (nối thêm, không thay thế) trước khi tạo tiến trình `forkserver` -
+xem `runner.py::_ensure_pythonpath_for_forkserver`. Trước bản sửa này, ai đó
+chẩn đoán bằng cách chạy module tay (vd. `python -m vtx_service.main` từ một
+checkout không đặt `PYTHONPATH`, hoặc gọi qua một harness sửa `sys.path` lúc
+chạy như pytest hay làm) sẽ đo được một service **chậm hơn ~50x** so với bản
+triển khai thật - KHÔNG lỗi, KHÔNG cảnh báo, chỉ chậm âm thầm: `forkserver` là
+fork+exec một interpreter mới, đọc `PYTHONPATH` từ biến môi trường chứ không
+thấy `sys.path` cha thêm lúc chạy, và khi import `_PRELOAD` thất bại,
+`multiprocessing` nuốt lỗi im lặng rồi để mỗi tiến trình con tự import lại mọi
+thứ - kể cả `git describe` mà `runtime.py` đáng lẽ chỉ trả một lần. Đo được:
+`sys.path` sửa lúc chạy 3.52-4.05 s/request; `PYTHONPATH` đặt qua biến môi
+trường 0.07-0.08 s/request.
+
 ## Nâng cấp thuật toán
 
 ```bash
