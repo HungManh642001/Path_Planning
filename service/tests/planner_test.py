@@ -92,6 +92,10 @@ def test_a_wrong_idl_version_is_refused_without_searching() -> None:
     assert reply.status is PlanStatus.INVALID_REQUEST
     assert "idl_version" in reply.detail
     assert reply.stats.iterations == 0
+    # Hardcoding 0.0 here would be wrong: a refusal still burns real wall
+    # time in the caller's process, and the operator's first check on a
+    # refusal is how long it took.
+    assert reply.plan_wall_time_s >= 0.0
 
 
 def test_asking_for_a_map_the_service_does_not_have_is_refused() -> None:
@@ -119,3 +123,16 @@ def test_the_preloaded_map_actually_changes_the_route(tmp_path: Path) -> None:
 
 def test_wall_time_is_measured_and_positive() -> None:
     assert plan(_request()).plan_wall_time_s > 0.0
+
+
+def test_the_shipped_planner_is_v0_not_main() -> None:
+    """Kept separate from ``equivalence_test.py`` on purpose: that test's
+    ``test_adapter_is_transparent`` only diverges on 5/18 presets when the
+    planner module is swapped (measured Task 8) - alone it is not a reliable
+    guard against a planner swap. This one-line identity check is: it fails
+    on ANY swap, regardless of which presets happen to agree.
+    """
+    import core.kinodynamic_astar_v0 as v0
+    import vtx_service.planner as planner_module
+
+    assert planner_module.astar is v0

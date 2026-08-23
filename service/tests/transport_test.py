@@ -6,9 +6,9 @@ còn tệ hơn không có test.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 import threading
-import time
 import uuid
 from pathlib import Path
 
@@ -30,7 +30,14 @@ pytest.importorskip(
     "cyclonedds", reason="chưa cài binding DDS; xem quyết định ở Task 1"
 )
 
-from vtx_service.transport import DdsTransport  # noqa: E402
+from cyclonedds.idl.types import uint32  # noqa: E402
+
+from vtx_service.transport import (  # noqa: E402
+    DdsTransport,
+    VehicleLimits as WireVehicleLimits,
+    WireReply,
+    _to_wire_request,
+)
 
 IDL_PATH = Path(__file__).resolve().parents[1] / "idl" / "vtx_path_planning.idl"
 DOMAIN = 92
@@ -76,6 +83,26 @@ def test_idl_status_enum_matches_python_exactly() -> None:
     assert match
     members = [item.strip() for item in match.group(1).split(",") if item.strip()]
     assert members == [f"PLAN_{member.name}" for member in PlanStatus]
+
+
+def test_idl_status_field_type_is_documented_as_diverging() -> None:
+    """The one genuine IDL/Python divergence the ordinal check above cannot see.
+
+    The IDL declares ``PlanStatus status;`` (the enum) as the wire type for
+    ``VtxPathPlanReply.status``; ``transport.py``'s ``WireReply`` declares
+    ``status: uint32`` instead. That is deliberate - cyclonedds only accepts
+    a cyclonedds-native enum (``cyclonedds.idl.IdlEnum``) as an IdlStruct
+    field, and giving ``msg.PlanStatus`` that base class would pull the DDS
+    binding into ``messages.py``, which its module docstring forbids. Both
+    files carry a comment explaining this; this test pins the two field
+    TYPES (IDL enum vs. Python uint32) as a documented, deliberate split so
+    a future edit cannot silently widen it (e.g. a new field that quietly
+    also becomes plain ``uint32`` in Python while the IDL keeps a real type).
+    """
+    text = IDL_PATH.read_text(encoding="utf-8")
+    assert re.search(r"\bPlanStatus\s+status\s*;", text)
+    status_field = next(f for f in dataclasses.fields(WireReply) if f.name == "status")
+    assert status_field.type is uint32
 
 
 def test_idl_has_no_frame_field() -> None:
@@ -190,3 +217,49 @@ def test_a_handler_exception_does_not_kill_serve() -> None:
     finally:
         service.close()
         client.close()
+
+
+def test_invalid_geometry_becomes_invalid_request_not_internal_error() -> None:
+    """F2: a ``ValueError`` escaping the dataclass validation layer (in
+    ``_to_domain``, when it constructs ``msg.VehicleLimits`` / ``msg.Circle``
+    / ``msg.PlanRequest``) must classify as ``PLAN_INVALID_REQUEST`` with the
+    original message preserved in ``detail`` - not fall into the generic
+    ``except Exception`` catch around the handler call, which used to turn it
+    into a generic ``PLAN_INTERNAL_ERROR`` and discard the real message
+    (e.g. "turn_radius_m phải dương").
+
+    The bad geometry - all-zero ``VehicleLimits``, the single most likely
+    client mistake per spec §6 - has to be injected at the WIRE level: a
+    domain ``msg.PlanRequest`` cannot even be constructed with it, since
+    ``msg.VehicleLimits.__post_init__`` validates immediately. A real DDS
+    client sends raw, unvalidated floats over the wire, so this is exactly
+    what reaches ``_to_domain`` in production. The handler asserts it is
+    never called - proof this is classified BEFORE reaching it.
+    """
+
+    class _FakeWriter:
+        def __init__(self) -> None:
+            self.written: list[object] = []
+
+        def write(self, sample: object) -> None:
+            self.written.append(sample)
+
+    def handler(incoming: PlanRequest) -> PlanReply:
+        raise AssertionError("handler must not be reached for a malformed request")
+
+    service = DdsTransport(domain_id=DOMAIN + 9)
+    fake_writer = _FakeWriter()
+    try:
+        service._reply_writer = fake_writer  # type: ignore[assignment]
+        good_wire = _to_wire_request(_request(uuid.uuid4().bytes))
+        bad_wire = dataclasses.replace(
+            good_wire, limits=WireVehicleLimits(0.0, 0.0, 0.0, 0.0, 0.0)
+        )
+        service._handle_one(bad_wire, handler)
+    finally:
+        service.close()
+
+    assert len(fake_writer.written) == 1
+    reply = fake_writer.written[0]
+    assert reply.status == int(PlanStatus.INVALID_REQUEST)  # type: ignore[attr-defined]
+    assert "turn_radius_m" in reply.detail  # type: ignore[attr-defined]

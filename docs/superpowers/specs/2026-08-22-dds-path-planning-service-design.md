@@ -139,7 +139,13 @@ nào từng fork từ một tiến trình có thread DDS. `set_forkserver_preloa
 
 ### Cái cố tình không có
 
-Không hàng đợi, không worker pool: 1 request/lúc. Bận thì trả `PLAN_BUSY`.
+Không hàng đợi tường minh, không worker pool: 1 request/lúc, tuần tự.
+**Sửa bản này (R23):** không có phát hiện "bận". `PLAN_BUSY` giữ chỗ
+trong enum (mục 4) nhưng không đường mã nào sinh ra nó - phát hiện bận
+cần một luồng đọc riêng, mâu thuẫn với thiết kế một-request-một-lúc.
+Thay vào đó: một request đến khi service đang bận được DDS (RELIABLE +
+KEEP_ALL trên topic request) **xếp hàng** và trả lời sau, theo đúng thứ
+tự - không bị từ chối.
 Không C++, không giao thức nội bộ, không msgpack, không Unix socket.
 
 ## 4. Hợp đồng dữ liệu
@@ -167,7 +173,7 @@ lớp transport dịch sang kiểu của stack DDS được chọn. IDL `.idl` t
 ```
 PlanStatus:  OK=0, NO_PATH=1, START_LEG_BLOCKED=2, GOAL_LEG_BLOCKED=3,
              ORACLE_REJECTED=4, INVALID_REQUEST=5, TIMEOUT=6,
-             INTERNAL_ERROR=7, BUSY=8
+             INTERNAL_ERROR=7, BUSY=8 (reserved - không đường mã nào sinh ra, xem mục 3)
 
 Point2D            x, y                                    (mét)
 Polygon            vertices: sequence<Point2D>             (vành mở)
@@ -307,9 +313,10 @@ Ba quy tắc:
 ## 6. Vòng đời request
 
 ```
-DDS request --> service loop
+DDS request --> service loop (tuần tự; đến khi đang bận thì DDS XẾP
+                               HÀNG, không có nhánh "đang bận" ở đây -
+                               xem mục 3, PLAN_BUSY là reserved)
   |- idl_version sai / hình học vô lý     --> PLAN_INVALID_REQUEST
-  |- đang bận                             --> PLAN_BUSY
   |- use_preloaded_map nhưng không có map --> PLAN_INVALID_REQUEST
   `- PlanRunner.submit()
         |- forkserver tạo con (median 56 ms)

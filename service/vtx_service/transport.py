@@ -40,6 +40,7 @@ from cyclonedds.topic import Topic
 from cyclonedds.util import duration
 
 from vtx_service import messages as msg
+from vtx_service import runtime
 
 REQUEST_TOPIC = "VtxPathPlanRequest"
 REPLY_TOPIC = "VtxPathPlanReply"
@@ -127,6 +128,16 @@ class WireReply(IdlStruct, typename="vtx.planning.VtxPathPlanReply"):
     request_id: array[uint8, 16]
     key("request_id")
     idl_version: uint32
+    # uint32, NOT msg.PlanStatus / the IDL's `PlanStatus status`, on purpose:
+    # cyclonedds only accepts a *cyclonedds-native* enum type
+    # (`cyclonedds.idl.IdlEnum`) as an IdlStruct field (verified - a plain
+    # `enum.IntEnum` field raises `AttributeError: __idl_annotations__` at
+    # Topic construction). Giving `msg.PlanStatus` that base class would pull
+    # the DDS binding into `messages.py`, which the module docstring there
+    # forbids. So the ordinal crosses the wire as a bare `uint32`, and
+    # `test_idl_status_enum_matches_python_exactly` (+ its sibling checking
+    # this field's TYPE) is what keeps the two sides from silently drifting
+    # apart on the numbering that makes this safe.
     status: uint32
     detail: str
     waypoints: sequence[Waypoint]
@@ -257,6 +268,14 @@ def _internal_error_reply(request_id: bytes, detail: str) -> msg.PlanReply:
 
     Dùng khi handler ném lỗi, hoặc khi dịch reply của nó ra kiểu trên dây thất
     bại - cả hai đều không được phép làm chết vòng ``serve``.
+
+    ``planner_version`` / ``config_hash`` / ``applied_time_budget_s`` là giá
+    trị THẬT (qua ``vtx_service.runtime``, module không phụ thuộc DDS), không
+    phải chuỗi rỗng / ``0.0`` mặc định: mục 4.4 của spec tồn tại để client
+    phân biệt được "input khác" với "bản build/cấu hình khác", và ``0.0`` ở
+    ``applied_time_budget_s`` không hề trung tính - nó ĐỌC ĐƯỢC như "không
+    giới hạn" (xem ``runtime.effective_time_budget_s``), nên một placeholder
+    ở đây không chỉ thiếu thông tin mà còn SAI.
     """
     return msg.PlanReply(
         request_id=request_id,
@@ -266,10 +285,36 @@ def _internal_error_reply(request_id: bytes, detail: str) -> msg.PlanReply:
         waypoints=(),
         path_length_m=0.0,
         plan_wall_time_s=0.0,
-        applied_time_budget_s=0.0,
-        stats=msg.SearchStats(0, 0, 0, True, False),
-        planner_version="",
-        config_hash="",
+        applied_time_budget_s=runtime.effective_time_budget_s(),
+        stats=msg.SearchStats(0, runtime.effective_max_iterations(), 0, True, False),
+        planner_version=runtime.planner_version(),
+        config_hash=runtime.config_hash(),
+    )
+
+
+def _invalid_request_reply(request_id: bytes, detail: str) -> msg.PlanReply:
+    """Reply PLAN_INVALID_REQUEST khi wire request không dịch được sang domain.
+
+    ``_to_domain`` dựng ``msg.VehicleLimits`` / ``msg.Circle`` / ``msg.
+    PlanRequest``, và ``__post_init__`` của chúng validate - nên một
+    ``ValueError`` thoát ra từ đó nghĩa là client gửi hình học vô lý (ví dụ
+    ``VehicleLimits`` mặc định toàn 0, lỗi client dễ mắc nhất). Đây PHẢI là
+    PLAN_INVALID_REQUEST theo mục 6 của spec, không phải INTERNAL_ERROR - và
+    thông báo gốc (``turn_radius_m phải dương`` và tương tự) được giữ nguyên
+    văn trong ``detail``, vì đó là thứ client cần để sửa request.
+    """
+    return msg.PlanReply(
+        request_id=request_id,
+        idl_version=msg.IDL_VERSION,
+        status=msg.PlanStatus.INVALID_REQUEST,
+        detail=detail,
+        waypoints=(),
+        path_length_m=0.0,
+        plan_wall_time_s=0.0,
+        applied_time_budget_s=runtime.effective_time_budget_s(),
+        stats=msg.SearchStats(0, runtime.effective_max_iterations(), 0, True, False),
+        planner_version=runtime.planner_version(),
+        config_hash=runtime.config_hash(),
     )
 
 
@@ -324,24 +369,48 @@ class DdsTransport:
     ) -> None:
         """Xử lý một request, không bao giờ để lỗi thoát ra ngoài.
 
-        Một request hỏng - handler ném lỗi, hoặc dịch reply của nó ra kiểu
-        trên dây thất bại - không được phép hạ cả service: trả về
-        PLAN_INTERNAL_ERROR mang đúng ``request_id`` rồi tiếp tục vòng lặp.
-        Nếu dựng CẢ reply lỗi cũng thất bại, log rồi bỏ qua mẫu tin này -
-        vòng lặp vẫn phải sống tới mẫu tiếp theo.
+        Ba tầng lỗi tách bạch, phân loại KHÁC nhau:
+
+        - ``_to_domain`` ném ``ValueError`` - client gửi hình học vô lý (vd.
+          ``VehicleLimits`` toàn 0). Đây là PLAN_INVALID_REQUEST, giữ nguyên
+          thông báo validate gốc (mục 6 của spec) - KHÔNG rơi vào catch chung
+          bên dưới, nơi nó từng bị nuốt thành INTERNAL_ERROR mất hết thông tin.
+        - ``handler`` ném lỗi bất kỳ khác - PLAN_INTERNAL_ERROR.
+        - dịch reply (của handler hoặc của hai nhánh trên) ra kiểu trên dây
+          thất bại - cũng PLAN_INTERNAL_ERROR.
+
+        Không nhánh nào được phép hạ cả service: mọi lỗi trả về một reply
+        mang đúng ``request_id`` rồi vòng lặp tiếp tục. Nếu dựng CẢ reply lỗi
+        cũng thất bại, log rồi bỏ qua mẫu tin này - vòng lặp vẫn phải sống tới
+        mẫu tiếp theo.
         """
         request_id = bytes(wire.request_id)  # type: ignore[attr-defined]
         try:
-            wire_reply = _to_wire_reply(handler(_to_domain(wire)))  # type: ignore[arg-type]
-        except Exception:  # noqa: BLE001 - một request hỏng không được hạ cả service
+            domain_request = _to_domain(wire)  # type: ignore[arg-type]
+        except ValueError as exc:
+            reply = _invalid_request_reply(request_id, str(exc))
+        else:
+            try:
+                reply = handler(domain_request)
+            except Exception:  # noqa: BLE001 - một request hỏng không được hạ cả service
+                print(
+                    f"[transport] request {request_id.hex()} lỗi khi xử lý:\n"
+                    f"{traceback.format_exc(limit=5)}",
+                    file=sys.stderr,
+                )
+                reply = _internal_error_reply(request_id, "internal error khi xử lý request")
+
+        try:
+            wire_reply = _to_wire_reply(reply)
+        except Exception:  # noqa: BLE001 - dịch reply lỗi cũng không được hạ service
             print(
-                f"[transport] request {request_id.hex()} lỗi khi xử lý:\n"
+                f"[transport] request {request_id.hex()} lỗi khi dịch reply ra kiểu trên dây:\n"
                 f"{traceback.format_exc(limit=5)}",
                 file=sys.stderr,
             )
             try:
                 wire_reply = _to_wire_reply(
-                    _internal_error_reply(request_id, "internal error khi xử lý request")
+                    _internal_error_reply(request_id, "internal error khi dịch reply")
                 )
             except Exception:  # noqa: BLE001 - dựng reply lỗi cũng không được hạ service
                 print(
@@ -410,5 +479,13 @@ class DdsTransport:
         raise TimeoutError(f"không có reply cho {request.request_id.hex()[:8]}")
 
     def close(self) -> None:
-        """Dừng vòng phục vụ và giải phóng thực thể DDS."""
+        """Dừng vòng phục vụ.
+
+        Chỉ hạ cờ ``_running`` để :meth:`serve` thoát ở lượt ``wait`` tiếp
+        theo (tối đa 200 ms) - KHÔNG giải phóng participant/topic/writer/
+        reader. Chúng sống tới khi tiến trình thoát và hệ điều hành thu hồi;
+        đây là service một-tiến-trình chạy tới khi bị dừng, không phải một
+        transport được tạo/hủy nhiều lần trong đời một tiến trình, nên không
+        có gì cần dọn sớm hơn thế.
+        """
         self._running = False

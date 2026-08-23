@@ -12,7 +12,6 @@ import time
 import pytest
 
 from vtx_service.messages import (
-    Circle,
     PlanRequest,
     PlanStatus,
     SearchBudget,
@@ -104,11 +103,15 @@ def test_a_hung_child_becomes_timeout_and_the_runner_keeps_working() -> None:
     instance.start()
     try:
         config.TIME_BUDGET_S = 0.5
-        instance.force_hang_next = True  # cửa hậu chỉ dùng cho test
+        instance._force_hang_next = True  # cửa hậu chỉ dùng cho test
         hung = instance.submit(_request())
         assert hung.status is PlanStatus.TIMEOUT
         assert hung.request_id == b"\x06" * 16
         assert hung.waypoints == ()
+        # Elapsed time is essentially the deadline it burned - 0.0 would be
+        # the first field an operator would question on a TIMEOUT reply.
+        assert hung.plan_wall_time_s > 0.0
+        assert hung.stats.budget_bound is True
         # Và runner vẫn phục vụ được ngay sau đó.
         config.TIME_BUDGET_S = saved
         assert instance.submit(_request()).status is PlanStatus.OK
@@ -121,10 +124,14 @@ def test_a_child_that_raises_becomes_internal_error_not_a_dead_runner() -> None:
     instance = PlanRunner(preloaded=None)
     instance.start()
     try:
-        instance.force_raise_next = True  # cửa hậu chỉ dùng cho test
+        instance._force_raise_next = True  # cửa hậu chỉ dùng cho test
         broken = instance.submit(_request())
         assert broken.status is PlanStatus.INTERNAL_ERROR
         assert broken.detail
+        assert broken.plan_wall_time_s > 0.0
+        # A child that raised was never bound by the time budget - only
+        # TIMEOUT is.
+        assert broken.stats.budget_bound is False
         assert instance.submit(_request()).status is PlanStatus.OK
     finally:
         instance.stop()
@@ -137,3 +144,35 @@ def test_config_mutation_in_a_child_cannot_leak_into_the_parent(runner: PlanRunn
     before = config.NUM_START_CORNERS
     runner.submit(_request())
     assert config.NUM_START_CORNERS == before
+
+
+def test_unlimited_budget_does_not_get_killed_by_the_grace_period() -> None:
+    """F1: ``config.TIME_BUDGET_S = None`` ("không giới hạn") must not become
+    a SIGKILL after ``grace_s`` seconds.
+
+    Bug: the deadline was computed as ``effective_time_budget_s() + grace_s``.
+    ``effective_time_budget_s()`` returns ``0.0`` for "unlimited" (see
+    ``runtime.py``), so the deadline collapsed to plain ``grace_s`` - a real
+    mission got SIGKILLed on every request regardless of how little time it
+    actually needed.
+
+    ``grace_s`` is deliberately tiny (10 ms) here: under the OLD code that
+    makes the deadline ~10 ms, which a real mission (forkserver fork +
+    planning) cannot possibly beat, so the bug would fail this test with
+    near-100% reliability rather than by luck. Under the FIXED code the
+    deadline falls back to ``unlimited_deadline_s`` (default 300 s), so the
+    mission has all the time it needs and must succeed.
+    """
+    import config
+
+    saved = config.TIME_BUDGET_S
+    instance = PlanRunner(preloaded=None, grace_s=0.01)
+    instance.start()
+    try:
+        config.TIME_BUDGET_S = None
+        reply = instance.submit(_request())
+        assert reply.status is PlanStatus.OK
+        assert reply.detail == ""
+    finally:
+        config.TIME_BUDGET_S = saved
+        instance.stop()

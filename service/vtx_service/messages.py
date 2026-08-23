@@ -31,6 +31,10 @@ class PlanStatus(IntEnum):
     INVALID_REQUEST = 5
     TIMEOUT = 6
     INTERNAL_ERROR = 7
+    # RESERVED - không đường mã nào sinh ra giá trị này (R23, xem spec mục 3
+    # và 6). Vòng phục vụ tuần tự trên một reader KEEP_ALL, nên một request
+    # đến khi service đang bận được DDS xếp hàng và trả lời sau, không bị từ
+    # chối. Giữ số 8 để không đánh số lại các giá trị đứng trước.
     BUSY = 8
 
 

@@ -55,12 +55,27 @@ def main(argv: list[str] | None = None) -> int:
 
     runner = PlanRunner(preloaded=preloaded, grace_s=args.grace_seconds)
     runner.start()  # PHẢI trước DDS - xem docstring của module
+    budget_s = effective_time_budget_s()
     log.info(
         "planner %s, config %s, ngân sách thực tế %.1f s",
         planner_version(),
         config_hash(),
-        effective_time_budget_s(),
+        budget_s,
     )
+    if budget_s <= 0.0:
+        # F1: 0.0 nghĩa là "không giới hạn" (config.TIME_BUDGET_S = None).
+        # Với một service, đó là cấu hình NGUY HIỂM chứ không phải mặc định
+        # vô hại - một mission khó có thể chiếm tiến trình con tới khi chạm
+        # trần tuyệt đối của PlanRunner (unlimited_deadline_s), chặn mọi
+        # request khác phía sau nó vì service phục vụ tuần tự.
+        log.warning(
+            "config.TIME_BUDGET_S không giới hạn (None) - PlanRunner dùng "
+            "trần tuyệt đối %.1f s cho MỖI request thay vì ngân sách + %.1f s "
+            "ân hạn thường lệ; một mission khó sẽ chặn mọi request khác phía "
+            "sau nó tới khi đó",
+            runner.unlimited_deadline_s,
+            args.grace_seconds,
+        )
 
     from vtx_service.transport import DdsTransport
 
@@ -76,6 +91,13 @@ def main(argv: list[str] | None = None) -> int:
             len(reply.waypoints),
             reply.plan_wall_time_s,
         )
+        if reply.status is not PlanStatus.OK:
+            # F4: reply.detail (traceback bao gồm, khi runner._failed trả về
+            # từ một tiến trình con NÉM LỖI) tới được CLIENT nhưng chưa từng
+            # tới journal - toán tử đọc `journalctl` không thấy gì hữu ích.
+            log.warning(
+                "request %s detail: %s", request.request_id.hex()[:8], reply.detail
+            )
         return reply
 
     def stop(signum: int, frame: FrameType | None) -> None:

@@ -55,7 +55,7 @@ vùng bay, không phải thu hẹp.
   `config.TIME_BUDGET_S` / `config.MAX_ITERATIONS`. Reply mang
   `applied_time_budget_s` và `stats.max_iterations` là giá trị thật đã dùng.
 - **Chỉ hệ toạ độ Oxy phẳng, mét.** Không WGS84.
-- **Một request tại một thời điểm.** Bận thì trả `PLAN_BUSY`.
+- **Một request tại một thời điểm.** Không có phát hiện "bận": `PLAN_BUSY` là giá trị RESERVED, không đường mã nào sinh ra nó. Vòng phục vụ tuần tự trên một reader `KEEP_ALL`, nên một request đến khi service đang bận được DDS (RELIABLE + KEEP_ALL) **xếp hàng** và trả lời sau, theo đúng thứ tự - không bị từ chối.
 
 ## Chẩn đoán
 
@@ -68,3 +68,4 @@ vùng bay, không phải thu hẹp.
 | Đường bay đúng độ dài nhưng sai hướng 90 độ | Quy ước phương vị. Trên dây LUÔN là phương vị thật, thuận kim đồng hồ từ bắc, `+y` bắc. |
 | Service treo cứng sau một thời gian chạy | Nghi ngờ đầu tiên: có ai đó đổi `PlanRunner` sang `fork` trần, hoặc đảo thứ tự `runner.start()` và khởi tạo DDS. Xem mục 3 của spec. |
 | Reply thiếu mẫu tin với bản đồ lớn | Phân mảnh UDP; cần chỉnh cấu hình transport của binding DDS. |
+| `PLAN_INTERNAL_ERROR` | Tiến trình con ném lỗi, hoặc lỗi khi dịch/ghi reply. `detail` mang traceback rút gọn - được log lại ở mức WARNING trên chính service (`journalctl -u vtx-planner`), không chỉ gửi cho client. |

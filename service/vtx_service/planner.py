@@ -58,12 +58,16 @@ def plan(request: PlanRequest, preloaded: PreloadedMap | None = None) -> PlanRep
     started = time.perf_counter()
 
     if request.idl_version != IDL_VERSION:
-        return _refusal(request, f"idl_version {request.idl_version} != {IDL_VERSION}")
+        return _refusal(
+            request, f"idl_version {request.idl_version} != {IDL_VERSION}", started
+        )
 
     if request.use_preloaded_map:
         if preloaded is None:
             return _refusal(
-                request, "yêu cầu preloaded map nhưng service không nạp bản đồ nào"
+                request,
+                "yêu cầu preloaded map nhưng service không nạp bản đồ nào",
+                started,
             )
         request = preloaded.merged_into(request)
 
@@ -150,7 +154,7 @@ def _stats_out(result: dict[str, Any], search_elapsed: float) -> SearchStats:
     )
 
 
-def _refusal(request: PlanRequest, detail: str) -> PlanReply:
+def _refusal(request: PlanRequest, detail: str, started: float) -> PlanReply:
     """Từ chối một request không hợp lệ, không chạy search."""
     return PlanReply(
         request_id=request.request_id,
@@ -159,7 +163,7 @@ def _refusal(request: PlanRequest, detail: str) -> PlanReply:
         detail=detail,
         waypoints=(),
         path_length_m=0.0,
-        plan_wall_time_s=0.0,
+        plan_wall_time_s=time.perf_counter() - started,
         applied_time_budget_s=effective_time_budget_s(),
         stats=SearchStats(0, effective_max_iterations(), 0, True, False),
         planner_version=planner_version(),
