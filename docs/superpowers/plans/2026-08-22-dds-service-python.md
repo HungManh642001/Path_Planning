@@ -2173,17 +2173,29 @@ def test_child_start_cost_is_within_the_measured_envelope(runner: PlanRunner) ->
 
 
 def test_a_hung_child_becomes_timeout_and_the_runner_keeps_working() -> None:
+    """Thời hạn CỨNG: tiến trình con treo phải bị giết, không được treo service.
+
+    Hạ `config.TIME_BUDGET_S` xuống trong lúc test, vì thời hạn cứng được tính
+    là `effective_time_budget_s() + grace`. Với giá trị thật (15 s) test này sẽ
+    chạy 15,5 giây và TRÔNG NHƯ TREO — đúng thứ nó sinh ra để phát hiện.
+    """
+    import config
+
+    saved = config.TIME_BUDGET_S
     instance = PlanRunner(preloaded=None, grace_s=0.5)
     instance.start()
     try:
+        config.TIME_BUDGET_S = 0.5
         instance.force_hang_next = True  # cửa hậu chỉ dùng cho test
         hung = instance.submit(_request())
         assert hung.status is PlanStatus.TIMEOUT
         assert hung.request_id == b"\x06" * 16
         assert hung.waypoints == ()
         # Và runner vẫn phục vụ được ngay sau đó.
+        config.TIME_BUDGET_S = saved
         assert instance.submit(_request()).status is PlanStatus.OK
     finally:
+        config.TIME_BUDGET_S = saved
         instance.stop()
 
 
@@ -2318,7 +2330,11 @@ class PlanRunner:
         self._ctx = mp.get_context("forkserver")
         # Ép forkserver ra đời NGAY BÂY GIỜ, trong khi tiến trình này còn sạch
         # thread. Nếu để nó ra đời ở request đầu tiên thì DDS đã lên rồi.
-        self._ctx.Process(target=_noop).start()
+        # `join()` chứ không bỏ mặc: một Process không join để lại zombie tới
+        # khi bị thu gom, và ở đây không có lý do gì để không chờ nó.
+        primer = self._ctx.Process(target=_noop)
+        primer.start()
+        primer.join()
 
     def submit(self, request: PlanRequest) -> PlanReply:
         """Lập kế hoạch cho một request, với thời hạn cứng.
