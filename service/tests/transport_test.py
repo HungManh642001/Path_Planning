@@ -83,12 +83,15 @@ def test_idl_has_no_frame_field() -> None:
 
     Chuỗi con "frame" hợp lệ trong một comment giải thích lý do không có
     trường đó (đúng comment mà một người đọc cần nhất). Chỉ một khai báo
-    trường thật sự - kiểu, theo sau là danh định ``frame``, rồi dấu ``;`` -
-    mới là vi phạm.
+    trường thật sự - tên trường ``frame`` theo ngay sau bởi ``[...]`` tuỳ
+    chọn rồi dấu ``;`` - mới là vi phạm. Khớp trên TÊN trường, bất kể kiểu:
+    một type dạng ``sequence<Point2D>`` hay ``octet ...[16]`` không phải một
+    token đơn giản, nên đừng đòi kiểu đứng trước - comment đã bị bóc trước,
+    nên bỏ yêu cầu đó không làm chính comment giải thích khớp lại.
     """
     text = IDL_PATH.read_text(encoding="utf-8")
     without_comments = re.sub(r"//.*", "", text)
-    field_declaration = re.compile(r"\b\w+\s+frame\s*(\[[^\]]*\])?\s*;")
+    field_declaration = re.compile(r"\bframe\s*(\[[^\]]*\])?\s*;")
     assert not field_declaration.search(without_comments)
 
 
@@ -148,6 +151,42 @@ def test_a_reply_for_another_request_is_ignored() -> None:
         second = uuid.uuid4().bytes
         assert client.request(_request(first), timeout_s=30.0).request_id == first
         assert client.request(_request(second), timeout_s=30.0).request_id == second
+    finally:
+        service.close()
+        client.close()
+
+
+def test_a_handler_exception_does_not_kill_serve() -> None:
+    """handler ném lỗi -> reply PLAN_INTERNAL_ERROR đúng request_id, service vẫn sống.
+
+    Task 11 chạy ``serve`` làm vòng lặp chính của service: một request hỏng
+    (handler ném lỗi, hoặc dịch reply của nó ra kiểu trên dây thất bại) không
+    được phép hạ cả service. Test này ném lỗi cho MỘT request rồi khẳng định
+    một request TỐT tiếp theo, trên cùng transport, vẫn được trả lời bình
+    thường.
+    """
+    bad_id = uuid.uuid4().bytes
+    good_id = uuid.uuid4().bytes
+
+    def handler(incoming: PlanRequest) -> PlanReply:
+        if incoming.request_id == bad_id:
+            raise RuntimeError("boom - lỗi giả lập trong handler")
+        return _reply(incoming)
+
+    service = DdsTransport(domain_id=DOMAIN + 6)
+    client = DdsTransport(domain_id=DOMAIN + 6)
+    threading.Thread(target=service.serve, args=(handler,), daemon=True).start()
+    try:
+        assert client.wait_for_service(timeout_s=20.0)
+
+        bad_reply = client.request(_request(bad_id), timeout_s=30.0)
+        assert bad_reply.request_id == bad_id
+        assert bad_reply.status is PlanStatus.INTERNAL_ERROR
+
+        # Service phải vẫn sống: một request TỐT sau đó vẫn được trả lời đúng.
+        good_reply = client.request(_request(good_id), timeout_s=30.0)
+        assert good_reply.request_id == good_id
+        assert good_reply.status is PlanStatus.ORACLE_REJECTED
     finally:
         service.close()
         client.close()

@@ -15,7 +15,9 @@ giải chú thích kiểu LÚC CHẠY, còn PEP 563 biến chúng thành chuỗi
 bình thường - chỉ module khai báo IdlStruct mới bị.
 """
 
+import sys
 import time
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -250,6 +252,27 @@ def _from_wire_reply(wire: WireReply) -> msg.PlanReply:
     )
 
 
+def _internal_error_reply(request_id: bytes, detail: str) -> msg.PlanReply:
+    """Reply PLAN_INTERNAL_ERROR mang đúng ``request_id``, để client không treo.
+
+    Dùng khi handler ném lỗi, hoặc khi dịch reply của nó ra kiểu trên dây thất
+    bại - cả hai đều không được phép làm chết vòng ``serve``.
+    """
+    return msg.PlanReply(
+        request_id=request_id,
+        idl_version=msg.IDL_VERSION,
+        status=msg.PlanStatus.INTERNAL_ERROR,
+        detail=detail,
+        waypoints=(),
+        path_length_m=0.0,
+        plan_wall_time_s=0.0,
+        applied_time_budget_s=0.0,
+        stats=msg.SearchStats(0, 0, 0, True, False),
+        planner_version="",
+        config_hash="",
+    )
+
+
 # --- transport ----------------------------------------------------------------
 
 
@@ -294,7 +317,48 @@ class DdsTransport:
             for wire in self._request_reader.take(N=16, condition=condition):
                 if not self._running:
                     return
-                self._reply_writer.write(_to_wire_reply(handler(_to_domain(wire))))
+                self._handle_one(wire, handler)
+
+    def _handle_one(
+        self, wire: object, handler: Callable[[msg.PlanRequest], msg.PlanReply]
+    ) -> None:
+        """Xử lý một request, không bao giờ để lỗi thoát ra ngoài.
+
+        Một request hỏng - handler ném lỗi, hoặc dịch reply của nó ra kiểu
+        trên dây thất bại - không được phép hạ cả service: trả về
+        PLAN_INTERNAL_ERROR mang đúng ``request_id`` rồi tiếp tục vòng lặp.
+        Nếu dựng CẢ reply lỗi cũng thất bại, log rồi bỏ qua mẫu tin này -
+        vòng lặp vẫn phải sống tới mẫu tiếp theo.
+        """
+        request_id = bytes(wire.request_id)  # type: ignore[attr-defined]
+        try:
+            wire_reply = _to_wire_reply(handler(_to_domain(wire)))  # type: ignore[arg-type]
+        except Exception:  # noqa: BLE001 - một request hỏng không được hạ cả service
+            print(
+                f"[transport] request {request_id.hex()} lỗi khi xử lý:\n"
+                f"{traceback.format_exc(limit=5)}",
+                file=sys.stderr,
+            )
+            try:
+                wire_reply = _to_wire_reply(
+                    _internal_error_reply(request_id, "internal error khi xử lý request")
+                )
+            except Exception:  # noqa: BLE001 - dựng reply lỗi cũng không được hạ service
+                print(
+                    f"[transport] request {request_id.hex()} lỗi cả khi dựng reply lỗi:\n"
+                    f"{traceback.format_exc(limit=5)}",
+                    file=sys.stderr,
+                )
+                return
+
+        try:
+            self._reply_writer.write(wire_reply)
+        except Exception:  # noqa: BLE001 - ghi lỗi không được hạ service
+            print(
+                f"[transport] request {request_id.hex()} lỗi khi ghi reply:\n"
+                f"{traceback.format_exc(limit=5)}",
+                file=sys.stderr,
+            )
 
     def wait_for_service(self, timeout_s: float) -> bool:
         """Chờ tới khi có một service khớp trên topic request.
