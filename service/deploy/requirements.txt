@@ -1,0 +1,12 @@
+# Phụ thuộc của service. HAI gói, và không gói nào là numpy.
+#
+# core/ không import numpy ở đâu cả (0 lần), cũng không scipy, cũng không
+# matplotlib. Cái pin numpy==1.26.4 trong requirements.txt ở gốc repo là ràng
+# buộc của matplotlib 3.8 / pandas 2.1.4 trong stack test-benchmark-GUI, và nó
+# KHÔNG áp dụng ở đây. Đã kiểm chứng: venv sạch chỉ có shapely kéo theo numpy
+# 2.4.6 và cả 18 preset vẫn giải được.
+shapely==2.1.2
+
+# Binding DDS. Thay bằng stack mà Task 1 chọn, và cập nhật
+# docs/superpowers/specs/2026-08-22-dds-stack-decision.md cùng lúc.
+cyclonedds==11.0.1
