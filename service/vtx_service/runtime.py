@@ -44,13 +44,36 @@ def config_hash() -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
+_version_cache: str | None = None
+"""Kết quả ``planner_version()``, tính một lần cho cả vòng đời tiến trình."""
+
+
 def planner_version() -> str:
     """Mô tả phiên bản mã nguồn đang chạy.
+
+    Tính MỘT LẦN rồi nhớ lại cho hết vòng đời tiến trình, không phải mỗi lần
+    gọi: đo được ``git describe`` một mình mất 3,5-4,9 s trên filesystem 9p
+    của máy này, và hàm này chạy trên MỌI reply (``plan()`` gọi nó, và
+    ``PlanRunner._failed()`` cũng gọi) - trong khi một mission trung vị lập kế
+    hoạch xong trong 16 ms. Cache là đúng về ngữ nghĩa chứ không phải mẹo: mã
+    nguồn không đổi trong lúc tiến trình đang sống, và quy trình triển khai đã
+    yêu cầu khởi động lại service sau mỗi ``git pull`` - nên giá trị này vốn dĩ
+    bất biến suốt một tiến trình. Kết quả lỗi (``"unknown"``) cũng được nhớ lại
+    như bất kỳ giá trị nào khác: không có gì để thử lại giữa các lần gọi khi
+    git không chạy được.
 
     Returns:
         Kết quả ``git describe --always --dirty``, hoặc ``"unknown"`` khi không
         chạy được (bản triển khai không có git, hoặc không phải một repo).
     """
+    global _version_cache
+    if _version_cache is None:
+        _version_cache = _describe_version()
+    return _version_cache
+
+
+def _describe_version() -> str:
+    """Chạy ``git describe`` thật. Chỉ ``planner_version()`` gọi, đúng một lần."""
     try:
         proc = subprocess.run(
             ["git", "describe", "--always", "--dirty"],

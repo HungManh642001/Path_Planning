@@ -20,6 +20,7 @@ from vtx_service.runtime import (
     planner_config_snapshot,
     planner_version,
 )
+import vtx_service.runtime as runtime
 
 # Derived independently of vtx_service.runtime._REPO_ROOT: this must locate
 # the real repo root on its own, so the test can tell a correct root from a
@@ -76,6 +77,33 @@ def test_version_matches_git_describe_inside_a_checkout() -> None:
         check=True,
     ).stdout.strip()
     assert planner_version() == expected
+
+
+def test_planner_version_is_cached_after_the_first_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hai lần gọi không được trả hai lần phí subprocess.
+
+    `git describe` một mình đo được 3,5-4,9 s trên filesystem của máy này, và
+    `planner_version()` chạy trên MỌI reply - nên trả phí đó mỗi lần gọi biến
+    service thành một wrapper quanh `git`, không phải một planner. Khẳng định
+    trên CƠ CHẾ (số lần gọi subprocess), không phải trên đồng hồ treo tường:
+    một khẳng định thời gian sẽ chập chờn đúng trên filesystem đã gây ra vấn
+    đề này.
+    """
+    monkeypatch.setattr(runtime, "_version_cache", None)
+    real_run = runtime.subprocess.run
+    calls: list[object] = []
+
+    def _counting_run(*args: object, **kwargs: object) -> object:
+        calls.append(None)
+        return real_run(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(runtime.subprocess, "run", _counting_run)
+
+    first = runtime.planner_version()
+    second = runtime.planner_version()
+
+    assert first == second
+    assert len(calls) <= 1
 
 
 def test_effective_budget_comes_from_config_not_from_the_request() -> None:
