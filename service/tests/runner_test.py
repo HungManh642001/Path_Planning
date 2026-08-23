@@ -68,11 +68,26 @@ def test_the_reply_survives_the_process_boundary_intact(runner: PlanRunner) -> N
 
 
 def test_child_start_cost_is_within_the_measured_envelope(runner: PlanRunner) -> None:
-    """Spec ghi median 56 ms cho forkserver + preload. Nới rộng cho máy chậm."""
+    """Spec ghi median 56 ms cho forkserver + preload trên máy phát triển gốc.
+
+    Từng nới tới 5.0 s trên máy này vì `planner_version()` (gọi trên MỌI
+    reply) trả phí `git describe` (3,5-4,9 s đo được) trong CHÍNH tiến trình
+    con dùng-một-lần mỗi request - bất kể cache function-level nào, vì mỗi
+    request là một tiến trình con MỚI không kế thừa cache đó (forkserver
+    fork+exec một interpreter mới). Từ khi `_PLANNER_VERSION` chuyển sang
+    tính lúc IMPORT MODULE (một lần, trong tiến trình forkserver, trước khi
+    có tiến trình con nào - xem `runtime.py`), subprocess đó biến mất hoàn
+    toàn khỏi đường request: đo lại 4 submit liên tiếp trên máy này ra
+    1.03-1.09 s mỗi lần, gần như không dao động. 2.0 s giữ khoảng 2x biên độ
+    an toàn cho máy chậm/dao động tải, và vẫn đủ chặt để bắt được đúng kiểu
+    hồi quy test này sinh ra để bắt: lỡ ai "tối ưu" _PLANNER_VERSION trở lại
+    thành lazy/`lru_cache`, chi phí subprocess-trên-mỗi-request quay lại và
+    đẩy con số này lên 3.5 s+, thất bại rõ ràng trước ngưỡng 2.0 s.
+    """
     runner.submit(_request())  # bỏ lần đầu (khởi động forkserver)
     started = time.perf_counter()
     runner.submit(_request())
-    assert time.perf_counter() - started < 5.0
+    assert time.perf_counter() - started < 2.0
 
 
 def test_a_hung_child_becomes_timeout_and_the_runner_keeps_working() -> None:

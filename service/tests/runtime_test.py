@@ -79,31 +79,33 @@ def test_version_matches_git_describe_inside_a_checkout() -> None:
     assert planner_version() == expected
 
 
-def test_planner_version_is_cached_after_the_first_call(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Hai lần gọi không được trả hai lần phí subprocess.
+def test_planner_version_never_calls_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`planner_version()` không được gọi subprocess - giá trị đã có sẵn từ lúc import.
 
-    `git describe` một mình đo được 3,5-4,9 s trên filesystem của máy này, và
-    `planner_version()` chạy trên MỌI reply - nên trả phí đó mỗi lần gọi biến
-    service thành một wrapper quanh `git`, không phải một planner. Khẳng định
-    trên CƠ CHẾ (số lần gọi subprocess), không phải trên đồng hồ treo tường:
+    Thiết kế cũ (cache "tính lúc gọi đầu tiên", function-level) đo được KHÔNG
+    rẻ đi: `PlanRunner` tạo một tiến trình con MỚI cho mỗi request, và
+    `forkserver` fork+exec một interpreter hoàn toàn mới (`ForkServer.
+    ensure_running` dùng `spawnv_passfds`) - tiến trình con không kế thừa
+    trạng thái Python đã import của cha, nên mỗi tiến trình con dùng-một-lần
+    tự trả phí `git describe` (3,79-5,12 s đo được) rồi chết theo nó, cache
+    kiểu đó không giúp được gì. `_PLANNER_VERSION` giờ được tính Ở MODULE
+    LEVEL, một lần, lúc module này được `_PRELOAD` import trong tiến trình
+    forkserver (trước khi có tiến trình con nào) - nên `planner_version()`
+    chỉ đọc một hằng số, không bao giờ chạm `subprocess.run`. Khẳng định trên
+    CƠ CHẾ (subprocess có bị gọi không), không phải trên đồng hồ treo tường:
     một khẳng định thời gian sẽ chập chờn đúng trên filesystem đã gây ra vấn
     đề này.
     """
-    monkeypatch.setattr(runtime, "_version_cache", None)
-    real_run = runtime.subprocess.run
-    calls: list[object] = []
 
-    def _counting_run(*args: object, **kwargs: object) -> object:
-        calls.append(None)
-        return real_run(*args, **kwargs)  # type: ignore[arg-type]
+    def _boom(*args: object, **kwargs: object) -> object:
+        raise AssertionError(
+            "planner_version() gọi subprocess.run - phải là hằng số import-time"
+        )
 
-    monkeypatch.setattr(runtime.subprocess, "run", _counting_run)
+    monkeypatch.setattr(runtime.subprocess, "run", _boom)
 
-    first = runtime.planner_version()
-    second = runtime.planner_version()
-
-    assert first == second
-    assert len(calls) <= 1
+    assert runtime.planner_version() == runtime._PLANNER_VERSION
+    assert runtime.planner_version() == runtime.planner_version()
 
 
 def test_effective_budget_comes_from_config_not_from_the_request() -> None:

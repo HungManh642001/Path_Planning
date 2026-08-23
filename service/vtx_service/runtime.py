@@ -44,36 +44,8 @@ def config_hash() -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
-_version_cache: str | None = None
-"""Kết quả ``planner_version()``, tính một lần cho cả vòng đời tiến trình."""
-
-
-def planner_version() -> str:
-    """Mô tả phiên bản mã nguồn đang chạy.
-
-    Tính MỘT LẦN rồi nhớ lại cho hết vòng đời tiến trình, không phải mỗi lần
-    gọi: đo được ``git describe`` một mình mất 3,5-4,9 s trên filesystem 9p
-    của máy này, và hàm này chạy trên MỌI reply (``plan()`` gọi nó, và
-    ``PlanRunner._failed()`` cũng gọi) - trong khi một mission trung vị lập kế
-    hoạch xong trong 16 ms. Cache là đúng về ngữ nghĩa chứ không phải mẹo: mã
-    nguồn không đổi trong lúc tiến trình đang sống, và quy trình triển khai đã
-    yêu cầu khởi động lại service sau mỗi ``git pull`` - nên giá trị này vốn dĩ
-    bất biến suốt một tiến trình. Kết quả lỗi (``"unknown"``) cũng được nhớ lại
-    như bất kỳ giá trị nào khác: không có gì để thử lại giữa các lần gọi khi
-    git không chạy được.
-
-    Returns:
-        Kết quả ``git describe --always --dirty``, hoặc ``"unknown"`` khi không
-        chạy được (bản triển khai không có git, hoặc không phải một repo).
-    """
-    global _version_cache
-    if _version_cache is None:
-        _version_cache = _describe_version()
-    return _version_cache
-
-
 def _describe_version() -> str:
-    """Chạy ``git describe`` thật. Chỉ ``planner_version()`` gọi, đúng một lần."""
+    """Chạy ``git describe`` thật. Chỉ gọi một lần, ngay dưới đây, lúc import."""
     try:
         proc = subprocess.run(
             ["git", "describe", "--always", "--dirty"],
@@ -86,6 +58,51 @@ def _describe_version() -> str:
     except (OSError, subprocess.SubprocessError):
         return "unknown"
     return proc.stdout.strip() or "unknown"
+
+
+_PLANNER_VERSION = _describe_version()
+"""Tính NGAY LÚC IMPORT module này, không phải lúc gọi ``planner_version()``.
+
+Bắt buộc phải import-time, không phải lazy (một cache "tính lúc gọi đầu tiên"
+kiểu ``functools.lru_cache`` hay sentinel biến toàn cục) - và lý do là cơ chế
+của ``forkserver``, đã xác minh: ``ForkServer.ensure_running`` khởi động bằng
+``spawnv_passfds``, tức là fork **rồi exec một interpreter HOÀN TOÀN MỚI**.
+Tiến trình forkserver không kế thừa trạng thái đã import của tiến trình cha -
+nó tự import lại từ đầu danh sách ``_PRELOAD`` (``runner.py``), trong đó có
+``vtx_service.planner`` mà module đó import module này. Nên một cache
+kiểu-lazy thì mỗi tiến trình con dùng-một-lần (``PlanRunner`` tạo mới cho MỖI
+request) tự trả phí ``git describe`` riêng của nó rồi chết theo nó ngay khi
+request xong - đo được vẫn mất 3,79-5,12 s MỖI request dù đã cache kiểu đó,
+tức là không rẻ đi chút nào.
+
+Tính ở MODULE LEVEL thì khác: tiến trình forkserver, khi khởi động (một lần,
+trước khi DDS tồn tại - xem ``PlanRunner.start()``), tự import module này như
+một phần của ``_PRELOAD`` và trả phí ``git describe`` đúng MỘT LẦN ở đó. Mọi
+tiến trình con fork() ra sau, kế thừa qua copy-on-write, đã có sẵn giá trị này
+trong bộ nhớ - không tốn subprocess nào trên đường request nữa.
+
+Hệ quả vận hành: giá trị này CỐ ĐỊNH cho tới khi forkserver khởi động lại, nên
+sau ``git pull`` phải khởi động lại service mới thấy version mới - quy trình
+triển khai đã yêu cầu đúng như vậy từ trước.
+
+ĐỪNG "tối ưu" chỗ này thành lazy/``lru_cache`` - trông giống refactor vô hại
+nhưng âm thầm khôi phục lại chi phí trên mỗi request, vì phép tính khi đó lại
+rơi vào đúng tiến trình con dùng-một-lần mà nó cần tránh.
+"""
+
+
+def planner_version() -> str:
+    """Mô tả phiên bản mã nguồn đang chạy.
+
+    Trả về ``_PLANNER_VERSION``, tính một lần lúc MODULE này được import (xem
+    docstring của hằng số đó) - hàm ở đây chỉ để giữ API ổn định cho chỗ gọi.
+
+    Returns:
+        Kết quả ``git describe --always --dirty`` tại lúc tiến trình khởi
+        động, hoặc ``"unknown"`` khi không chạy được (bản triển khai không có
+        git, hoặc không phải một repo).
+    """
+    return _PLANNER_VERSION
 
 
 def effective_time_budget_s() -> float:
