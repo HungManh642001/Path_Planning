@@ -17,6 +17,7 @@ from vtx_service.messages import (
     VehicleLimits,
     Waypoint,
 )
+from vtx_service.planner import plan
 
 __all__ = [
     "IDL_VERSION",
@@ -28,4 +29,5 @@ __all__ = [
     "SearchStats",
     "VehicleLimits",
     "Waypoint",
+    "plan",
 ]
