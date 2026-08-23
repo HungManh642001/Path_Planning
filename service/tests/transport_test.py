@@ -79,7 +79,17 @@ def test_idl_status_enum_matches_python_exactly() -> None:
 
 
 def test_idl_has_no_frame_field() -> None:
-    assert "frame" not in IDL_PATH.read_text(encoding="utf-8")
+    """Cấm KHAI BÁO trường ``frame`` - không cấm nhắc tới từ đó trong comment.
+
+    Chuỗi con "frame" hợp lệ trong một comment giải thích lý do không có
+    trường đó (đúng comment mà một người đọc cần nhất). Chỉ một khai báo
+    trường thật sự - kiểu, theo sau là danh định ``frame``, rồi dấu ``;`` -
+    mới là vi phạm.
+    """
+    text = IDL_PATH.read_text(encoding="utf-8")
+    without_comments = re.sub(r"//.*", "", text)
+    field_declaration = re.compile(r"\b\w+\s+frame\s*(\[[^\]]*\])?\s*;")
+    assert not field_declaration.search(without_comments)
 
 
 def test_a_request_survives_the_wire_unchanged() -> None:

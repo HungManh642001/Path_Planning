@@ -4,7 +4,7 @@
 // Góc: ĐỘ, phương vị thật, thuận chiều kim đồng hồ từ chính bắc.
 //
 // Giá trị PlanStatus khớp chính xác service/vtx_service/messages.py.
-// Không có trường hệ quy chiếu: chỉ có một hệ toạ độ. Không có map_bounds: safezones
+// Không có trường frame: chỉ có một hệ toạ độ. Không có map_bounds: safezones
 // biểu diễn được đúng vùng đó và không phụ thuộc vào vị trí gốc toạ độ.
 //
 // budget CHƯA được tôn trọng; reply mang applied_time_budget_s là giá trị
