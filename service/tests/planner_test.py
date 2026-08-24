@@ -6,6 +6,7 @@ from pathlib import Path
 from vtx_service import plan
 from vtx_service.map_file import PreloadedMap
 from vtx_service.messages import (
+    IDL_VERSION,
     Circle,
     PlanRequest,
     PlanStatus,
@@ -19,7 +20,7 @@ LIMITS = VehicleLimits(8000.0, 8000.0, 15000.0, 500.0, 90.0)
 def _request(**overrides: object) -> PlanRequest:
     base: dict[str, object] = dict(
         request_id=b"\x02" * 16,
-        idl_version=1,
+        idl_version=IDL_VERSION,
         start=(50000.0, 50000.0),
         start_heading_deg=45.0,
         goal=(300000.0, 250000.0),
@@ -30,7 +31,7 @@ def _request(**overrides: object) -> PlanRequest:
         safezones=(),
         use_preloaded_map=False,
         limits=LIMITS,
-        budget=SearchBudget(15.0, 50000),
+        budget=SearchBudget(15.0),
     )
     base.update(overrides)
     return PlanRequest(**base)  # type: ignore[arg-type]
@@ -69,14 +70,40 @@ def test_reply_carries_version_and_config_identity() -> None:
     assert len(reply.config_hash) == 16
 
 
-def test_reply_reports_the_budget_it_used_not_the_one_requested() -> None:
-    """Mục 4.3: đề nghị của client CHƯA được tôn trọng, và reply nói thật."""
+def test_a_requested_budget_is_applied_to_the_search() -> None:
+    """Một ngân sách nhỏ tới mức vô lý phải THẤY được ở kết quả.
+
+    Đây là khác biệt so với hành vi cũ: trước đây trường này bị bỏ qua hoàn
+    toàn và request vẫn OK. Một ngân sách được nhận nhưng không dùng thì tệ hơn
+    là không có trường đó.
+
+    Mission này là mặt nước trống và giải trong khoảng một mili giây, nên con
+    số phải nhỏ hơn thế nhiều mới chứng minh được điều gì.
+    """
+    reply = plan(_request(budget=SearchBudget(time_budget_s=1e-9)))
+    assert reply.applied_time_budget_s == 1e-9
+    assert reply.status is PlanStatus.NO_PATH
+    assert reply.stats.budget_bound is True
+
+
+def test_an_empty_budget_falls_back_to_the_service_default() -> None:
     import config
 
-    reply = plan(_request(budget=SearchBudget(time_budget_s=0.001, max_iterations=7)))
-    assert reply.applied_time_budget_s == float(config.TIME_BUDGET_S or 0.0)
-    assert reply.stats.max_iterations == config.MAX_ITERATIONS
-    assert reply.status is PlanStatus.OK  # ngân sách 1 ms KHÔNG được áp dụng
+    reply = plan(_request(budget=SearchBudget(time_budget_s=0.0)))
+    assert reply.applied_time_budget_s == float(config.TIME_BUDGET_S)
+    assert reply.status is PlanStatus.OK
+
+
+def test_unbuildable_geometry_is_refused_not_crashed() -> None:
+    """Một đảo 2 đỉnh không dựng được thành polygon.
+
+    Đường từ chối này gọi ``_refusal`` thiếu một tham số, nên nó ném TypeError
+    ra khỏi tiến trình con thay vì trả INVALID_REQUEST - client nhận
+    INTERNAL_ERROR kèm traceback cho một request chỉ đơn giản là sai.
+    """
+    reply = plan(_request(islands=(((0.0, 0.0), (1000.0, 1000.0)),)))
+    assert reply.status is PlanStatus.INVALID_REQUEST
+    assert reply.detail
 
 
 def test_a_goal_buried_in_an_obstacle_fails_honestly() -> None:

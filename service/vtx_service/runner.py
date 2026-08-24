@@ -118,33 +118,19 @@ def _child(pipe: Connection, request: PlanRequest, preloaded: PreloadedMap | Non
 class PlanRunner:
     """Chạy các request lần lượt, mỗi request một tiến trình con."""
 
-    def __init__(
-        self,
-        preloaded: PreloadedMap | None,
-        grace_s: float = 2.0,
-        unlimited_deadline_s: float = 300.0,
-    ) -> None:
+    def __init__(self, preloaded: PreloadedMap | None, grace_s: float = 2.0) -> None:
         """Khởi tạo.
 
         Args:
             preloaded: Bản đồ nền tĩnh, hoặc ``None``.
-            grace_s: Cộng thêm vào ``config.TIME_BUDGET_S`` để ra thời hạn cứng,
-                khi ngân sách đó CÓ giới hạn.
-            unlimited_deadline_s: Thời hạn cứng dùng khi
-                ``effective_time_budget_s()`` trả ``0.0`` (nghĩa là "không giới
-                hạn", xem ``runtime.py``). ``0.0 + grace_s`` KHÔNG PHẢI là thời
-                hạn đúng cho trường hợp đó - nó biến "không giới hạn" thành một
-                SIGKILL sau ``grace_s`` giây trên MỌI request. Một trần tuyệt
-                đối riêng vẫn giữ được kiến trúc tiến trình con (lý do nó tồn
-                tại là planner không hủy được từ bên ngoài), chỉ khác ở việc nó
-                không phụ thuộc vào một ngân sách mà cấu hình nói rõ là không
-                có.
+            grace_s: Cộng thêm vào ngân sách ĐÃ ÁP DỤNG của request để ra thời
+                hạn cứng. Ngân sách đó luôn hữu hạn và bị kẹp dưới
+                ``runtime.MAX_REQUEST_TIME_BUDGET_S``, nên thời hạn này cũng
+                vậy - không còn cần một trần tuyệt đối riêng như trước, hồi
+                ngân sách còn có thể là "không giới hạn" (F1).
         """
         self._preloaded = preloaded
         self._grace_s = grace_s
-        # Công khai (không gạch dưới): chỗ gọi (main.py) cần đọc lại để cảnh
-        # báo lúc khởi động khi ngân sách là "không giới hạn" - xem F1.
-        self.unlimited_deadline_s = unlimited_deadline_s
         self._ctx: mp.context.BaseContext | None = None
         # Cửa hậu chỉ dùng cho test; production không bao giờ đặt chúng.
         self._force_hang_next = False
@@ -186,12 +172,11 @@ class PlanRunner:
         process.start()
         child.close()
 
-        budget_s = effective_time_budget_s()
-        # budget_s == 0.0 nghĩa là "không giới hạn" (xem runtime.py). Cộng
-        # thẳng grace_s vào đó biến "không giới hạn" thành một SIGKILL sau
-        # đúng grace_s giây trên MỌI request - đây chính là lỗi F1. Khi không
-        # có ngân sách thật, dùng trần tuyệt đối riêng thay vì 0.0 + grace_s.
-        deadline_s = budget_s + self._grace_s if budget_s > 0.0 else self.unlimited_deadline_s
+        # Cùng phép giải như tiến trình con sẽ dùng, nên thời hạn cứng ở đây
+        # bám đúng ngân sách mà planner thực sự chạy dưới - kể cả khi client
+        # xin ít hơn hoặc nhiều hơn mặc định của service.
+        budget_s = effective_time_budget_s(request.budget.time_budget_s)
+        deadline_s = budget_s + self._grace_s
         if not parent.poll(timeout=deadline_s):
             process.kill()
             process.join(timeout=10)
@@ -223,7 +208,6 @@ class PlanRunner:
     ) -> PlanReply:
         from vtx_service.runtime import (
             config_hash,
-            effective_max_iterations,
             effective_time_budget_s,
             planner_version,
         )
@@ -240,8 +224,8 @@ class PlanRunner:
             waypoints=(),
             path_length_m=0.0,
             plan_wall_time_s=elapsed_s,
-            applied_time_budget_s=effective_time_budget_s(),
-            stats=SearchStats(0, effective_max_iterations(), 0, True, budget_bound),
+            applied_time_budget_s=effective_time_budget_s(request.budget.time_budget_s),
+            stats=SearchStats(0, 0, True, budget_bound),
             planner_version=planner_version(),
             config_hash=config_hash(),
         )

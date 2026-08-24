@@ -59,7 +59,7 @@ class PerformanceMetrics:
             dist = math.dist(full_wps[i], full_wps[i + 1])
             segment_distances.append(dist)
             total_distance += dist
-            print(f"Segment {i}: {full_wps[i]} -> {full_wps[i + 1]}, Distance: {dist:.2f} m")
+            # print(f"Segment {i}: {full_wps[i]} -> {full_wps[i + 1]}, Distance: {dist:.2f} m")
         
         # Calculate turn angles
         turn_angles = []
@@ -119,13 +119,14 @@ class PerformanceMetrics:
         # Search statistics
         if self.search_stats:
             print("\n🔍 A* Search Statistics:")
-            print(f"  Iterations: {self.search_stats.get('iterations', 0):6}/{self.search_stats.get('max_iterations', 0)}")
+            print(f"  Iterations: {self.search_stats.get('iterations', 0):6}")
             print(f"  Open Set Size: {self.search_stats.get('open_set_size', 0):6}")
             print(f"  Closed Set Size: {self.search_stats.get('closed_set_size', 0):6}")
-            
-            if self.search_stats.get('iterations', 0) > 0 and self.search_stats.get('max_iterations', 0) > 0:
-                efficiency = self.search_stats['iterations'] / self.search_stats['max_iterations']
-                print(f"  Efficiency: {efficiency*100:6.2f}%")
+
+            budget_s = self.search_stats.get('time_budget_s', 0.0)
+            if budget_s:
+                cut = ' (exhausted)' if self.search_stats.get('budget_bound') else ''
+                print(f"  Time Budget:  {budget_s:6.2f}s{cut}")
         
         # Path statistics
         if self.path_stats:

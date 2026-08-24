@@ -27,6 +27,7 @@ import pytest
 from vtx_service import plan
 from vtx_service.angles import math_rad_to_bearing_deg
 from vtx_service.messages import (
+    IDL_VERSION,
     Circle,
     PlanRequest,
     PlanStatus,
@@ -42,11 +43,9 @@ LIMITS = VehicleLimits(
     safe_margin_m=config.SAFE_MARGIN,
     alpha_max_deg=config.ALPHA_MAX,
 )
-# Ngân sách trên dây chưa được tôn trọng (spec mục 4.3), nhưng vẫn phải hợp lệ.
-BUDGET = SearchBudget(
-    time_budget_s=float(config.TIME_BUDGET_S or 15.0),
-    max_iterations=config.MAX_ITERATIONS,
-)
+# Đúng mặc định của service, nên đường đi qua service phải TRÙNG KHỚP đường
+# đi gọi thẳng planner - đó là điều bộ test này kiểm tra.
+BUDGET = SearchBudget(time_budget_s=float(config.TIME_BUDGET_S))
 SCENARIOS = sorted(mg.get_all_scenarios())
 
 
@@ -56,7 +55,7 @@ def _request_from_scenario(name: str) -> PlanRequest:
     goal_heading = scenario["goal_heading"]
     return PlanRequest(
         request_id=name.encode("utf-8")[:16].ljust(16, b"\x00"),
-        idl_version=1,
+        idl_version=IDL_VERSION,
         start=scenario["start"],
         start_heading_deg=math_rad_to_bearing_deg(scenario["start_heading"]),
         goal=scenario["goal"],

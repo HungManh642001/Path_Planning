@@ -12,7 +12,13 @@ from typing import get_type_hints
 from core.types import Scenario
 
 from vtx_service.angles import bearing_deg_to_math_rad
-from vtx_service.messages import Circle, PlanRequest, SearchBudget, VehicleLimits
+from vtx_service.messages import (
+    IDL_VERSION,
+    Circle,
+    PlanRequest,
+    SearchBudget,
+    VehicleLimits,
+)
 from vtx_service.scenario_builder import build_scenario
 
 LIMITS = VehicleLimits(8000.0, 8000.0, 15000.0, 500.0, 90.0)
@@ -21,7 +27,7 @@ LIMITS = VehicleLimits(8000.0, 8000.0, 15000.0, 500.0, 90.0)
 def _request(**overrides: object) -> PlanRequest:
     base: dict[str, object] = dict(
         request_id=b"\x01" * 16,
-        idl_version=1,
+        idl_version=IDL_VERSION,
         start=(50000.0, 50000.0),
         start_heading_deg=90.0,
         goal=(300000.0, 200000.0),
@@ -32,7 +38,7 @@ def _request(**overrides: object) -> PlanRequest:
         safezones=(),
         use_preloaded_map=False,
         limits=LIMITS,
-        budget=SearchBudget(15.0, 50000),
+        budget=SearchBudget(15.0),
     )
     base.update(overrides)
     return PlanRequest(**base)  # type: ignore[arg-type]

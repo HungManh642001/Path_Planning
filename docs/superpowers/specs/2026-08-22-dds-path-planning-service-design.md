@@ -21,8 +21,10 @@ Bốn thay đổi khác do chủ sở hữu đặt ra:
 1. **Chỉ hệ toạ độ Oxy phẳng, mét.** WGS84 để sau. Xoá phép chiếu và `pyproj`.
 2. **Bản đồ nạp sẵn là file XML**, mang `safezones` + obstacles, **không**
    `map_bounds`.
-3. **`time_budget_s` có trên dây nhưng chưa được tôn trọng**: service dùng
-   `config.TIME_BUDGET_S`. Sau này thuật toán sẽ nhận nó như một tham số thật.
+3. ~~**`time_budget_s` có trên dây nhưng chưa được tôn trọng**: service dùng
+   `config.TIME_BUDGET_S`. Sau này thuật toán sẽ nhận nó như một tham số
+   thật.~~ **ĐÃ ĐÓNG 2026-08-24** (`idl_version` 2): thuật toán nhận
+   `time_budget_s=` làm tham số, và `MAX_ITERATIONS` bị bỏ hẳn - xem mục 4.3.
 4. **Stack DDS chưa chốt**: một spike đo cả Fast DDS Python binding lẫn Cyclone
    DDS rồi mới quyết. Lớp transport được cô lập để kết quả spike chỉ ảnh hưởng
    một module.
@@ -72,7 +74,9 @@ code: `prepare_scenario` ghi `l0` vào `start_state['straight_length']` và `dss
 vào `goal_state['engagement_distance']` (`preprocessing.py:118,154,219`), planner
 đọc lại đúng hai khoá đó và chỉ rơi về config khi chúng vắng
 (`kinodynamic_astar_v0.py:212,267`). Ngược lại `max_iterations` và
-`TIME_BUDGET_S` chỉ tồn tại như global (`:283`, `:1017`).
+`TIME_BUDGET_S` chỉ tồn tại như global (`:283`, `:1017`) - đúng tại thời điểm
+viết spec; từ 2026-08-24 `MAX_ITERATIONS` không còn, và `time_budget_s` là tham
+số của `plan_trajectory()`.
 
 **Thuật toán chỉ phụ thuộc vào shapely.** `core/` không import numpy ở đâu cả
 (0 lần), cũng không scipy, cũng không matplotlib. Đã kiểm chứng bằng venv sạch
@@ -179,7 +183,7 @@ Point2D            x, y                                    (mét)
 Polygon            vertices: sequence<Point2D>             (vành mở)
 Circle             center: Point2D, radius_m
 VehicleLimits      turn_radius_m, l0_m, dss_m, safe_margin_m, alpha_max_deg
-SearchBudget       time_budget_s, max_iterations           (xem mục 4.3)
+SearchBudget       time_budget_s                           (xem mục 4.3)
 
 VtxPathPlanRequest
   @key request_id[16], idl_version
@@ -193,7 +197,7 @@ VtxPathPlanRequest
   budget: SearchBudget
 
 Waypoint     position: Point2D, heading_deg
-SearchStats  iterations, max_iterations, open_set_size, search_failed, budget_bound
+SearchStats  iterations, open_set_size, search_failed, budget_bound
 
 VtxPathPlanReply
   @key request_id[16], idl_version
@@ -231,23 +235,40 @@ Hệ quả cần biết trước: 18 preset trong `map_generator` **có** `map_b
 đường bay qua service có thể khác đường bay khi chạy preset trực tiếp. Test
 tương đương xử lý điều này bằng hai khẳng định tách bạch (mục 7).
 
-### 4.3 `time_budget_s` chưa được tôn trọng, và reply nói thật về điều đó
+### 4.3 `time_budget_s` được tôn trọng, và reply nói thật về điều đó
 
-Trường có mặt trên dây để sau này không phải tăng `idl_version`, nhưng service
-hiện dùng `config.TIME_BUDGET_S`. Chủ sở hữu sẽ sửa thuật toán để nhận nó như
-một tham số thật.
+**Cập nhật 2026-08-24 (`idl_version` 2).** Bản spec gốc để ngỏ trường này trên
+dây mà chưa dùng, chờ chủ sở hữu sửa thuật toán. Việc đó đã làm:
+`plan_trajectory(preprocessed, time_budget_s=)` nhận ngân sách trực tiếp, và
+`config.TIME_BUDGET_S` chỉ còn là mặc định khi không ai truyền gì.
 
-Đã đo: override `config.TIME_BUDGET_S` lúc chạy **có** hiệu lực (v0 đọc nó trong
-vòng lặp search, không phải lúc import), và với tiến trình con thì hoàn toàn
-cách ly. Nên đây là lựa chọn thiết kế, không phải giới hạn kỹ thuật.
+Cùng lúc, `MAX_ITERATIONS` bị bỏ khỏi cả thuật toán lẫn dây (`SearchBudget` và
+`SearchStats`). Một trần đếm theo vòng lặp không phải đại lượng người vận hành
+suy luận được, và hai điều kiện dừng độc lập khiến một lần search có thể kết
+thúc vì lý do mà reply không hề nói ra. Giờ chỉ còn MỘT điều kiện dừng, có đơn
+vị, và `stats.budget_bound` đến thẳng từ vòng lặp search chứ không còn được
+service suy đoán từ thời gian đo bên ngoài (phép đo đó tính cả phần làm mượt và
+phần oracle nên có thể báo nhầm).
+
+Service vẫn giữ quyền quyết định ở hai đầu, và đó là lý do reply vẫn phải nói
+thật:
+
+| client gửi | service dùng |
+| --- | --- |
+| `<= 0`, hoặc không phải số hữu hạn | `config.TIME_BUDGET_S` |
+| một giá trị hợp lệ | đúng giá trị đó |
+| `> runtime.MAX_REQUEST_TIME_BUDGET_S` (300 s) | bị kẹp xuống 300 s |
 
 Reply mang `applied_time_budget_s` = giá trị service **thực sự** đã dùng. Nhận
-một trường rồi lặng lẽ bỏ qua là cách chắc chắn để client tin vào một điều không
+một trường rồi lặng lẽ đổi nó là cách chắc chắn để client tin vào một điều không
 đúng; báo cáo ngược giá trị thật thì client tự đối chiếu được.
 
-`max_iterations` được đối xử y hệt, và `stats.max_iterations` trong reply là giá
-trị thật đã dùng. Hai trường cạnh nhau mà một cái được tôn trọng, một cái không,
-là một cái bẫy không cần thiết.
+Trần 300 s không bảo vệ một mission - nó bảo vệ **hàng đợi**: service phục vụ
+tuần tự, nên ngân sách một client xin cũng là thời gian mọi client khác phải
+chờ. Nó cũng là thứ thay thế `unlimited_deadline_s` cũ: hồi `TIME_BUDGET_S` còn
+có thể là `None` ("không giới hạn"), `PlanRunner` cần một trần tuyệt đối riêng
+để thời hạn cứng không sụp thành đúng `grace_s` (lỗi F1). Khái niệm "không giới
+hạn" đã bị bỏ, nên chỉ còn một con số.
 
 ### 4.4 Các quyết định còn lại
 
@@ -328,8 +349,10 @@ DDS reply  <---'
 
 ### Ba tầng thời hạn
 
-1. `config.TIME_BUDGET_S` - planner tự dừng, êm, đặt `budget_bound = true`.
-2. Thời hạn của `PlanRunner`, `= config.TIME_BUDGET_S + 2 s` - cứng, `SIGKILL`.
+1. Ngân sách đã áp dụng của request - planner tự dừng, êm, đặt
+   `budget_bound = true`.
+2. Thời hạn của `PlanRunner`, `= ngân sách đã áp dụng + 2 s` - cứng, `SIGKILL`.
+   Luôn hữu hạn vì ngân sách bị kẹp dưới 300 s (mục 4.3).
 3. Thời hạn của client trên DDS - ngoài phạm vi service, phải lớn hơn (2).
 
 Tầng 2 tồn tại vì planner không hủy được từ bên ngoài. Chi phí của nó bằng 0 ở

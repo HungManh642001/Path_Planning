@@ -40,7 +40,12 @@ def main(argv: list[str] | None = None) -> int:
     from vtx_service.map_file import PreloadedMap
     from vtx_service.messages import PlanRequest, PlanReply, PlanStatus
     from vtx_service.runner import PlanRunner
-    from vtx_service.runtime import config_hash, effective_time_budget_s, planner_version
+    from vtx_service.runtime import (
+        MAX_REQUEST_TIME_BUDGET_S,
+        config_hash,
+        effective_time_budget_s,
+        planner_version,
+    )
 
     preloaded = PreloadedMap.load(args.preloaded_map) if args.preloaded_map else None
     if preloaded is not None:
@@ -55,27 +60,13 @@ def main(argv: list[str] | None = None) -> int:
 
     runner = PlanRunner(preloaded=preloaded, grace_s=args.grace_seconds)
     runner.start()  # PHẢI trước DDS - xem docstring của module
-    budget_s = effective_time_budget_s()
     log.info(
-        "planner %s, config %s, ngân sách thực tế %.1f s",
+        "planner %s, config %s, ngân sách mặc định %.1f s, trần theo request %.1f s",
         planner_version(),
         config_hash(),
-        budget_s,
+        effective_time_budget_s(),
+        MAX_REQUEST_TIME_BUDGET_S,
     )
-    if budget_s <= 0.0:
-        # F1: 0.0 nghĩa là "không giới hạn" (config.TIME_BUDGET_S = None).
-        # Với một service, đó là cấu hình NGUY HIỂM chứ không phải mặc định
-        # vô hại - một mission khó có thể chiếm tiến trình con tới khi chạm
-        # trần tuyệt đối của PlanRunner (unlimited_deadline_s), chặn mọi
-        # request khác phía sau nó vì service phục vụ tuần tự.
-        log.warning(
-            "config.TIME_BUDGET_S không giới hạn (None) - PlanRunner dùng "
-            "trần tuyệt đối %.1f s cho MỖI request thay vì ngân sách + %.1f s "
-            "ân hạn thường lệ; một mission khó sẽ chặn mọi request khác phía "
-            "sau nó tới khi đó",
-            runner.unlimited_deadline_s,
-            args.grace_seconds,
-        )
 
     from vtx_service.transport import DdsTransport
 

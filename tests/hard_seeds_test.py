@@ -2,7 +2,8 @@
 
 Baseline = best planner-path distance of the two old configs
 (results1_fail_v1: WRAP=10000, results1_fail_v2: WRAP=5000).
-TIME_BUDGET_S is disabled so results are deterministic; wall time is
+TIME_BUDGET_S is raised out of the way so results are deterministic (there is
+no "unlimited" any more -- the clock is the search's only cap); wall time is
 asserted separately against the 5 s budget.
 """
 import math
@@ -16,6 +17,10 @@ import core.kinodynamic_astar as astar
 import core.path_validation as pv
 import render.trajectory as tr
 from batch_random_test import generate_random_scenario
+
+# Far above anything these seeds need (they are asserted at < 5 s), so the
+# wall clock never gets to decide the route.
+_NO_BUDGET_PRESSURE_S = 600.0
 
 # (seed, distance ceiling in m). Ceilings: baseline * 1.05 for the two
 # pathological seeds (huge headroom vs their bad runs: 762 km / 815 km),
@@ -39,7 +44,7 @@ def _plan(seed):
 
 @pytest.mark.parametrize("seed,max_dist", CASES)
 def test_hard_seed_valid_fast_and_near_baseline(seed, max_dist, monkeypatch):
-    monkeypatch.setattr(config, 'TIME_BUDGET_S', None)
+    monkeypatch.setattr(config, 'TIME_BUDGET_S', _NO_BUDGET_PRESSURE_S)
     scn, pre, result, elapsed = _plan(seed)
     assert result['success'], f"seed {seed} failed to plan"
     assert elapsed < 5.0, f"seed {seed} took {elapsed:.2f}s"
@@ -63,7 +68,7 @@ def test_hard_seed_valid_fast_and_near_baseline(seed, max_dist, monkeypatch):
 def test_route_invariant_to_arc_waypoint_step(monkeypatch):
     """THE root-cause test: the searched route must not depend on the output
     discretisation step (it did depend on WRAP_STEP_M before)."""
-    monkeypatch.setattr(config, 'TIME_BUDGET_S', None)
+    monkeypatch.setattr(config, 'TIME_BUDGET_S', _NO_BUDGET_PRESSURE_S)
     routes, iterations = [], []
     for theta in (20.0, 30.0, 45.0):
         monkeypatch.setattr(config, 'ARC_WAYPOINT_STEP_DEG', theta)

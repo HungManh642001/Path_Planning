@@ -28,7 +28,6 @@ from vtx_service.messages import (
 )
 from vtx_service.runtime import (
     config_hash,
-    effective_max_iterations,
     effective_time_budget_s,
     planner_version,
 )
@@ -81,11 +80,13 @@ def plan(request: PlanRequest, preloaded: PreloadedMap | None = None) -> PlanRep
             alpha_max_rad=math.radians(request.limits.alpha_max_deg),
         )
     except (ValueError, KeyError, TypeError) as exc:
-        return _refusal(request, f"hình học không dựng được: {exc}")
+        return _refusal(request, f"hình học không dựng được: {exc}", started)
 
-    search_started = time.perf_counter()
-    result = astar.plan_trajectory(preprocessed)
-    search_elapsed = time.perf_counter() - search_started
+    # Ngân sách của client đi THẲNG vào thuật toán làm điều kiện dừng duy
+    # nhất; effective_time_budget_s quyết định nó được nhận nguyên vẹn, rơi về
+    # mặc định, hay bị kẹp. Reply báo cáo lại đúng con số này.
+    budget_s = effective_time_budget_s(request.budget.time_budget_s)
+    result = astar.plan_trajectory(preprocessed, time_budget_s=budget_s)
 
     status, detail = _classify(result)
     return PlanReply(
@@ -96,8 +97,8 @@ def plan(request: PlanRequest, preloaded: PreloadedMap | None = None) -> PlanRep
         waypoints=_waypoints_out(result, preprocessed),
         path_length_m=_planar_length(result, preprocessed),
         plan_wall_time_s=time.perf_counter() - started,
-        applied_time_budget_s=effective_time_budget_s(),
-        stats=_stats_out(result, search_elapsed),
+        applied_time_budget_s=budget_s,
+        stats=_stats_out(result),
         planner_version=planner_version(),
         config_hash=config_hash(),
     )
@@ -138,24 +139,30 @@ def _planar_length(result: dict[str, Any], preprocessed: dict[str, Any]) -> floa
     return sum(math.dist(full[i][0], full[i + 1][0]) for i in range(len(full) - 1))
 
 
-def _stats_out(result: dict[str, Any], search_elapsed: float) -> SearchStats:
-    """Đóng gói bộ đếm search, kèm cờ cho biết ngân sách có chạm trần không."""
+def _stats_out(result: dict[str, Any]) -> SearchStats:
+    """Đóng gói bộ đếm search, kèm cờ cho biết ngân sách có chạm trần không.
+
+    ``budget_bound`` đến THẲNG từ planner. Trước đây service tự suy ra nó bằng
+    cách so thời gian đo được ở ngoài với ngân sách - phép so đó tính cả phần
+    làm mượt và phần oracle, nên một mission vừa kịp giờ vẫn có thể bị báo là
+    chạm trần. Chỉ vòng lặp search biết nó dừng vì đồng hồ hay vì hết biên.
+    """
     stats = result["stats"]
-    budget_s = effective_time_budget_s()
-    budget_bound = stats["iterations"] >= stats["max_iterations"] or (
-        budget_s > 0.0 and search_elapsed >= budget_s
-    )
     return SearchStats(
         iterations=stats["iterations"],
-        max_iterations=stats["max_iterations"],
         open_set_size=stats["open_set_size"],
         search_failed=stats["search_failed"],
-        budget_bound=budget_bound,
+        budget_bound=stats["budget_bound"],
     )
 
 
 def _refusal(request: PlanRequest, detail: str, started: float) -> PlanReply:
-    """Từ chối một request không hợp lệ, không chạy search."""
+    """Từ chối một request không hợp lệ, không chạy search.
+
+    ``applied_time_budget_s`` ở đây là ngân sách MẶC ĐỊNH của service chứ không
+    phải ngân sách giải được từ request: không có lần search nào chạy, nên nói
+    "đã áp dụng X giây" cho một con số đến từ một request bị từ chối là bịa.
+    """
     return PlanReply(
         request_id=request.request_id,
         idl_version=IDL_VERSION,
@@ -165,7 +172,7 @@ def _refusal(request: PlanRequest, detail: str, started: float) -> PlanReply:
         path_length_m=0.0,
         plan_wall_time_s=time.perf_counter() - started,
         applied_time_budget_s=effective_time_budget_s(),
-        stats=SearchStats(0, effective_max_iterations(), 0, True, False),
+        stats=SearchStats(0, 0, True, False),
         planner_version=planner_version(),
         config_hash=config_hash(),
     )

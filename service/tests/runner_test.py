@@ -11,9 +11,11 @@ import os
 import time
 from pathlib import Path
 
+import config
 import pytest
 
 from vtx_service.messages import (
+    IDL_VERSION,
     PlanRequest,
     PlanStatus,
     SearchBudget,
@@ -27,7 +29,7 @@ LIMITS = VehicleLimits(8000.0, 8000.0, 15000.0, 500.0, 90.0)
 def _request(**overrides: object) -> PlanRequest:
     base: dict[str, object] = dict(
         request_id=b"\x06" * 16,
-        idl_version=1,
+        idl_version=IDL_VERSION,
         start=(50000.0, 50000.0),
         start_heading_deg=45.0,
         goal=(300000.0, 250000.0),
@@ -38,7 +40,7 @@ def _request(**overrides: object) -> PlanRequest:
         safezones=(),
         use_preloaded_map=False,
         limits=LIMITS,
-        budget=SearchBudget(15.0, 50000),
+        budget=SearchBudget(15.0),
     )
     base.update(overrides)
     return PlanRequest(**base)  # type: ignore[arg-type]
@@ -109,31 +111,31 @@ def test_child_start_cost_is_within_the_measured_envelope(runner: PlanRunner) ->
 def test_a_hung_child_becomes_timeout_and_the_runner_keeps_working() -> None:
     """Thời hạn CỨNG: tiến trình con treo phải bị giết, không được treo service.
 
-    Hạ `config.TIME_BUDGET_S` xuống trong lúc test, vì thời hạn cứng được tính
-    là `effective_time_budget_s() + grace`. Với giá trị thật (15 s) test này sẽ
-    chạy 15,5 giây và TRÔNG NHƯ TREO — đúng thứ nó sinh ra để phát hiện.
+    Ngân sách 0,5 s đi trong CHÍNH REQUEST, vì thời hạn cứng được tính là
+    `effective_time_budget_s(request.budget.time_budget_s) + grace`. Với mặc
+    định thật của config (15 s) test này sẽ chạy 15,5 giây và TRÔNG NHƯ TREO —
+    đúng thứ nó sinh ra để phát hiện.
     """
-    import config
-
-    saved = config.TIME_BUDGET_S
     instance = PlanRunner(preloaded=None, grace_s=0.5)
     instance.start()
     try:
-        config.TIME_BUDGET_S = 0.5
         instance._force_hang_next = True  # cửa hậu chỉ dùng cho test
-        hung = instance.submit(_request())
+        started = time.perf_counter()
+        hung = instance.submit(_request(budget=SearchBudget(0.5)))
+        elapsed = time.perf_counter() - started
         assert hung.status is PlanStatus.TIMEOUT
         assert hung.request_id == b"\x06" * 16
         assert hung.waypoints == ()
+        # Thời hạn bám ngân sách của REQUEST, không phải mặc định của config:
+        # 0,5 + 0,5 s ân hạn, chứ không phải 15,5 s.
+        assert elapsed < 5.0, f"thời hạn cứng không bám ngân sách request: {elapsed:.1f}s"
         # Elapsed time is essentially the deadline it burned - 0.0 would be
         # the first field an operator would question on a TIMEOUT reply.
         assert hung.plan_wall_time_s > 0.0
         assert hung.stats.budget_bound is True
         # Và runner vẫn phục vụ được ngay sau đó.
-        config.TIME_BUDGET_S = saved
         assert instance.submit(_request()).status is PlanStatus.OK
     finally:
-        config.TIME_BUDGET_S = saved
         instance.stop()
 
 
@@ -163,35 +165,26 @@ def test_config_mutation_in_a_child_cannot_leak_into_the_parent(runner: PlanRunn
     assert config.NUM_START_CORNERS == before
 
 
-def test_unlimited_budget_does_not_get_killed_by_the_grace_period() -> None:
-    """F1: ``config.TIME_BUDGET_S = None`` ("không giới hạn") must not become
-    a SIGKILL after ``grace_s`` seconds.
+def test_an_empty_request_budget_does_not_collapse_the_deadline() -> None:
+    """F1, dưới dạng còn lại sau khi "không giới hạn" bị bỏ.
 
-    Bug: the deadline was computed as ``effective_time_budget_s() + grace_s``.
-    ``effective_time_budget_s()`` returns ``0.0`` for "unlimited" (see
-    ``runtime.py``), so the deadline collapsed to plain ``grace_s`` - a real
-    mission got SIGKILLed on every request regardless of how little time it
-    actually needed.
+    Ngân sách trống (``0.0``) trên dây phải rơi về mặc định của service TRƯỚC
+    khi cộng ân hạn. Cộng thẳng ``0.0 + grace_s`` biến nó thành một SIGKILL sau
+    đúng ``grace_s`` giây trên MỌI request - đó chính là lỗi F1, và một client
+    không điền trường budget là cách dễ nhất để gặp lại nó.
 
-    ``grace_s`` is deliberately tiny (10 ms) here: under the OLD code that
-    makes the deadline ~10 ms, which a real mission (forkserver fork +
-    planning) cannot possibly beat, so the bug would fail this test with
-    near-100% reliability rather than by luck. Under the FIXED code the
-    deadline falls back to ``unlimited_deadline_s`` (default 300 s), so the
-    mission has all the time it needs and must succeed.
+    ``grace_s`` cố tình bé (10 ms): dưới lỗi đó thời hạn còn ~10 ms, thứ mà một
+    mission thật (fork + lập kế hoạch) không thể nào kịp, nên test đỏ gần như
+    chắc chắn thay vì đỏ theo may rủi.
     """
-    import config
-
-    saved = config.TIME_BUDGET_S
     instance = PlanRunner(preloaded=None, grace_s=0.01)
     instance.start()
     try:
-        config.TIME_BUDGET_S = None
-        reply = instance.submit(_request())
+        reply = instance.submit(_request(budget=SearchBudget(0.0)))
         assert reply.status is PlanStatus.OK
         assert reply.detail == ""
+        assert reply.applied_time_budget_s == float(config.TIME_BUDGET_S)
     finally:
-        config.TIME_BUDGET_S = saved
         instance.stop()
 
 

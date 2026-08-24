@@ -120,7 +120,13 @@ class SearchStats(TypedDict):
 
     Attributes:
         iterations: Nodes popped from the open set.
-        max_iterations: The cap that would have stopped the search.
+        time_budget_s: The wall-clock budget the search actually ran under -
+            the caller's value, or ``config.TIME_BUDGET_S`` when none was
+            given. It is the search's only stop condition.
+        budget_bound: Whether the search was cut off by that budget. A
+            first-class field, not a detail: a budget-bound search is one whose
+            answer depends on the machine it ran on, and "no path" and "ran out
+            of clock" are different claims.
         open_set_size: Nodes still queued when the search ended.
         search_failed: Whether the search ended without reaching the goal.
         closed_set_size: Distinct lattice cells expanded. Reported by the main
@@ -128,7 +134,8 @@ class SearchStats(TypedDict):
     """
 
     iterations: int
-    max_iterations: int
+    time_budget_s: float
+    budget_bound: bool
     open_set_size: int
     search_failed: bool
     closed_set_size: NotRequired[int]

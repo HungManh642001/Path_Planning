@@ -1,8 +1,10 @@
 """Siêu dữ liệu phiên bản, và giá trị ngân sách service THỰC SỰ dùng.
 
-Client gửi `time_budget_s` nhưng service chưa tôn trọng nó. Nhận một trường rồi
-lặng lẽ bỏ qua là cách chắc chắn để client tin vào một điều không đúng, nên
-service báo cáo ngược giá trị thật.
+`time_budget_s` của client ĐƯỢC tôn trọng, nhưng không phải vô điều kiện: một
+đề nghị trống (<= 0, hoặc không phải số hữu hạn) rơi về mặc định của service,
+và một đề nghị quá lớn bị kẹp xuống trần. Reply luôn báo cáo ngược giá trị
+THẬT, vì nhận một trường rồi lặng lẽ đổi nó là cách chắc chắn để client tin vào
+một điều không đúng.
 """
 
 from __future__ import annotations
@@ -14,8 +16,8 @@ import config
 import pytest
 
 from vtx_service.runtime import (
+    MAX_REQUEST_TIME_BUDGET_S,
     config_hash,
-    effective_max_iterations,
     effective_time_budget_s,
     planner_config_snapshot,
     planner_version,
@@ -32,7 +34,7 @@ def test_snapshot_is_discovered_not_hardcoded() -> None:
     snapshot = planner_config_snapshot()
     # Vài knob chắc chắn v0 đọc. KHÔNG khẳng định tổng số: con số đó phải được
     # phép đổi khi thuật toán đổi - đó chính là mục đích của cơ chế này.
-    for name in ("TIME_BUDGET_S", "MAX_ITERATIONS", "NUM_START_CORNERS", "GOAL_THRESHOLD"):
+    for name in ("TIME_BUDGET_S", "NUM_START_CORNERS", "GOAL_THRESHOLD"):
         assert name in snapshot
     assert len(snapshot) > 20
 
@@ -108,15 +110,26 @@ def test_planner_version_never_calls_subprocess(monkeypatch: pytest.MonkeyPatch)
     assert runtime.planner_version() == runtime.planner_version()
 
 
-def test_effective_budget_comes_from_config_not_from_the_request() -> None:
-    assert effective_time_budget_s() == float(config.TIME_BUDGET_S or 0.0)
-    assert effective_max_iterations() == config.MAX_ITERATIONS
+def test_no_request_budget_falls_back_to_config() -> None:
+    assert effective_time_budget_s() == float(config.TIME_BUDGET_S)
+    assert effective_time_budget_s(0.0) == float(config.TIME_BUDGET_S)
 
 
-def test_effective_budget_is_a_float_even_when_config_says_none() -> None:
-    original = config.TIME_BUDGET_S
-    try:
-        config.TIME_BUDGET_S = None
-        assert effective_time_budget_s() == 0.0
-    finally:
-        config.TIME_BUDGET_S = original
+def test_a_real_request_budget_is_honoured() -> None:
+    assert effective_time_budget_s(2.5) == 2.5
+
+
+@pytest.mark.parametrize("junk", [-1.0, float("inf"), float("nan")])
+def test_an_unusable_request_budget_falls_back_instead_of_raising(junk: float) -> None:
+    """Rác trên dây không được làm sập một tiến trình phục vụ tuần tự."""
+    assert effective_time_budget_s(junk) == float(config.TIME_BUDGET_S)
+
+
+def test_an_oversized_request_budget_is_clamped() -> None:
+    """Không có "không giới hạn" nào cho client tự nhận.
+
+    Service phục vụ TUẦN TỰ: một request xin một giờ sẽ chặn mọi request phía
+    sau nó trong đúng một giờ. Trần này là thứ giữ cho thời hạn cứng của
+    PlanRunner luôn hữu hạn.
+    """
+    assert effective_time_budget_s(10_000.0) == MAX_REQUEST_TIME_BUDGET_S

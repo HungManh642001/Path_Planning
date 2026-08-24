@@ -10,6 +10,18 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-22-dds-path-planning-service-design.md`
 
+> **BẢN GHI LỊCH SỬ — hai ràng buộc dưới đây đã được chủ sở hữu gỡ ngày
+> 2026-08-24, SAU khi plan này thực thi xong.** Đừng đọc các đoạn mã trong file
+> này như mã hiện hành:
+>
+> - "Không sửa `core/`, `render/`, `config.py`" chỉ áp dụng cho công việc
+>   service. Yêu cầu bỏ `MAX_ITERATIONS` đến thẳng từ chủ sở hữu và cố ý sửa
+>   thuật toán; `service/tests/boundary_test.py` vẫn đứng nguyên để canh công
+>   việc service.
+> - "`time_budget_s` và `max_iterations` CHƯA được tôn trọng" không còn đúng.
+>   `MAX_ITERATIONS` đã bị bỏ khỏi thuật toán VÀ khỏi dây; `time_budget_s` đi
+>   thẳng vào `plan_trajectory()`. `idl_version` lên 2. Xem mục 4.3 của spec.
+
 ## Global Constraints
 
 - **Không sửa `core/`, `render/`, `config.py`.** `git diff --stat main -- core/ render/ config.py` phải rỗng ở mọi commit. Task 2 dựng test cưỡng chế.

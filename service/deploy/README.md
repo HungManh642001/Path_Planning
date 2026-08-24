@@ -70,11 +70,28 @@ dạng ở `basemap.example.xml`.
 của request, và planner lấy HỢP của chúng. Thêm một safezone là **nới rộng**
 vùng bay, không phải thu hẹp.
 
+## Ngân sách thời gian
+
+`budget.time_budget_s` trong request **được tôn trọng** (từ `idl_version` 2):
+nó đi thẳng vào thuật toán làm điều kiện dừng **duy nhất** - không còn trần
+theo số vòng lặp nào nữa.
+
+| client gửi | service dùng |
+| --- | --- |
+| `<= 0`, hoặc không phải số hữu hạn | `config.TIME_BUDGET_S` (mặc định 15 s) |
+| một giá trị hợp lệ | đúng giá trị đó |
+| lớn hơn `runtime.MAX_REQUEST_TIME_BUDGET_S` (300 s) | bị kẹp xuống 300 s |
+
+Reply luôn mang `applied_time_budget_s` là giá trị **thật** đã dùng, nên client
+biết đề nghị của mình được nhận nguyên vẹn hay đã bị thay. Thời hạn cứng của
+`PlanRunner` (SIGKILL cho tiến trình con) là ngân sách đó cộng `--grace-seconds`.
+
+Trần 300 s không phải để bảo vệ một mission - nó bảo vệ **hàng đợi**: service
+phục vụ tuần tự, nên ngân sách một client xin cũng là thời gian mọi client khác
+phải chờ.
+
 ## Những gì service CHƯA làm
 
-- **`time_budget_s` và `max_iterations` trong request bị bỏ qua.** Service dùng
-  `config.TIME_BUDGET_S` / `config.MAX_ITERATIONS`. Reply mang
-  `applied_time_budget_s` và `stats.max_iterations` là giá trị thật đã dùng.
 - **Chỉ hệ toạ độ Oxy phẳng, mét.** Không WGS84.
 - **Một request tại một thời điểm.** Không có phát hiện "bận": `PLAN_BUSY` là giá trị RESERVED, không đường mã nào sinh ra nó. Vòng phục vụ tuần tự trên một reader `KEEP_ALL`, nên một request đến khi service đang bận được DDS (RELIABLE + KEEP_ALL) **xếp hàng** và trả lời sau, theo đúng thứ tự - không bị từ chối.
 
@@ -85,7 +102,7 @@ vùng bay, không phải thu hẹp.
 | Client không nhận reply nào | Sai `--domain-id`, hoặc discovery bị chặn. Kiểm tra log "sẵn sàng trên domain". |
 | Mọi reply là `PLAN_INVALID_REQUEST` | `idl_version` lệch: client và service build từ hai bản IDL khác nhau. |
 | `PLAN_INVALID_REQUEST` kèm "preloaded map" | Client đặt `use_preloaded_map` nhưng service khởi động không có `--preloaded-map`. |
-| `PLAN_TIMEOUT` lặp lại | Bản đồ quá khó cho `config.TIME_BUDGET_S`, hoặc máy quá tải. Xem `stats.budget_bound` trên các reply thành công. |
+| `PLAN_TIMEOUT` lặp lại | Bản đồ quá khó cho ngân sách đang áp dụng, hoặc máy quá tải. Xem `applied_time_budget_s` (ngân sách thật đã dùng) và `stats.budget_bound` trên các reply thành công. |
 | Đường bay đúng độ dài nhưng sai hướng 90 độ | Quy ước phương vị. Trên dây LUÔN là phương vị thật, thuận kim đồng hồ từ bắc, `+y` bắc. |
 | Service treo cứng sau một thời gian chạy | Nghi ngờ đầu tiên: có ai đó đổi `PlanRunner` sang `fork` trần, hoặc đảo thứ tự `runner.start()` và khởi tạo DDS. Xem mục 3 của spec. |
 | Reply thiếu mẫu tin với bản đồ lớn | Phân mảnh UDP; cần chỉnh cấu hình transport của binding DDS. |

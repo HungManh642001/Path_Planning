@@ -58,7 +58,7 @@ def _request(request_id: bytes) -> PlanRequest:
         safezones=(((0.0, 0.0), (5e5, 0.0), (5e5, 5e5)),),
         use_preloaded_map=False,
         limits=VehicleLimits(8000.0, 8000.0, 15000.0, 500.0, 90.0),
-        budget=SearchBudget(15.0, 50000),
+        budget=SearchBudget(15.0),
     )
 
 
@@ -72,7 +72,7 @@ def _reply(request: PlanRequest) -> PlanReply:
         path_length_m=123456.78901234567,
         plan_wall_time_s=0.0421,
         applied_time_budget_s=15.0,
-        stats=SearchStats(1234, 50000, 56, True, False),
+        stats=SearchStats(1234, 56, True, False),
         planner_version="v1.0-3-gabc1234-dirty",
         config_hash="0123456789abcdef",
     )

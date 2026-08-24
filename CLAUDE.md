@@ -35,7 +35,7 @@ There **is** a pytest suite under `tests/` — run `python -m pytest -q` from th
 
 If a `_ARRAY_API not found` / `numpy.core.multiarray failed to import` ever comes back, it is the same thing: `pip install "numpy==1.26.4"`.
 
-**The real gate is `pytest -q tests/` = 188 passed, 6 failed** (as of 2026-08-21; it was 170/7 before the Strategy-B and goal-shot work added tests). The six all predate that work — the original seven were verified against `5400d9c` in a scratch worktree, and one of them has since gone green for a reason unrelated to its feature (see the table) — so treat them as the baseline, not as breakage:
+**The real gate is `pytest -q tests/` = 210 passed, 6 failed** (as of 2026-08-24; 188/6 before `tests/time_budget_test.py` landed, 170/7 before the Strategy-B and goal-shot work added tests). The six all predate that work — the original seven were verified against `5400d9c` in a scratch worktree, and one of them has since gone green for a reason unrelated to its feature (see the table) — so treat them as the baseline, not as breakage:
 
 | failing test | why |
 | --- | --- |
@@ -204,7 +204,9 @@ that `batch_random_test` drifts).
   (obstacle-free and lightly cluttered, 24 start headings × `goal_heading` ∈
   {None, +90°, −90°}): main 141/144 solved at 106,563 iterations; main with
   `GOAL_SHOT_ENABLED = False` 131/144 at 1,175,528; v0 **before the port**
-  131/144 at 1,177,550 with **10 cases dying on `MAX_ITERATIONS`**; v0 **after**
+  131/144 at 1,177,550 with **10 cases dying on the iteration cap** (this was
+  measured while `MAX_ITERATIONS = 50000` still existed; it does not any more,
+  see the budget note below); v0 **after**
   141/144 at **78,979**, none at the cap. Turning the shot off in main
   reproduced v0 almost exactly, so the shot was the whole gap. It lived in one
   group — obstacle-free with an adverse `goal_heading`, where v0 solved 14/24 —
@@ -809,7 +811,7 @@ on 2026-08-20:
   commit, same config, same 300 seeds, two hours apart: 102.1 s vs 165.1 s,
   +62%, every path bit-identical. Only paired repeats run back to back mean
   anything, medians of 3+.
-- **`config.TIME_BUDGET_S = 15` makes the search wall-clock dependent** — the
+- **The wall-clock budget makes the search wall-clock dependent** — the
   same seed on a slower machine explores fewer nodes and can return a different
   answer. Exactly one seed is budget-bound on the current sweeps (**seed 39,
   fixed mode**), measured anywhere from 13,624 to 26,183 iterations on identical
@@ -817,6 +819,47 @@ on 2026-08-20:
   instrumented counts in `free` mode, where nothing is budget-bound and they
   reproduce exactly. Note the wider implication, which is not just a measurement
   problem: **the planner is not deterministic across machines.**
+
+  **That budget is now the ONLY stop condition, and it is injectable**
+  (2026-08-24). `config.MAX_ITERATIONS` is gone: a cap counted in iterations is
+  not a quantity an operator can reason about, and two independent stop
+  conditions meant a search could end for a reason the result never named.
+  What remains is `plan_trajectory(pre, time_budget_s=)` /
+  `KinodynamicAstar(pre, time_budget_s=)`, falling back to
+  `config.TIME_BUDGET_S` when the caller passes nothing — one shared validator,
+  `config.resolve_time_budget_s()`, decides what counts as usable.
+
+  Two consequences worth knowing before you measure anything:
+
+  - **There is no "unlimited" any more.** `TIME_BUDGET_S = None` used to mean
+    it; it is now a `ValueError`, because an uncapped search can hold a GUI or a
+    service worker forever, and on the DDS wire the same idea read as
+    "`0.0` = no limit", which is how a request budget of zero silently became
+    infinity. Tests that want the clock out of the way raise the budget
+    (`tests/hard_seeds_test.py` uses 600 s) instead of removing it.
+  - **Dropping the cap moved nothing on the recorded sweeps.** No seed ever
+    reached 50,000 — the worst is main fixed at 129,373 iterations summed over
+    300 seeds, i.e. ~430 each, and the single worst seed is 26,183. Measured
+    against a scratch worktree at the pre-change HEAD, all four sweeps are
+    **bit-identical 300/300** with iteration counts equal to the digit:
+
+    | sweep | paths | solved | length | iterations |
+    | --- | --- | --- | --- | --- |
+    | v0 free | 300/300 | 294 → 294 | +0.0000% | 28,663 → 28,663 |
+    | v0 fixed | 300/300 | 243 → 243 | +0.0000% | 47,496 → 47,496 |
+    | main free | 300/300 | 294 → 294 | +0.0000% | 119,666 → 119,666 |
+    | main fixed | 300/300 | 243 → 243 | +0.0000% | 129,373 → 129,373 |
+
+    Fixed mode matching exactly is worth noting: seed 39 is budget-bound there,
+    so it did NOT have to. The cap was only ever load-bearing on adverse
+    missions the sweeps do not contain — the pre-goal-shot v0 measurement above
+    is the one place it bound.
+
+  `stats` reports `time_budget_s` and `budget_bound` in place of
+  `max_iterations`. `budget_bound` comes straight from the search loop, so "no
+  path" and "ran out of clock" are finally distinguishable — the DDS service
+  used to infer it by comparing an externally measured elapsed time against the
+  budget, which counted smoothing and the oracle too.
 
 Two mechanical notes. Most files here are **CRLF** (`git ls-files --eol` to
 check, there is no `.gitattributes`); patching with `open(p, 'w').write(s)` in

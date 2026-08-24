@@ -129,18 +129,40 @@ def planner_version() -> str:
     return _PLANNER_VERSION
 
 
-def effective_time_budget_s() -> float:
-    """Ngân sách thời gian service THỰC SỰ dùng.
+MAX_REQUEST_TIME_BUDGET_S = 300.0
+"""Trần cứng cho ngân sách một client được phép xin.
 
-    Lấy từ ``config``, không phải từ request: xem mục 4.3 của spec. Reply báo
-    cáo ngược giá trị này để client không tưởng rằng đề nghị của mình được nhận.
+Service phục vụ TUẦN TỰ trên một reader KEEP_ALL: mọi request đến trong lúc
+một request đang chạy đều XẾP HÀNG phía sau nó. Nên một đề nghị "cho tôi một
+giờ" không chỉ là một mission chậm - nó là một giờ ngừng phục vụ, do một client
+đơn lẻ quyết định.
+
+Đây cũng là thứ giữ cho thời hạn cứng của ``PlanRunner`` luôn hữu hạn: thời hạn
+đó là ngân sách đã áp dụng cộng thời gian ân hạn, và ngân sách đã áp dụng không
+bao giờ vượt con số này. Trước đây vai trò ấy do một hằng số riêng
+(``unlimited_deadline_s``) đảm nhiệm, cần thiết vì ngân sách có thể là "không
+giới hạn"; giờ không còn khái niệm đó nữa nên chỉ còn một con số.
+"""
+
+
+def effective_time_budget_s(requested_s: float = 0.0) -> float:
+    """Ngân sách thời gian service THỰC SỰ dùng cho một request.
+
+    Đề nghị của client ĐƯỢC tôn trọng, nhưng service vẫn giữ quyền quyết định
+    ở hai đầu: một đề nghị trống rơi về mặc định, một đề nghị quá lớn bị kẹp.
+    Reply báo cáo ngược đúng giá trị hàm này trả về, nên client luôn biết đề
+    nghị của mình được nhận nguyên vẹn hay đã bị thay.
+
+    Args:
+        requested_s: Giá trị client gửi. ``<= 0`` nghĩa là "không đề nghị gì".
+            Rác (không phải số hữu hạn) cũng được coi như vậy thay vì ném lỗi:
+            nó đến từ dây, và một tiến trình phục vụ tuần tự không được chết vì
+            một byte sai của một client.
 
     Returns:
-        Ngân sách tính bằng giây; ``0.0`` nghĩa là không giới hạn.
+        Ngân sách tính bằng giây, luôn hữu hạn và > 0.
     """
-    return float(config.TIME_BUDGET_S or 0.0)
-
-
-def effective_max_iterations() -> int:
-    """Trần số vòng lặp service THỰC SỰ dùng. Cùng lý do như trên."""
-    return int(config.MAX_ITERATIONS)
+    try:
+        return min(config.resolve_time_budget_s(requested_s), MAX_REQUEST_TIME_BUDGET_S)
+    except (ValueError, TypeError):
+        return config.resolve_time_budget_s(None)

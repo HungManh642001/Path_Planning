@@ -24,6 +24,13 @@ def print_header(text):
     print("="*70)
 
 
+def _budget_note(stats):
+    """The wall-clock budget the search ran under, and whether it ran out."""
+    budget_s = stats.get('time_budget_s', config.TIME_BUDGET_S)
+    cut = ' — BUDGET EXHAUSTED' if stats.get('budget_bound') else ''
+    return f" in <= {budget_s:g}s{cut}"
+
+
 def print_result(scenario_name, result, elapsed_time):
     """Print scenario result summary"""
     print(f"\n{'─'*70}")
@@ -58,11 +65,11 @@ def print_result(scenario_name, result, elapsed_time):
         print(f"  Max Turn Angle: {math.degrees(max_turn):.2f}°")
         
         stats = result.get('stats', {})
-        print(f"  Iterations: {stats.get('iterations', 0)}/{config.MAX_ITERATIONS}")
+        print(f"  Iterations: {stats.get('iterations', 0)}{_budget_note(stats)}")
     else:
         print(f"✗ FAILED - No path found after {elapsed_time:.2f}s")
         stats = result.get('stats', {})
-        print(f"  Iterations: {stats.get('iterations', 0)}/{config.MAX_ITERATIONS}")
+        print(f"  Iterations: {stats.get('iterations', 0)}{_budget_note(stats)}")
         print(f"  Open Set: {stats.get('open_set_size', 0)}")
         print(f"  Closed Set: {stats.get('closed_set_size', 0)}")
 

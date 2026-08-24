@@ -16,8 +16,14 @@ from enum import IntEnum
 Point = tuple[float, float]
 """Vị trí phẳng ``(x, y)`` mét. ``+y`` là bắc, ``+x`` là đông."""
 
-IDL_VERSION = 1
-"""Tăng khi bố cục struct đổi. Service từ chối request không khớp."""
+IDL_VERSION = 2
+"""Tăng khi bố cục struct đổi. Service từ chối request không khớp.
+
+2: bỏ ``max_iterations`` khỏi ``SearchBudget`` và ``SearchStats``; đồng thời
+``budget.time_budget_s`` bắt đầu được tôn trọng thật. Hai thay đổi này đi cùng
+một lần tăng vì chúng là cùng một quyết định: thuật toán chỉ còn MỘT điều kiện
+dừng, và nó là con số client gửi.
+"""
 
 
 class PlanStatus(IntEnum):
@@ -77,14 +83,20 @@ class VehicleLimits:
 class SearchBudget:
     """Ngân sách search do client đề nghị.
 
-    CHƯA được tôn trọng: service dùng ``config.TIME_BUDGET_S`` và
-    ``config.MAX_ITERATIONS``. Trường có mặt để sau này thuật toán nhận chúng
-    như tham số thật mà không phải tăng ``IDL_VERSION``. Reply báo cáo ngược giá
-    trị đã dùng thật qua ``applied_time_budget_s`` và ``stats.max_iterations``.
+    ``time_budget_s`` ĐƯỢC tôn trọng: nó đi thẳng vào thuật toán làm điều kiện
+    dừng DUY NHẤT. ``<= 0`` (hoặc rác) nghĩa là "không đề nghị gì" và service
+    dùng mặc định của mình; giá trị quá lớn bị kẹp xuống
+    ``runtime.MAX_REQUEST_TIME_BUDGET_S``. Reply luôn mang
+    ``applied_time_budget_s`` là giá trị THẬT đã dùng, nên client biết đề nghị
+    của mình được nhận nguyên vẹn hay đã bị thay.
+
+    Không còn trần theo số vòng lặp: thuật toán bỏ ``MAX_ITERATIONS`` vì một
+    con số vòng lặp không phải đại lượng người vận hành suy luận được, và hai
+    điều kiện dừng độc lập khiến một lần search có thể kết thúc vì lý do mà
+    reply không hề nói ra.
     """
 
     time_budget_s: float
-    max_iterations: int
 
 
 @dataclass(frozen=True)
@@ -128,7 +140,6 @@ class SearchStats:
     """
 
     iterations: int
-    max_iterations: int
     open_set_size: int
     search_failed: bool
     budget_bound: bool

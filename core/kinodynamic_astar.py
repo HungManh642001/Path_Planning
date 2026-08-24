@@ -238,14 +238,27 @@ class KinodynamicAstar:
     goal candidates, and a budgeted Strategy-B radial fan.
     """
 
-    def __init__(self, preprocessed_scenario: PreprocessedScenario) -> None:
+    def __init__(
+        self,
+        preprocessed_scenario: PreprocessedScenario,
+        time_budget_s: float | None = None,
+    ) -> None:
         """Build the planner's obstacle caches, endpoints and seeded start corners.
 
         Args:
             preprocessed_scenario: Output of
                 :func:`core.preprocessing.prepare_scenario`.
+            time_budget_s: Wall-clock budget for the search, in seconds. This
+                is the search's ONLY stop condition. ``None`` means "the caller
+                did not say", and falls back to ``config.TIME_BUDGET_S``; it
+                does NOT mean unlimited, which is not an option any more.
+
+        Raises:
+            ValueError: If the resolved budget is not a finite number > 0, or
+                if the scenario is missing ``start_pos`` / ``goal_pos``.
         """
         self.scenario = preprocessed_scenario
+        self.time_budget_s = config.resolve_time_budget_s(time_budget_s)
         # start_pos, goal_pos and the two mandatory leg lengths are optional at
         # the TYPE level because render and GUI callers legitimately hand
         # full_mission_path a partial mapping. A planner, however, cannot run
@@ -335,7 +348,7 @@ class KinodynamicAstar:
         # y ~ 1.15e6); enforcing it there would reject every waypoint. When
         # neither a safezone nor an explicit map_bounds is given, _in_bounds is
         # permissive (the search is still bounded by obstacles, candidates,
-        # MAX_ITERATIONS and the time budget).
+        # and the time budget).
         self._has_explicit_bounds = map_bounds is not None
         self._bounds_w, self._bounds_h = (
             map_bounds if map_bounds else (config.MAP_WIDTH, config.MAP_HEIGHT)
@@ -374,7 +387,10 @@ class KinodynamicAstar:
         self.g_scores: defaultdict[State, float] = defaultdict(lambda: float("inf"))
 
         self.iteration_count = 0
-        self.max_iterations = config.MAX_ITERATIONS
+        # Set by search() when the wall-clock budget, not the frontier, ended
+        # the loop. Kept apart from search_failed: "I looked everywhere and
+        # there is no path" and "I ran out of clock" are different answers.
+        self.budget_bound = False
         self.R = preprocessed_scenario["turn_radius"]
         self.alpha_max_rad = preprocessed_scenario["alpha_max_rad"]
         # Turn limit used when BUILDING and accepting geometry: padded towards
@@ -1360,11 +1376,12 @@ class KinodynamicAstar:
         """Run the kinodynamic A* search.
 
         Returns:
-            The reconstructed waypoints, or ``None`` if no path was found within
-            the iteration cap or the wall-clock budget.
+            The reconstructed waypoints, or ``None`` if none was found.
+            ``budget_bound`` then says which of the two ways the search ended:
+            the frontier ran out (a real "no path"), or the clock did.
         """
         started_at = time.perf_counter()
-        budget_s = config.TIME_BUDGET_S
+        budget_s = self.time_budget_s
 
         # Seed every feasible start corner. If none survived construction
         # (takeoff ray blocked / outside the operating area), the start is
@@ -1387,8 +1404,11 @@ class KinodynamicAstar:
             if corner.g_cost < self.g_scores[corner]:
                 self.g_scores[corner] = corner.g_cost
 
-        while self.open_set and self.iteration_count < self.max_iterations:
-            if budget_s is not None and (time.perf_counter() - started_at) > budget_s:
+        while self.open_set:
+            # The budget is the ONLY stop condition. The loop otherwise runs
+            # until the frontier is exhausted, which is the honest "no path".
+            if (time.perf_counter() - started_at) > budget_s:
+                self.budget_bound = True
                 break
             self.iteration_count += 1
 
@@ -1651,7 +1671,8 @@ class KinodynamicAstar:
         """Return the counters describing how the last search ran."""
         return {
             "iterations": self.iteration_count,
-            "max_iterations": self.max_iterations,
+            "time_budget_s": self.time_budget_s,
+            "budget_bound": self.budget_bound,
             "open_set_size": len(self.open_set),
             "closed_set_size": len(self.closed_set),
             "search_failed": self.search_failed,
@@ -1892,7 +1913,11 @@ class KinodynamicAstar:
         path = self.search()
         if verbose:
             stats = self.get_search_stats()
-            print(f"Search completed: {stats['iterations']}/{stats['max_iterations']} iterations")
+            print(
+                f"Search completed: {stats['iterations']} iterations in "
+                f"<= {stats['time_budget_s']:g} s"
+                + (" (budget exhausted)" if stats["budget_bound"] else "")
+            )
         if path is None:
             return self._result(None, False, "no_path")
 
@@ -1941,7 +1966,9 @@ class KinodynamicAstar:
 
 
 def plan_trajectory(
-    preprocessed_scenario: PreprocessedScenario, verbose: bool = False
+    preprocessed_scenario: PreprocessedScenario,
+    verbose: bool = False,
+    time_budget_s: float | None = None,
 ) -> PlanResult:
     """Plan an autonomous aircraft trajectory end to end.
 
@@ -1952,10 +1979,16 @@ def plan_trajectory(
         preprocessed_scenario: Output of
             :func:`core.preprocessing.prepare_scenario`.
         verbose: Print progress information to stdout.
+        time_budget_s: Wall-clock budget for the search, in seconds, or
+            ``None`` to use ``config.TIME_BUDGET_S``. It is the search's only
+            stop condition; see :class:`KinodynamicAstar`.
 
     Returns:
-        The plan result.
+        The plan result. ``result['stats']['budget_bound']`` tells a caller
+        whether the answer was cut short by the clock.
     """
     if verbose:
         print("Initializing Kinodynamic A*...")
-    return KinodynamicAstar(preprocessed_scenario).plan(verbose=verbose)
+    return KinodynamicAstar(preprocessed_scenario, time_budget_s=time_budget_s).plan(
+        verbose=verbose
+    )

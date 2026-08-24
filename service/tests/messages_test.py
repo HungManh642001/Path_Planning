@@ -31,7 +31,7 @@ def _request(**overrides: object) -> PlanRequest:
         safezones=(),
         use_preloaded_map=False,
         limits=VehicleLimits(8000.0, 8000.0, 15000.0, 500.0, 90.0),
-        budget=SearchBudget(15.0, 50000),
+        budget=SearchBudget(15.0),
     )
     base.update(overrides)
     return PlanRequest(**base)  # type: ignore[arg-type]
@@ -62,9 +62,15 @@ def test_there_is_no_frame_field() -> None:
 
 
 def test_reply_reports_the_budget_it_actually_used() -> None:
-    """time_budget_s trên dây CHƯA được tôn trọng; reply phải nói thật."""
+    """Đề nghị của client có thể bị thay (trống, hoặc quá trần); reply nói thật."""
     fields = {f.name for f in dataclasses.fields(PlanReply)}
     assert "applied_time_budget_s" in fields
+
+
+def test_the_budget_on_the_wire_is_time_only() -> None:
+    """Không còn trần theo số vòng lặp nào để đề nghị, hay để báo cáo lại."""
+    assert {f.name for f in dataclasses.fields(SearchBudget)} == {"time_budget_s"}
+    assert "max_iterations" not in {f.name for f in dataclasses.fields(SearchStats)}
 
 
 def test_circle_rejects_a_non_positive_radius() -> None:
@@ -87,7 +93,7 @@ def test_reply_round_trips_through_dataclasses_replace() -> None:
         path_length_m=1.0,
         plan_wall_time_s=0.5,
         applied_time_budget_s=15.0,
-        stats=SearchStats(3, 50000, 7, False, False),
+        stats=SearchStats(3, 7, False, False),
         planner_version="abc1234",
         config_hash="0123456789abcdef",
     )

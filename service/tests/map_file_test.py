@@ -11,7 +11,13 @@ from pathlib import Path
 import pytest
 
 from vtx_service.map_file import PreloadedMap
-from vtx_service.messages import Circle, PlanRequest, SearchBudget, VehicleLimits
+from vtx_service.messages import (
+    IDL_VERSION,
+    Circle,
+    PlanRequest,
+    SearchBudget,
+    VehicleLimits,
+)
 
 MAP_XML = """<vtx-map version="1">
   <safezones>
@@ -43,7 +49,7 @@ def _write(tmp_path: Path, text: str = MAP_XML) -> Path:
 def _request(**overrides: object) -> PlanRequest:
     base: dict[str, object] = dict(
         request_id=b"\x05" * 16,
-        idl_version=1,
+        idl_version=IDL_VERSION,
         start=(50000.0, 50000.0),
         start_heading_deg=45.0,
         goal=(300000.0, 250000.0),
@@ -54,7 +60,7 @@ def _request(**overrides: object) -> PlanRequest:
         safezones=(),
         use_preloaded_map=False,
         limits=VehicleLimits(8000.0, 8000.0, 15000.0, 500.0, 90.0),
-        budget=SearchBudget(15.0, 50000),
+        budget=SearchBudget(15.0),
     )
     base.update(overrides)
     return PlanRequest(**base)  # type: ignore[arg-type]

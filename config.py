@@ -3,6 +3,8 @@ Configuration Module for Autonomous Aircraft Path Planning System
 Defines operational parameters and parameters
 """
 
+import math
+
 # ====== DYNAMIC CONSTRAINTS ======
 # Turn radius (m) - fixed for entire trajectory
 R = 8000.0
@@ -95,11 +97,53 @@ MAP_HEIGHT = 500000.0
 # legacy worst-case W1, so NUM_START_CORNERS = 1 is exactly legacy behaviour.
 NUM_START_CORNERS = 4
 
-# Maximum iterations for A* search
-MAX_ITERATIONS = 50000
+# Wall-clock budget for a single search (seconds). This is the search's ONLY
+# stop condition -- the old MAX_ITERATIONS cap is gone: a count of iterations
+# is not a quantity an operator can reason about, and two independent stop
+# conditions meant a search could end for a reason the result never named.
+#
+# Must be a finite number > 0; there is no "unlimited" any more. A search with
+# no cap at all can hang a GUI or a service worker forever, and the value that
+# used to express it (None) also read as "0.0 = no limit" on the service wire,
+# which is how a request-level budget of zero silently became infinity.
+#
+# This is only the DEFAULT. Every entry point takes `time_budget_s=` and falls
+# back here only when the caller passes nothing.
+#
+# NOTE this makes the search wall-clock dependent: the same mission on a slower
+# machine explores fewer nodes and can return a different path. Take
+# instrumented measurements with a budget large enough that nothing is
+# budget-bound.
+TIME_BUDGET_S: float = 15.0
 
-# Wall-clock budget for a single search (seconds). None = no time limit.
-TIME_BUDGET_S: float | None = 15  # 0.9
+
+def resolve_time_budget_s(value: float | None = None) -> float:
+    """Resolve a caller-supplied search budget against the configured default.
+
+    One definition of "is this a usable budget", shared by both planners and by
+    the DDS service, so a value that is refused in one place is refused in all
+    of them.
+
+    Args:
+        value: Seconds, or ``None`` for "the caller did not say". ``None`` is
+            NOT "unlimited": an uncapped search can hold a GUI or a service
+            worker forever, so there is no way to ask for one.
+
+    Returns:
+        The budget to run under, in seconds.
+
+    Raises:
+        ValueError: If the resolved budget is not a finite number > 0. NaN is
+            refused explicitly because every comparison against it is false, so
+            it would silently disable the deadline rather than trip it.
+    """
+    budget = TIME_BUDGET_S if value is None else value
+    if not isinstance(budget, (int, float)) or math.isnan(budget):
+        raise ValueError(f"time budget must be a finite number of seconds, got {budget!r}")
+    budget = float(budget)
+    if budget <= 0.0 or math.isinf(budget):
+        raise ValueError(f"time budget must be finite and > 0 seconds, got {budget!r}")
+    return budget
 
 # State-lattice quantisation for A* de-duplication
 STATE_POS_QUANTUM = 1000.0          # meters
@@ -143,7 +187,7 @@ RADIAL_FAN_DIRECTIONS = 3  # number of directions in the fan
 #     M=3  4 fails,  7 better, net  +2.1 km
 #     M=4  4 fails, 12 better, net -23.5 km
 #
-# M >= 3 pushes hard cases past MAX_ITERATIONS (branching x3-x4), losing
+# M >= 3 pushes hard cases past the search budget (branching x3-x4), losing
 # missions that legacy solved — and the lost cases are where the ladder wins
 # biggest (start 90 / goal 90: 458.4 -> 410.6 km at M=2, FAIL at M=3+).
 # The relation is NOT monotone in M: the coarse dedup lattice makes M=3 worse
@@ -515,7 +559,6 @@ CIRCLE_MIN_SEPARATION_M = 500.0
 SPAWN_CLEARANCE_M = 5000.0
 
 # ====== UTILS ======
-import math
 
 def deg_to_rad(degrees: float) -> float:
     """Convert degrees to radians"""

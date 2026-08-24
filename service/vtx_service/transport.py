@@ -87,7 +87,6 @@ class VehicleLimits(IdlStruct, typename="vtx.planning.VehicleLimits"):
 @dataclass
 class SearchBudget(IdlStruct, typename="vtx.planning.SearchBudget"):
     time_budget_s: float
-    max_iterations: uint32
 
 
 @dataclass
@@ -117,7 +116,6 @@ class Waypoint(IdlStruct, typename="vtx.planning.Waypoint"):
 @dataclass
 class SearchStats(IdlStruct, typename="vtx.planning.SearchStats"):
     iterations: uint32
-    max_iterations: uint32
     open_set_size: uint32
     search_failed: bool
     budget_bound: bool
@@ -179,7 +177,7 @@ def _to_domain(wire: WireRequest) -> msg.PlanRequest:
             wire.limits.safe_margin_m,
             wire.limits.alpha_max_deg,
         ),
-        budget=msg.SearchBudget(wire.budget.time_budget_s, int(wire.budget.max_iterations)),
+        budget=msg.SearchBudget(wire.budget.time_budget_s),
     )
 
 
@@ -209,7 +207,7 @@ def _to_wire_request(request: msg.PlanRequest) -> WireRequest:
             request.limits.safe_margin_m,
             request.limits.alpha_max_deg,
         ),
-        budget=SearchBudget(request.budget.time_budget_s, request.budget.max_iterations),
+        budget=SearchBudget(request.budget.time_budget_s),
     )
 
 
@@ -228,7 +226,6 @@ def _to_wire_reply(reply: msg.PlanReply) -> WireReply:
         applied_time_budget_s=reply.applied_time_budget_s,
         stats=SearchStats(
             reply.stats.iterations,
-            reply.stats.max_iterations,
             reply.stats.open_set_size,
             reply.stats.search_failed,
             reply.stats.budget_bound,
@@ -253,7 +250,6 @@ def _from_wire_reply(wire: WireReply) -> msg.PlanReply:
         applied_time_budget_s=wire.applied_time_budget_s,
         stats=msg.SearchStats(
             int(wire.stats.iterations),
-            int(wire.stats.max_iterations),
             int(wire.stats.open_set_size),
             wire.stats.search_failed,
             wire.stats.budget_bound,
@@ -273,9 +269,9 @@ def _internal_error_reply(request_id: bytes, detail: str) -> msg.PlanReply:
     trị THẬT (qua ``vtx_service.runtime``, module không phụ thuộc DDS), không
     phải chuỗi rỗng / ``0.0`` mặc định: mục 4.4 của spec tồn tại để client
     phân biệt được "input khác" với "bản build/cấu hình khác", và ``0.0`` ở
-    ``applied_time_budget_s`` không hề trung tính - nó ĐỌC ĐƯỢC như "không
-    giới hạn" (xem ``runtime.effective_time_budget_s``), nên một placeholder
-    ở đây không chỉ thiếu thông tin mà còn SAI.
+    ``applied_time_budget_s`` không hề trung tính - nó ĐỌC ĐƯỢC như "client
+    không đề nghị gì" (xem ``runtime.effective_time_budget_s``), nên một
+    placeholder ở đây không chỉ thiếu thông tin mà còn SAI.
     """
     return msg.PlanReply(
         request_id=request_id,
@@ -286,7 +282,7 @@ def _internal_error_reply(request_id: bytes, detail: str) -> msg.PlanReply:
         path_length_m=0.0,
         plan_wall_time_s=0.0,
         applied_time_budget_s=runtime.effective_time_budget_s(),
-        stats=msg.SearchStats(0, runtime.effective_max_iterations(), 0, True, False),
+        stats=msg.SearchStats(0, 0, True, False),
         planner_version=runtime.planner_version(),
         config_hash=runtime.config_hash(),
     )
@@ -312,7 +308,7 @@ def _invalid_request_reply(request_id: bytes, detail: str) -> msg.PlanReply:
         path_length_m=0.0,
         plan_wall_time_s=0.0,
         applied_time_budget_s=runtime.effective_time_budget_s(),
-        stats=msg.SearchStats(0, runtime.effective_max_iterations(), 0, True, False),
+        stats=msg.SearchStats(0, 0, True, False),
         planner_version=runtime.planner_version(),
         config_hash=runtime.config_hash(),
     )

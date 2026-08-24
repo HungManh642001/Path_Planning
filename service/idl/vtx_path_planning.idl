@@ -7,8 +7,16 @@
 // Không có trường frame: chỉ có một hệ toạ độ. Không có map_bounds: safezones
 // biểu diễn được đúng vùng đó và không phụ thuộc vào vị trí gốc toạ độ.
 //
-// budget CHƯA được tôn trọng; reply mang applied_time_budget_s là giá trị
-// service thực sự đã dùng.
+// budget.time_budget_s ĐƯỢC tôn trọng (từ idl_version 2): nó đi thẳng vào
+// thuật toán làm điều kiện dừng DUY NHẤT. <= 0 nghĩa là "không đề nghị gì" và
+// service dùng mặc định của mình; giá trị quá lớn bị kẹp xuống trần của
+// service. Reply luôn mang applied_time_budget_s là giá trị THẬT đã dùng, nên
+// client biết đề nghị của mình được nhận hay bị thay.
+//
+// max_iterations ĐÃ BỊ BỎ khỏi cả SearchBudget lẫn SearchStats (idl_version
+// 2): thuật toán không còn trần theo số vòng lặp nào. Một con số vòng lặp
+// không phải đại lượng người vận hành suy luận được, và hai điều kiện dừng độc
+// lập khiến một lần search có thể kết thúc vì lý do mà reply không hề nói ra.
 //
 // PLAN_BUSY: giá trị RESERVED, không có đường mã nào sinh ra nó. Service phục
 // vụ tuần tự trên một reader KEEP_ALL; một request đến khi đang bận được DDS
@@ -44,8 +52,7 @@ struct VehicleLimits {
 };
 
 struct SearchBudget {
-  double        time_budget_s;
-  unsigned long max_iterations;
+  double time_budget_s;   // <= 0 => dùng mặc định của service
 };
 
 struct VtxPathPlanRequest {
@@ -68,7 +75,6 @@ struct Waypoint { Point2D position; double heading_deg; };
 
 struct SearchStats {
   unsigned long iterations;
-  unsigned long max_iterations;
   unsigned long open_set_size;
   boolean       search_failed;
   boolean       budget_bound;
