@@ -1,0 +1,15 @@
+# One line ending in the index, always LF.
+#
+# Without this the repo mixed CRLF and LF with no rule: measured 2026-08-25,
+# 13 of the 15 files a routine `git status` reported as modified had ZERO
+# content change -- 1,476 lines of pure line-ending churn that buried every
+# real diff. `eol=lf` also normalises the working tree, so a checkout on
+# Windows and one on WSL produce the same bytes.
+* text=auto eol=lf
+
+# Never normalise binary payloads.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
+*.ico binary
