@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Luồng thuật toán Kinodynamic A* v0</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --color-paper:  #f5f5f5;
+    --color-ink:    #2d3142;
+    --color-muted:  #4f5d75;
+    --color-accent: #eb6c36;
+    --font-sans:    'Geist', system-ui, sans-serif;
+    --font-serif:   'Instrument Serif', serif;
+    --font-mono:    'Geist Mono', ui-monospace, monospace;
+  }
+  body {
+    font-family: var(--font-sans);
+    background: var(--color-paper);
+    color: var(--color-ink);
+    display: flex; justify-content: center;
+    padding: 3rem 2rem 4rem;
+  }
+  .frame { max-width: 1200px; width: 100%; }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.66rem; font-weight: 500;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--color-muted); margin-bottom: 0.5rem;
+  }
+  h1 {
+    font-family: var(--font-serif);
+    font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+    font-weight: 400; letter-spacing: -0.02em; line-height: 1.15;
+    margin-bottom: 0.75rem;
+  }
+  .lede {
+    font-size: 0.9rem; line-height: 1.65; color: var(--color-muted);
+    max-width: 66ch;
+  }
+  .lede + .lede { margin-top: 0.75rem; }
+  .toc {
+    font-size: 0.82rem; line-height: 1.8; color: var(--color-muted);
+    margin: 1.75rem 0 3rem; padding-left: 1.1rem;
+  }
+  .toc strong { color: var(--color-ink); font-weight: 600; }
+  section { margin-bottom: 3.75rem; }
+  h2 {
+    font-family: var(--font-serif);
+    font-size: 1.375rem; font-weight: 400; letter-spacing: -0.01em;
+    margin-bottom: 1rem;
+  }
+  .scroller { overflow-x: auto; }
+  svg { width: 100%; min-width: 900px; display: block; }
+  .caption {
+    font-size: 0.82rem; line-height: 1.7; color: var(--color-muted);
+    max-width: 78ch; margin-top: 0.875rem;
+    border-left: 2px solid rgba(45,49,66,0.12); padding-left: 0.875rem;
+  }
+  .caption + .caption { margin-top: 0.5rem; }
+  .caption strong { color: var(--color-ink); }
+  .srcref {
+    font-family: var(--font-mono); font-size: 0.7rem;
+    letter-spacing: 0.04em; color: #7a8399;
+    margin-top: 0.625rem; padding-left: 0.9375rem;
+  }
+  footer {
+    font-family: var(--font-mono); font-size: 0.66rem;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--color-muted);
+    border-top: 1px solid rgba(45,49,66,0.12);
+    padding-top: 1rem;
+  }
+</style>
+</head>
+<body>
+<div class="frame">
+  <p class="eyebrow">Lưu đồ · Bộ lập kế hoạch đường bay v0</p>
+  <h1>Thuật toán tìm quỹ đạo bay hoạt động như thế nào</h1>
+  <p class="lede">Bài toán: cho điểm xuất phát kèm hướng cất cánh, một mục tiêu, và một vùng biển đầy đảo và vùng cấm, hãy tìm chuỗi điểm rẽ mà máy bay <em>bay được thật</em> — không rẽ gấp quá sức, không có hai lần rẽ sát nhau, không cắt vào vật cản, và vào mục tiêu đúng thế.</p>
+  <p class="lede">Lời giải là một biến thể của A*: thay vì tìm đường trên lưới ô vuông, thuật toán tìm trên không gian <strong>trạng thái</strong> — mỗi trạng thái là một cặp <em>(vị trí, hướng bay)</em>. Hai trạng thái cùng vị trí nhưng khác hướng là hai chỗ đứng khác nhau, vì từ đó bay tiếp được tới những nơi khác nhau.</p>
+  <ul class="toc">
+    <li><strong>Hình 1</strong> — Toàn cảnh: từ đề bài tới quỹ đạo được duyệt.</li>
+    <li><strong>Hình 2</strong> — Vòng lặp tìm kiếm: mở rộng dần từ trạng thái hứa hẹn nhất.</li>
+    <li><strong>Hình 3</strong> — Từ một trạng thái, sinh ra những hướng đi tiếp nào.</li>
+    <li><strong>Hình 4</strong> — Năm lớp kiểm tra mà mỗi hướng đi ứng viên phải vượt qua.</li>
+    <li><strong>Hình 5</strong> — Rút gọn quỹ đạo sau khi đã tìm được đường.</li>
+  </ul>
+
+  <!-- ══════════════ HÌNH 1 ══════════════ -->
+  <section>
+    <p class="eyebrow">Hình 1 · Toàn cảnh</p>
+    <h2>Bốn cửa ải: hai cửa mở đầu, một cửa tìm đường, một cửa nghiệm thu</h2>
+    <div class="scroller">
+    <svg viewBox="0 0 1000 940" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="tongquan-title tongquan-desc">
+      <title id="tongquan-title">Toàn cảnh quy trình lập kế hoạch đường bay</title>
+      <desc id="tongquan-desc">Lưu đồ cho thấy quy trình kiểm tra khả thi ở hai đầu tuyến, chạy tìm kiếm, rút gọn quỹ đạo, rồi để một bộ thẩm định độc lập nghiệm thu; trượt ở bất kỳ cửa nào cũng trả về thất bại kèm lý do riêng.</desc>
+      <defs>
+        <marker id="m1" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="m1a" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <line x1="380" y1="80"  x2="380" y2="112" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m1)"/>
+      <line x1="380" y1="208" x2="380" y2="240" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m1)"/>
+      <line x1="380" y1="336" x2="380" y2="368" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m1)"/>
+      <line x1="380" y1="424" x2="380" y2="456" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m1)"/>
+      <line x1="380" y1="552" x2="380" y2="584" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m1)"/>
+      <line x1="380" y1="640" x2="380" y2="672" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m1)"/>
+      <line x1="380" y1="768" x2="380" y2="800" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#m1a)"/>
+      <path d="M 520,160 H 848 Q 856,160 856,168 V 800" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m1)"/>
+      <path d="M 520,288 H 792 Q 800,288 800,296 V 800" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m1)"/>
+      <path d="M 520,504 H 736 Q 744,504 744,512 V 800" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m1)"/>
+      <path d="M 520,720 H 680 Q 688,720 688,728 V 800" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m1)"/>
+
+      <rect x="556" y="140" width="88" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="600" y="148" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">KẸT CẤT CÁNH</text>
+      <rect x="556" y="268" width="88" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="600" y="276" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">KẸT VÀO ĐÍCH</text>
+      <rect x="556" y="484" width="96" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="604" y="492" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">KHÔNG CÓ ĐƯỜNG</text>
+      <rect x="556" y="700" width="80" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="596" y="708" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">BỊ TỪ CHỐI</text>
+
+      <rect x="388" y="212" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="408" y="220" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ĐẠT</text>
+      <rect x="388" y="340" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="408" y="348" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ĐẠT</text>
+      <rect x="388" y="556" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="408" y="564" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ĐẠT</text>
+      <rect x="388" y="772" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="408" y="780" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ĐẠT</text>
+
+      <rect x="240" y="32" width="280" height="48" rx="24" fill="#f5f5f5"/>
+      <rect x="240" y="32" width="280" height="48" rx="24" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="380" y="52" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Nhận đề bài đã chuẩn bị sẵn</text>
+      <text x="380" y="68" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">xuất phát, mục tiêu, vật cản đã nới biên</text>
+
+      <polygon points="380,112 520,160 380,208 240,160" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="380" y="156" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Cất cánh được không?</text>
+      <text x="380" y="172" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">còn chỗ rẽ đầu tiên nằm trên tia cất cánh</text>
+
+      <polygon points="380,240 520,288 380,336 240,288" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="380" y="284" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Chặng cuối vào đích có thông?</text>
+      <text x="380" y="300" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">đoạn bắt buộc ngay trước mục tiêu</text>
+
+      <rect x="240" y="368" width="280" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="380" y="392" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Tìm đường qua rừng vật cản</text>
+      <text x="380" y="408" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">A* trên trạng thái (vị trí, hướng bay) — hình 2</text>
+
+      <polygon points="380,456 520,504 380,552 240,504" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="380" y="500" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Có tìm ra đường không?</text>
+      <text x="380" y="516" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">hay đã cạn lượt duyệt / hết thời gian</text>
+
+      <rect x="240" y="584" width="280" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="380" y="608" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Rút gọn chuỗi điểm rẽ</text>
+      <text x="380" y="624" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">bỏ điểm thừa, giữ nguyên hai đầu tuyến — hình 5</text>
+
+      <polygon points="380,672 520,720 380,768 240,720" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="380" y="716" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Bên thẩm định có duyệt?</text>
+      <text x="380" y="732" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">soát lại cả tuyến bằng bộ luật riêng</text>
+
+      <rect x="640" y="800" width="280" height="56" rx="28" fill="#f5f5f5"/>
+      <rect x="640" y="800" width="280" height="56" rx="28" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="780" y="824" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Báo thất bại, kèm lý do</text>
+      <text x="780" y="840" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">bốn nhãn bên trên là bốn lý do có thể xảy ra</text>
+
+      <rect x="240" y="800" width="280" height="56" rx="28" fill="#f5f5f5"/>
+      <rect x="240" y="800" width="280" height="56" rx="28" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="380" y="824" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Giao quỹ đạo bay được</text>
+      <text x="380" y="840" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">đã qua thẩm định, không chỉ “tìm thấy gì đó”</text>
+
+      <line x1="40" y1="884" x2="960" y2="884" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="900" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">CHÚ GIẢI · HÌNH DẠNG MANG Ý NGHĨA, KHÔNG PHẢI MÀU</text>
+      <rect x="40" y="916" width="24" height="12" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="72" y="924" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Điểm bắt đầu / kết thúc</text>
+      <rect x="264" y="916" width="24" height="12" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="296" y="924" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Việc phải làm</text>
+      <polygon points="468,922 480,916 492,922 480,928" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="504" y="924" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Chỗ rẽ nhánh</text>
+      <line x1="676" y1="922" x2="704" y2="922" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#m1a)"/>
+      <text x="716" y="924" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Nhánh đi tới thành công</text>
+    </svg>
+    </div>
+    <p class="caption">Hai cửa đầu tiên tồn tại vì <strong>hai đầu tuyến không phải là điểm tự do</strong>. Máy bay rời điểm xuất phát theo đúng hướng cất cánh và phải bay thẳng một đoạn tối thiểu trước khi được rẽ; tương tự, nó phải bay thẳng một đoạn tối thiểu vào mục tiêu. Nếu một trong hai đoạn bắt buộc ấy đã đâm vào vật cản ngay từ đầu, không có cách nào cứu — nên thuật toán báo hỏng ngay thay vì duyệt hàng chục nghìn trạng thái rồi mới chịu thua.</p>
+    <p class="caption">Cửa cuối là điểm đáng chú ý nhất về mặt thiết kế: <strong>bên nghiệm thu là một bộ luật độc lập, không dùng chung mã với bộ tìm đường</strong>. Trong lúc tìm, mỗi chặng được kiểm riêng lẻ; nhưng bước rút gọn và hai chặng bắt buộc ở hai đầu được ghép vào sau, nên toàn tuyến vẫn có thể phạm luật dù từng mảnh đều hợp lệ. Vì vậy “thành công” ở đây nghĩa là <em>bên thẩm định đã duyệt cả tuyến</em>, chứ không phải “bộ tìm đường có trả về thứ gì đó”.</p>
+    <p class="srcref">Trong mã nguồn: KinodynamicAstar.plan() — core/kinodynamic_astar_v0.py</p>
+  </section>
+
+  <!-- ══════════════ HÌNH 2 ══════════════ -->
+  <section>
+    <p class="eyebrow">Hình 2 · Vòng lặp tìm kiếm</p>
+    <h2>Luôn mở rộng trạng thái hứa hẹn nhất, cho tới khi chạm đích hoặc cạn sức</h2>
+    <div class="scroller">
+    <svg viewBox="0 0 1000 860" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="vonglap-title vonglap-desc">
+      <title id="vonglap-title">Vòng lặp tìm kiếm A* trên không gian trạng thái</title>
+      <desc id="vonglap-desc">Lưu đồ vòng lặp: nạp các điểm rẽ xuất phát vào hàng đợi OPEN, lặp lấy trạng thái rẻ nhất, thử phương án hạ cánh dựng sẵn, kiểm tra hai điều kiện tới đích, rồi sinh hướng đi tiếp và quay lại đầu vòng.</desc>
+      <defs>
+        <marker id="m2" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="m2a" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <line x1="400" y1="80"  x2="400" y2="112" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m2)"/>
+      <line x1="540" y1="160" x2="680" y2="160" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m2)"/>
+      <line x1="400" y1="208" x2="400" y2="240" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m2)"/>
+      <line x1="400" y1="296" x2="400" y2="328" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m2)"/>
+      <line x1="400" y1="384" x2="400" y2="416" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m2)"/>
+      <line x1="400" y1="512" x2="400" y2="544" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m2)"/>
+      <line x1="540" y1="592" x2="680" y2="592" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#m2a)"/>
+      <line x1="400" y1="640" x2="400" y2="672" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m2)"/>
+      <path d="M 260,464 H 188 Q 180,464 180,472 V 680 Q 180,688 188,688 H 260" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m2)"/>
+      <path d="M 260,712 H 188 a 8,8 0 0,0 -16,0 H 128 Q 120,712 120,704 V 168 Q 120,160 128,160 H 260" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m2)"/>
+
+      <rect x="568" y="140" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="604" y="148" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">CẠN SỨC</text>
+      <rect x="408" y="212" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="428" y="220" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">CÒN</text>
+      <rect x="192" y="444" width="48" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="216" y="452" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">CHƯA</text>
+      <rect x="408" y="516" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="428" y="524" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">RỒI</text>
+      <rect x="568" y="572" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="588" y="580" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ĐÚNG</text>
+      <rect x="408" y="644" width="48" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="432" y="652" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">CHƯA</text>
+      <rect x="128" y="400" width="64" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="160" y="408" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">VÒNG SAU</text>
+
+      <rect x="260" y="32" width="280" height="48" rx="24" fill="#f5f5f5"/>
+      <rect x="260" y="32" width="280" height="48" rx="24" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="400" y="52" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Nạp các điểm rẽ xuất phát vào OPEN</text>
+      <text x="400" y="68" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">xếp hàng theo: đã bay + ước lượng còn lại</text>
+
+      <polygon points="400,112 540,160 400,208 260,160" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="400" y="156" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">OPEN còn gì để mở?</text>
+      <text x="400" y="172" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">và vẫn còn lượt duyệt, vẫn còn thời gian</text>
+
+      <rect x="260" y="240" width="280" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="400" y="264" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Lấy trạng thái hứa hẹn nhất ra</text>
+      <text x="400" y="280" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">bỏ qua nếu đã có trong CLOSED, không thì ghi vào</text>
+
+      <rect x="260" y="328" width="280" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="260" y="328" width="280" height="56" rx="6" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="400" y="352" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Thử nước hạ cánh dựng sẵn</text>
+      <text x="400" y="368" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">chỉ bật khi vào đích buộc hướng và phải quay đầu</text>
+
+      <polygon points="400,416 540,464 400,512 260,464" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="400" y="460" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Đã tới sát mục tiêu chưa?</text>
+      <text x="400" y="476" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">khoảng cách đã lọt vào ngưỡng tới đích</text>
+
+      <polygon points="400,544 540,592 400,640 260,592" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="400" y="588" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Vào mục tiêu có đúng thế?</text>
+      <text x="400" y="604" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">đúng hướng, hoặc đủ đoạn ngắm cuối</text>
+
+      <rect x="260" y="672" width="280" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="400" y="696" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Sinh các hướng đi tiếp</text>
+      <text x="400" y="712" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">chỉ giữ lối rẻ hơn, rồi xếp vào OPEN — hình 3</text>
+
+      <rect x="680" y="132" width="280" height="56" rx="28" fill="#f5f5f5"/>
+      <rect x="680" y="132" width="280" height="56" rx="28" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="820" y="156" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Chịu thua: không có đường</text>
+      <text x="820" y="172" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">đã mở hết lối khả dĩ, hoặc đã hết ngân sách</text>
+
+      <rect x="680" y="564" width="280" height="56" rx="28" fill="#f5f5f5"/>
+      <rect x="680" y="564" width="280" height="56" rx="28" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="820" y="588" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Lần ngược về, dựng quỹ đạo</text>
+      <text x="820" y="604" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">lần theo con trỏ cha từ đích về xuất phát</text>
+
+      <line x1="40" y1="772" x2="960" y2="772" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="788" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">CHÚ GIẢI</text>
+      <rect x="40" y="804" width="24" height="12" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="72" y="812" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Điểm bắt đầu / kết thúc</text>
+      <rect x="264" y="804" width="24" height="12" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="296" y="812" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Việc phải làm</text>
+      <polygon points="436,810 448,804 460,810 448,816" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="472" y="812" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Chỗ rẽ nhánh</text>
+      <rect x="620" y="804" width="24" height="12" rx="2" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="652" y="812" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Việc chỉ làm trong vài tình huống</text>
+    </svg>
+    </div>
+    <p class="caption"><strong>OPEN</strong> là hàng chờ những trạng thái đã nhìn thấy nhưng chưa mở ra xem; <strong>CLOSED</strong> là sổ ghi những trạng thái đã mở rồi, để khỏi mở lại. Thứ tự trong OPEN quyết định tất cả: trạng thái nào có <em>quãng đã bay cộng ước lượng quãng còn lại</em> nhỏ nhất thì được mở trước. Ước lượng ở đây là khoảng cách đường chim bay tới đích — luôn lạc quan hơn thực tế, nên A* không bỏ sót lời giải tốt vì lý do ước lượng.</p>
+    <p class="caption"><strong>Nước hạ cánh dựng sẵn</strong> (ô nét đứt) là quân bài dự phòng cho một tình huống mà ước lượng đường chim bay trở nên mù: mục tiêu bắt buộc phải vào theo một hướng nhất định, và hướng đó gần như ngược với hướng máy bay đang tới. Khi ấy “gần đích” không còn nghĩa là “sắp xong” — máy bay còn phải lượn cả một vòng để quay đầu, và A* sẽ dò lan man quanh mục tiêu. Nước dựng sẵn tính thẳng bằng hình học một manh mối gồm hai lần rẽ đưa máy bay vào đúng thế, rồi <em>thả nó vào OPEN</em> chứ không trả về ngay: A* vẫn phải tự thấy nó là lựa chọn rẻ nhất thì mới dùng. Nhờ vậy quân bài này không bao giờ ghi đè quyết định của thuật toán.</p>
+    <p class="caption">Hai ô hình thoi cuối tách <em>đã tới gần chưa</em> khỏi <em>tới có đúng thế không</em>, vì trả lời “gần rồi nhưng sai thế” không phải là tới đích: máy bay vẫn phải bay tiếp để chỉnh lại hướng, nên nhánh đó quay về sinh hướng đi tiếp như bình thường.</p>
+    <p class="srcref">Trong mã nguồn: KinodynamicAstar.search() và _goal_reached() / _try_goal_shot()</p>
+  </section>
+
+  <!-- ══════════════ HÌNH 3 ══════════════ -->
+  <section>
+    <p class="eyebrow">Hình 3 · Sinh hướng đi tiếp</p>
+    <h2>Ba nguồn nước đi: men mép vật cản, ngắm mốc, và mở quạt khi bí</h2>
+    <div class="scroller">
+    <svg viewBox="0 0 1000 860" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sinhhuong-title sinhhuong-desc">
+      <title id="sinhhuong-title">Sinh các hướng đi tiếp từ một trạng thái</title>
+      <desc id="sinhhuong-desc">Lưu đồ ba nguồn nước đi: bước bay thẳng khi đang men mép vật cản tròn, các mốc ngắm gồm điểm tiếp tuyến và đỉnh đa giác cùng mục tiêu, và cuối cùng là quạt hướng bay chỉ mở khi cần thoát thế bí.</desc>
+      <defs>
+        <marker id="m3" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="m3a" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <line x1="380" y1="80"  x2="380" y2="112" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m3)"/>
+      <line x1="520" y1="160" x2="640" y2="160" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m3)"/>
+      <line x1="380" y1="208" x2="380" y2="240" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m3)"/>
+      <path d="M 780,188 V 208 Q 780,216 772,216 H 448 Q 440,216 440,224 V 240" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m3)"/>
+      <line x1="380" y1="296" x2="380" y2="328" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m3)"/>
+      <line x1="520" y1="376" x2="640" y2="376" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m3)"/>
+      <path d="M 780,404 V 496 Q 780,504 772,504 H 520" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m3)"/>
+      <line x1="380" y1="424" x2="380" y2="456" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m3)"/>
+      <path d="M 240,504 H 128 Q 120,504 120,512 V 692 Q 120,700 128,700 H 240" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m3)"/>
+      <line x1="380" y1="552" x2="380" y2="584" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#m3a)"/>
+      <line x1="380" y1="640" x2="380" y2="672" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m3)"/>
+
+      <rect x="548" y="140" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="568" y="148" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">CÓ</text>
+      <rect x="388" y="212" width="48" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="412" y="220" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">KHÔNG</text>
+      <rect x="536" y="356" width="80" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="576" y="364" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">VƯỚNG CUNG</text>
+      <rect x="788" y="440" width="56" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="816" y="448" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">THỬ LẠI</text>
+      <rect x="388" y="428" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="408" y="436" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ĐẠT</text>
+      <rect x="128" y="484" width="56" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="156" y="492" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">BỎ QUẠT</text>
+      <rect x="388" y="556" width="64" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="420" y="564" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">CẦN QUẠT</text>
+
+      <rect x="240" y="32" width="280" height="48" rx="24" fill="#f5f5f5"/>
+      <rect x="240" y="32" width="280" height="48" rx="24" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="380" y="52" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Mở một trạng thái ra xem</text>
+      <text x="380" y="68" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">đang đứng ở đâu, đang bay theo hướng nào</text>
+
+      <polygon points="380,112 520,160 380,208 240,160" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="380" y="156" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Đang men mép vật cản tròn?</text>
+      <text x="380" y="172" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">đang lượn sát vòng an toàn của đảo tròn</text>
+
+      <rect x="640" y="132" width="280" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="780" y="156" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Cho bay thẳng thêm một bước</text>
+      <text x="780" y="172" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">men tiếp quanh mép, chưa phải chọn rẽ đi đâu</text>
+
+      <rect x="240" y="240" width="280" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="380" y="264" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Liệt kê các mốc đáng ngắm tới</text>
+      <text x="380" y="280" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">tiếp tuyến đảo tròn, góc đảo đa giác, mục tiêu</text>
+
+      <polygon points="380,328 520,376 380,424 240,376" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="380" y="372" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Mốc này bay tới được không?</text>
+      <text x="380" y="388" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">phải vượt cả năm lớp kiểm tra ở hình 4</text>
+
+      <rect x="640" y="348" width="280" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="780" y="372" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Dời chỗ rẽ tới trước, thử lại</text>
+      <text x="780" y="388" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">rẽ muộn hơn thì vòng lượn thoát khỏi vật cản</text>
+
+      <polygon points="380,456 520,504 380,552 240,504" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="380" y="500" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Có cần mở quạt tìm lối vòng?</text>
+      <text x="380" y="516" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">thấy rõ mục tiêu hoặc cạn ngân sách thì thôi</text>
+
+      <rect x="240" y="584" width="280" height="56" rx="6" fill="#f5f5f5"/>
+      <rect x="240" y="584" width="280" height="56" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="380" y="608" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Mở quạt hướng bay để thoát bí</text>
+      <text x="380" y="624" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">trái/phải hết cỡ và các mức giữa, vài cự ly</text>
+
+      <rect x="240" y="672" width="280" height="56" rx="28" fill="#f5f5f5"/>
+      <rect x="240" y="672" width="280" height="56" rx="28" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="380" y="696" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Giao lại danh sách nước đi</text>
+      <text x="380" y="712" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">mỗi nước kèm giá của nó, để vòng lặp xếp vào OPEN</text>
+
+      <line x1="40" y1="772" x2="960" y2="772" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="788" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">CHÚ GIẢI</text>
+      <rect x="40" y="804" width="24" height="12" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="72" y="812" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Điểm bắt đầu / kết thúc</text>
+      <rect x="264" y="804" width="24" height="12" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="296" y="812" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Việc phải làm</text>
+      <polygon points="436,810 448,804 460,810 448,816" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="472" y="812" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Chỗ rẽ nhánh</text>
+      <rect x="620" y="804" width="24" height="12" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="652" y="812" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Van thoát hiểm — chỗ đắt nhất của thuật toán</text>
+    </svg>
+    </div>
+    <p class="caption">Điểm mấu chốt: thuật toán <strong>không rải lưới ô vuông</strong>. Nó chỉ ngắm tới những chỗ đáng ngắm — điểm tiếp tuyến quanh đảo tròn và góc của đảo đa giác, tức là đúng những nơi mà một đường bay tối ưu buộc phải lượn qua. Nhờ vậy số nước đi mỗi lượt chỉ vài chục thay vì hàng nghìn, và các đoạn bay tự nhiên là những đoạn thẳng dài chứ không phải chuỗi bước răng cưa.</p>
+    <p class="caption">Nhược điểm của cách ngắm mốc: khi máy bay đang ở giữa vùng trống mà lại phải quay đầu, chẳng có mốc nào để ngắm cả — mọi mốc đều nằm sau lưng, ngoài tầm rẽ. Đó là lúc <strong>quạt hướng bay</strong> vào cuộc: nó bịa ra vài hướng nhân tạo trải đều từ rẽ hết cỡ bên trái tới rẽ hết cỡ bên phải, mỗi hướng thử vài cự ly khác nhau. Đây là nguồn nước đi đắt nhất, nên nó bị siết bằng một ngân sách chung và bị tắt hẳn trong những tình huống đã đo được là vô ích.</p>
+    <p class="caption">Nhánh <em>dời chỗ rẽ tới trước</em> chỉ cứu đúng một loại thất bại: mốc thì nhìn thấy rõ, nhưng vòng lượn nối hai chặng lại liếm vào chính cái góc đảo mà nó đang định vòng qua. Rẽ muộn hơn vài trăm mét thì vòng lượn dịch ra ngoài và thoát. Các loại thất bại khác không thử lại kiểu này, vì dời chỗ rẽ chỉ làm góc rẽ <em>gắt thêm</em> — đã rẽ quá gắt thì càng dời càng hỏng.</p>
+    <p class="srcref">Trong mã nguồn: get_next_states() — nhánh wrap step / Strategy A / Strategy B</p>
+  </section>
+
+  <!-- ══════════════ HÌNH 4 ══════════════ -->
+  <section>
+    <p class="eyebrow">Hình 4 · Năm lớp kiểm tra</p>
+    <h2>Một nước đi phải sống sót qua năm câu hỏi, xếp từ rẻ tới đắt</h2>
+    <div class="scroller">
+    <svg viewBox="0 0 1000 940" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gate-title gate-desc">
+      <title id="gate-title">Năm lớp kiểm tra một nước đi ứng viên</title>
+      <desc id="gate-desc">Lưu đồ chuỗi kiểm tra xếp từ rẻ tới đắt: góc rẽ, thế vào mục tiêu, độ dài đoạn thẳng giữa hai lần rẽ, đường bay có trống, và vòng lượn tại chỗ rẽ có trống; chỉ lỗi vòng lượn mới được thử lại bằng cách dời chỗ rẽ.</desc>
+      <defs>
+        <marker id="m4" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="m4a" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <line x1="440" y1="80"  x2="440" y2="112" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m4)"/>
+      <line x1="440" y1="208" x2="440" y2="240" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m4)"/>
+      <line x1="440" y1="336" x2="440" y2="368" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m4)"/>
+      <line x1="440" y1="464" x2="440" y2="496" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m4)"/>
+      <line x1="440" y1="592" x2="440" y2="624" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m4)"/>
+      <line x1="440" y1="720" x2="440" y2="752" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#m4a)"/>
+      <path d="M 580,160 H 912 Q 920,160 920,168 V 752" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m4)"/>
+      <path d="M 580,288 H 852 Q 860,288 860,296 V 752" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m4)"/>
+      <path d="M 580,416 H 792 Q 800,416 800,424 V 752" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m4)"/>
+      <path d="M 580,544 H 732 Q 740,544 740,552 V 752" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m4)"/>
+      <path d="M 300,672 H 152 Q 144,672 144,664 V 616" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m4)"/>
+      <path d="M 144,560 V 168 Q 144,160 152,160 H 300" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m4)"/>
+
+      <rect x="616" y="140" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="652" y="148" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">RẼ QUÁ GẤP</text>
+      <rect x="616" y="268" width="72" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="652" y="276" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">SAI THẾ</text>
+      <rect x="616" y="396" width="80" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="656" y="404" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">QUÁ NGẮN</text>
+      <rect x="616" y="524" width="88" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="660" y="532" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">CHẶN LỐI</text>
+      <rect x="180" y="652" width="80" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="220" y="660" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">VƯỚNG CUNG</text>
+      <rect x="152" y="340" width="56" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="180" y="348" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">THỬ LẠI</text>
+
+      <rect x="448" y="212" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="468" y="220" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ĐẠT</text>
+      <rect x="448" y="340" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="468" y="348" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ĐẠT</text>
+      <rect x="448" y="468" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="468" y="476" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ĐẠT</text>
+      <rect x="448" y="596" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="468" y="604" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ĐẠT</text>
+      <rect x="448" y="724" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="468" y="732" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">ĐẠT</text>
+
+      <rect x="300" y="32" width="280" height="48" rx="24" fill="#f5f5f5"/>
+      <rect x="300" y="32" width="280" height="48" rx="24" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="440" y="52" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Xét một mốc ngắm ứng viên</text>
+      <text x="440" y="68" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">một tiếp tuyến, một góc đảo, hay chính mục tiêu</text>
+
+      <polygon points="440,112 580,160 440,208 300,160" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="440" y="156" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">1 · Rẽ có quá sức không?</text>
+      <text x="440" y="172" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">trong giới hạn góc rẽ của khung bay</text>
+
+      <polygon points="440,240 580,288 440,336 300,288" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="440" y="284" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">2 · Nếu là mục tiêu: đúng thế?</text>
+      <text x="440" y="300" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">xoay kịp về hướng, hay đủ đoạn ngắm cuối</text>
+
+      <polygon points="440,368 580,416 440,464 300,416" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="440" y="412" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">3 · Đoạn thẳng có đủ dài?</text>
+      <text x="440" y="428" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">hai chỗ rẽ liền nhau phải cách đủ xa</text>
+
+      <polygon points="440,496 580,544 440,592 300,544" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="440" y="540" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">4 · Đường bay có trống?</text>
+      <text x="440" y="556" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">chặng thẳng tới mốc không cắt vật cản</text>
+
+      <polygon points="440,624 580,672 440,720 300,672" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="440" y="668" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">5 · Vòng lượn có trống?</text>
+      <text x="440" y="684" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">cung bo nối hai chặng cũng phải sạch</text>
+
+      <rect x="24" y="560" width="240" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="144" y="584" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Dời chỗ rẽ tới trước</text>
+      <text x="144" y="600" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">giữ nguyên hướng bay, chỉ rẽ muộn hơn</text>
+
+      <rect x="700" y="752" width="280" height="56" rx="28" fill="#f5f5f5"/>
+      <rect x="700" y="752" width="280" height="56" rx="28" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="840" y="776" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Loại mốc này</text>
+      <text x="840" y="792" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">có ghi lại chết ở lớp nào, để biết nên thử lại?</text>
+
+      <rect x="300" y="752" width="280" height="56" rx="28" fill="#f5f5f5"/>
+      <rect x="300" y="752" width="280" height="56" rx="28" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="440" y="776" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Nhận làm một nước đi</text>
+      <text x="440" y="792" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">giá = quãng đường bay + phạt cho mỗi lần rẽ</text>
+
+      <line x1="40" y1="852" x2="960" y2="852" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="868" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">CHÚ GIẢI · THỨ TỰ NĂM LỚP LÀ CỐ Ý: RẺ TRƯỚC, ĐẮT SAU</text>
+      <rect x="40" y="884" width="24" height="12" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="72" y="892" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Điểm bắt đầu / kết thúc</text>
+      <rect x="264" y="884" width="24" height="12" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="296" y="892" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Việc phải làm</text>
+      <polygon points="436,890 448,884 460,890 448,896" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="472" y="892" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Một lớp kiểm tra</text>
+      <line x1="644" y1="890" x2="672" y2="890" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#m4a)"/>
+      <text x="684" y="892" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Nhánh sống sót</text>
+    </svg>
+    </div>
+    <p class="caption"><strong>Thứ tự năm lớp là một quyết định về hiệu năng, không phải chuyện ngẫu nhiên.</strong> Lớp 1 và lớp 3 chỉ là vài phép tính số học; lớp 4 phải dò đường thẳng qua từng vật cản; lớp 5 — dựng vòng lượn rồi kiểm cả cung — là lớp đắt nhất. Vì hơn một nửa số ứng viên chết ngay ở lớp 1, đặt nó lên đầu tiết kiệm phần lớn công sức. Từng có lúc lớp 3 bị đặt <em>sau</em> lớp 5, khiến gần một phần ba số nước đi phải trả giá cho phép kiểm đắt nhất rồi mới bị một phép cộng trừ loại bỏ.</p>
+    <p class="caption">Lớp 3 là ràng buộc dễ bị quên nhất khi nhìn bản đồ: <strong>máy bay không rẽ tại một điểm, nó rẽ dọc một cung</strong>. Mỗi lần rẽ “ăn” một đoạn thẳng ở cả hai phía chỗ rẽ, nên hai chỗ rẽ đặt gần nhau sẽ đòi hai đoạn chồng lên nhau — trên giấy thì vẽ được, ngoài đời thì không bay được. Đây chính là ràng buộc <em>đoản trình</em>, và nó lan truyền: bỏ bớt một điểm rẽ có thể lấy mất đoạn thẳng của điểm rẽ bên cạnh.</p>
+    <p class="caption">Lớp 5 tồn tại vì lớp 4 chưa đủ: hai chặng thẳng có thể đều sạch trong khi cung bo tròn nối chúng lại cắt vào góc đảo nằm giữa. Đây cũng là lớp duy nhất đáng thử lại — vì hình dạng cung phụ thuộc chỗ đặt điểm rẽ, mà bốn lớp kia thì không.</p>
+    <p class="srcref">Trong mã nguồn: _pivot_candidate() và _slide_pivot()</p>
+  </section>
+
+  <!-- ══════════════ HÌNH 5 ══════════════ -->
+  <section>
+    <p class="eyebrow">Hình 5 · Rút gọn quỹ đạo</p>
+    <h2>Bỏ bớt điểm rẽ, nhưng không được đụng vào hai đầu tuyến</h2>
+    <div class="scroller">
+    <svg viewBox="0 0 1000 820" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="rutgon-title rutgon-desc">
+      <title id="rutgon-title">Bước rút gọn chuỗi điểm rẽ</title>
+      <desc id="rutgon-desc">Lưu đồ bước hậu xử lý: nếu chuỗi có quá hai điểm thì xét mọi cách bỏ bớt điểm bằng quy hoạch động, loại các phương án phạm ràng buộc, chấm điểm phần còn lại, và giữ nguyên chuỗi cũ nếu không phương án nào hợp lệ.</desc>
+      <defs>
+        <marker id="m5" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="m5a" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+      </defs>
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <line x1="380" y1="80"  x2="380" y2="112" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m5)"/>
+      <line x1="380" y1="208" x2="380" y2="240" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m5)"/>
+      <line x1="380" y1="296" x2="380" y2="328" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m5)"/>
+      <line x1="380" y1="384" x2="380" y2="416" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m5)"/>
+      <line x1="380" y1="472" x2="380" y2="504" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m5)"/>
+      <line x1="380" y1="600" x2="380" y2="632" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#m5a)"/>
+      <path d="M 520,160 H 872 Q 880,160 880,168 V 632" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m5)"/>
+      <path d="M 520,552 H 752 Q 760,552 760,560 V 632" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#m5)"/>
+
+      <rect x="556" y="140" width="96" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="604" y="148" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">CHỈ CÓ HAI ĐIỂM</text>
+      <rect x="556" y="532" width="96" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="604" y="540" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">KHÔNG CÒN CÁCH</text>
+      <rect x="388" y="212" width="48" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="412" y="220" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">NHIỀU HƠN</text>
+      <rect x="388" y="604" width="40" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="408" y="612" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.10em">CÒN</text>
+
+      <rect x="240" y="32" width="280" height="48" rx="24" fill="#f5f5f5"/>
+      <rect x="240" y="32" width="280" height="48" rx="24" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="380" y="52" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Nhận chuỗi điểm rẽ thô</text>
+      <text x="380" y="68" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">kết quả vừa tìm, còn nhiều điểm bay thẳng qua</text>
+
+      <polygon points="380,112 520,160 380,208 240,160" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="380" y="156" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Chuỗi có quá hai điểm?</text>
+      <text x="380" y="172" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">chuyến bay thẳng tuột thì không có gì để bỏ</text>
+
+      <rect x="240" y="240" width="280" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="380" y="264" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Xét mọi cách bỏ bớt điểm</text>
+      <text x="380" y="280" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">quy hoạch động, nhớ theo hai điểm giữ lại gần nhất</text>
+
+      <rect x="240" y="328" width="280" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="380" y="352" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Gạt bỏ phương án phạm luật</text>
+      <text x="380" y="368" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">thế hai đầu tuyến, góc rẽ, vòng lượn, đoạn thẳng</text>
+
+      <rect x="240" y="416" width="280" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="380" y="440" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Chấm điểm phương án còn lại</text>
+      <text x="380" y="456" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">quãng đường + một mét phạt cho mỗi điểm giữ lại</text>
+
+      <polygon points="380,504 520,552 380,600 240,552" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="380" y="548" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Còn phương án nào hợp lệ?</text>
+      <text x="380" y="564" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">mọi cách rút gọn đều phạm luật thì thôi</text>
+
+      <rect x="660" y="632" width="280" height="56" rx="28" fill="#f5f5f5"/>
+      <rect x="660" y="632" width="280" height="56" rx="28" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="800" y="656" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Giữ nguyên chuỗi cũ</text>
+      <text x="800" y="672" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">an toàn, chỉ là bỏ lỡ cơ hội gọn hơn</text>
+
+      <rect x="240" y="632" width="280" height="56" rx="28" fill="#f5f5f5"/>
+      <rect x="240" y="632" width="280" height="56" rx="28" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="380" y="656" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Giao chuỗi gọn nhất</text>
+      <text x="380" y="672" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">ít điểm hơn, và không dài hơn chuỗi ban đầu</text>
+
+      <line x1="40" y1="732" x2="960" y2="732" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="748" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">CHÚ GIẢI</text>
+      <rect x="40" y="764" width="24" height="12" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="72" y="772" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Điểm bắt đầu / kết thúc</text>
+      <rect x="264" y="764" width="24" height="12" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="296" y="772" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Việc phải làm</text>
+      <polygon points="436,770 448,764 460,770 448,776" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="472" y="772" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Chỗ rẽ nhánh</text>
+      <line x1="644" y1="770" x2="672" y2="770" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#m5a)"/>
+      <text x="684" y="772" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">Nhánh rút gọn thành công</text>
+    </svg>
+    </div>
+    <p class="caption">Vì sao phải dùng quy hoạch động thay vì quét một lượt và bỏ điểm nào thấy thừa? Vì <strong>ràng buộc đoạn thẳng nối các chỗ rẽ lại với nhau</strong>: bỏ một điểm làm chặng bay dài ra, nhưng đồng thời làm lần rẽ ở điểm kế bên gắt hơn, và lần rẽ gắt hơn lại ăn mất đoạn thẳng của chặng phía sau nó. Quét tham lam từng chặng một không nhìn thấy hiệu ứng dội ngược đó; quy hoạch động nhớ hai điểm giữ lại gần nhất nên nhìn thấy.</p>
+    <p class="caption">Hai ràng buộc ở hai đầu tuyến từng bị bỏ sót và đó là một lỗi thật: bước rút gọn “tối ưu hoá” bằng cách bỏ luôn điểm rẽ cuối, làm máy bay <strong>vào mục tiêu lệch tới 45 độ</strong> so với hướng bắt buộc. Bên thẩm định độc lập không bắt được lỗi này, vì nó suy mọi góc từ toạ độ các điểm rẽ và không hề so hướng vào đích với hướng yêu cầu. Nên hai ràng buộc này được kiểm bằng bài kiểm thử riêng.</p>
+    <p class="caption">Khoản <em>một mét phạt cho mỗi điểm được giữ</em> nghe rất nhỏ, nhưng nó giải quyết một chuyện có thật: một điểm rẽ mà máy bay bay thẳng tuột qua thì <strong>không làm quỹ đạo dài thêm một milimet nào</strong>, nên nếu chỉ chấm theo quãng đường thì giữ hay bỏ nó đều cùng điểm, và kết quả phụ thuộc vào thứ tự duyệt. Một mét phạt biến sở thích “ít điểm hơn” thành luật, mà vẫn không đủ lớn để đánh đổi lấy một đường vòng dài hơn.</p>
+    <p class="srcref">Trong mã nguồn: smooth_path() — quy hoạch động trên dãy con của tuyến O..T</p>
+  </section>
+
+  <footer>Lưu đồ dựng bằng Diagram Design · nguồn: core/kinodynamic_astar_v0.py</footer>
+</div>
+</body>
+</html>

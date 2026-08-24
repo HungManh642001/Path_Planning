@@ -1,17 +1,24 @@
+# ---- Generated output (regenerable, never committed) ----
 results*/
-cases/*
-logs/*
-docs/
-/tests/
-cases/
-.superpowers/
-.pytest_cache/
-.codegraph/
-tests/__pycache__/
-__pycache__/
-*.pyc
-*.pyo   
-*.pyd
+logs/
 Screenshot/
 compare_results*
-CLAUDE.md
+cases/
+# A/B baselines: rebuilt in minutes by scripts/ab_planners.py.
+docs/benchmarks/
+
+# ---- Tool caches ----
+.superpowers/
+.pytest_cache/
+.ruff_cache/
+.codegraph/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ---- Scratch tests ----
+# `*_test.py` is the committed convention and IS tracked; `test_*.py` is the
+# throwaway prefix. `/tests/` used to be ignored wholesale, which left a third
+# of the suite untracked and invisible in a fresh clone.
+test_*.py
