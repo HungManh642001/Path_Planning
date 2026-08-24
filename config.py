@@ -36,16 +36,6 @@ TAKEOFF_RAY_TOL_RAD = 1e-9
 # silently arriving on the wrong heading (measured up to 68 deg off).
 APPROACH_RAY_TOL_RAD = 1e-9
 
-# Takeoff angle (degrees) - angle from horizontal at start of trajectory
-START_ANGLE_MIN = -180.0
-START_ANGLE_MAX = 180.0
-START_ANGLE_DEFAULT = 15.0
-
-# Approach angle (degrees) - angle from horizontal at goal approach
-APPROACH_ANGLE_MIN = -180.0
-APPROACH_ANGLE_MAX = 180.0
-APPROACH_ANGLE_DEFAULT = 30.0
-
 # ====== SAFETY & OBSTACLE HANDLING ======
 # Safety margin buffer (m) - distance to expand obstacle boundaries
 SAFE_MARGIN = 0.0
@@ -73,10 +63,6 @@ ARC_SAMPLE_STEP_DEG = 5.0
 # arc vertices) is built on radius r + CONSTRUCTION_CLEARANCE_M, so every
 # planner-made chord keeps at least that much true clearance — float noise
 # (~mm) is absorbed by construction, never forgiven by validation.
-# DEPRECATED, kept at 0.0 only because gui/params.py still exposes a slider
-# for it; the planner treats it as exactly zero semantics.
-CIRCLE_GRAZE_TOL_M = 0.0
-
 # Construction clearance (m): the extra radius on which boundary-riding
 # geometry is BUILT (r_ride = inflated radius + this). Keeps constructed
 # tangent chords strictly outside the inflated boundary so the exact
@@ -570,8 +556,6 @@ def rad_to_deg(radians: float) -> float:
 
 # Pre-compute often-used values
 ALPHA_MAX_RAD = deg_to_rad(ALPHA_MAX)
-
-EPS = 1e-6
 
 # ====== ROUNDING GUARDS (construction side only) ======
 # Float64 rounding pads. These exist so that geometry BUILT to sit exactly on a

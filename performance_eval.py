@@ -5,7 +5,6 @@ Measures and analyzes algorithm runtime, path quality, and system efficiency
 
 import time
 import math
-from collections import defaultdict
 
 
 class PerformanceMetrics:
@@ -226,51 +225,3 @@ class PerformanceComparator:
                 print(f"  Max Turn: {math.degrees(result['path'].get('max_turn_angle', 0)):.2f}°")
             
             print(f"  Iterations: {result['search'].get('iterations', 0)}")
-
-
-def format_time_breakdown(timings):
-    """Format timing breakdown as string"""
-    output = []
-    total = sum(t.get('elapsed', 0) for t in timings.values() if isinstance(t, dict))
-    
-    for phase, data in timings.items():
-        if isinstance(data, dict) and 'elapsed' in data:
-            elapsed = data['elapsed']
-            pct = (elapsed / total * 100) if total > 0 else 0
-            output.append(f"{phase}: {elapsed:.4f}s ({pct:.1f}%)")
-    
-    return " | ".join(output)
-
-
-def estimate_flight_time(path_distance, cruise_speed=600):
-    """
-    Estimate actual flight time for autonomous aircraft.
-    
-    Args:
-        path_distance: Total path distance in meters
-        cruise_speed: Cruise speed in m/s (default ~2160 km/h)
-    
-    Returns:
-        Flight time in seconds
-    """
-    if cruise_speed <= 0:
-        return 0
-    
-    return path_distance / cruise_speed
-
-
-def calculate_path_efficiency(direct_distance, actual_distance):
-    """
-    Calculate path efficiency ratio.
-    
-    Args:
-        direct_distance: Straight-line distance from start to goal
-        actual_distance: Actual planned path distance
-    
-    Returns:
-        Efficiency ratio (0 to 1, where 1 is optimal)
-    """
-    if direct_distance <= 0 or actual_distance <= 0:
-        return 0
-    
-    return direct_distance / actual_distance
