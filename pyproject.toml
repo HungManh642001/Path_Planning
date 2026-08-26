@@ -1,83 +1,3 @@
-[tool.ruff]
-# Matches the pyright pythonVersion below and the interpreter this repo runs on.
-# They were out of step (py310 vs 3.11), which would have let ruff suggest
-# rewrites the checker then rejected.
-target-version = "py311"
-line-length = 100
-src = ["."]
-
-[tool.ruff.lint]
-select = [
-    "E",    # pycodestyle errors
-    "W",    # pycodestyle warnings
-    "F",    # pyflakes (unused imports / variables)
-    "I",    # isort (import ordering)
-    "N",    # pep8-naming
-    "UP",   # pyupgrade (modern syntax)
-    "B",    # flake8-bugbear
-    "C4",   # flake8-comprehensions
-    "SIM",  # flake8-simplify
-    "RET",  # flake8-return
-    "ARG",  # unused arguments
-    "ANN",  # flake8-annotations (mandatory type hints)
-    "D",    # pydocstyle -- note this only ever demands docstrings on PUBLIC
-            # functions; docstrings on private helpers are a choice, not a rule.
-    "RUF",  # ruff-specific
-]
-ignore = [
-    "D203",  # conflicts with D211 (blank line before class docstring)
-    "D213",  # conflicts with D212 (multi-line summary position)
-
-    # RUF001-003 hunt homoglyphs -- a supply-chain defence against a Cyrillic
-    # `а` smuggled into an identifier. This codebase instead uses Unicode
-    # deliberately as NOTATION: `α_max`, `L₀`, `°`, `✓/✗`, and the domain term
-    # "đoản trình". The rule flagged `α` and nothing else, and following it
-    # silently changed operator-facing labels and damaged a Vietnamese technical
-    # term. A rule whose correct response is "revert it" costs attention and
-    # buys nothing here.
-    "RUF001",  # ambiguous character in a string
-    "RUF002",  # ambiguous character in a docstring
-    "RUF003",  # ambiguous character in a comment
-]
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
-
-[tool.ruff.lint.per-file-ignores]
-"tests/**" = ["D", "ANN", "ARG"]
-"**/*_test.py" = ["D", "ANN", "ARG"]
-
-[tool.pyright]
-include = ["core", "render"]
-pythonVersion = "3.11"   # typing.NotRequired needs 3.11
-reportMissingTypeStubs = false
-
-# strict is the default because `core/` is the algorithmic heart: there a type
-# error is a real defect, and strict mode earned its keep (it found a dead
-# `sam_sites` draw loop, a possibly-unbound `turn_angles`, and a dead
-# TIME_BUDGET_S branch).
-typeCheckingMode = "strict"
-
-# `render/` is plotting glue over matplotlib, whose stubs are partial: strict
-# mode reported ~300 "partially unknown" types that come from the LIBRARY, not
-# from this code. Only those two rules are relaxed, and only here -- everything
-# that actually catches defects (None-safety, argument types, unreachable code,
-# unused variables, private access) stays strict in render/ too.
-#
-# NOTE: `typeCheckingMode` inside executionEnvironments is IGNORED by pyright
-# 1.1.411 -- verified, it silently keeps the global mode. Per-rule overrides
-# like these DO apply. Do not "simplify" this into typeCheckingMode = "standard".
-[[tool.pyright.executionEnvironments]]
-root = "render"
-# REQUIRED: `root` also becomes the IMPORT RESOLUTION root, so without this the
-# package can no longer see `config`, `core.*` or even its own `render.*` --
-# measured, that turned 0 errors into 174, of which 168 were downstream noise
-# from 6 unresolved imports. Anything that adds an executionEnvironment here
-# needs the same line.
-extraPaths = ["."]
-reportUnknownMemberType = false
-reportUnknownArgumentType = false
-
 [project]
 name = "path_planning"
 version = "0.1.0"
@@ -97,3 +17,108 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/path_planning", "src/service"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+indent-width = 4
+src = ["src", "tests"]
+
+extend-exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "docs",
+    "src/service/idl",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false
+docstring-code-format = true
+docstring-code-line-length = 80
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "N", "D", "UP", "B", "SIM", "S", "ASYNC", "RUF", "ANN", "C4"
+]
+ignore = [
+    "D100", "D104", "D107", "B008", "RUF001", "RUF002", "RUF003", "D203", "D213"
+]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+known-first-party = ["path_planning", "service"]
+combine-as-imports = true
+lines-after-imports = 2
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*" = ["S101", "D", "ANN", "ARG", "S105", "S106"]
+"**/*_test.py" = ["S101", "D", "ANN", "ARG", "S105", "S106"]
+"scripts/**" = ["D", "ANN"]
+"batch_random_test.py" = ["D", "ANN"]
+"performance_eval.py" = ["D", "ANN"]
+"cases/**" = ["D", "ANN"]
+
+[tool.pyright]
+include = ["src"]
+exclude = [
+    "**/__pycache__",
+    ".venv",
+    "dist",
+    "build",
+    "src/service/idl",
+]
+pythonVersion = "3.10"
+pythonPlatform = "All"
+typeCheckingMode = "strict"
+useLibraryCodeForTypes = true
+reportMissingTypeStubs = false
+reportMissingTypeAnnotations = "error"
+reportMissingParameterType = "error"
+reportUnknownMemberType = "warning"
+reportUntypedBaseClass = "warning"
+reportUnnecessaryTypeIgnoreComment = "warning"
+
+[[tool.pyright.executionEnvironments]]
+root = "src/path_planning/render"
+extraPaths = ["src"]
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["."]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "unit: Kiểm thử đơn vị",
+    "integration: Kiểm thử tích hợp",
+    "e2e: Kiểm thử End-to-End",
+    "slow: Các bài test nặng",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+xfail_strict = true
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+skips = ["B101"]

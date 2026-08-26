@@ -30,7 +30,7 @@ CASES = [
     (125, 579700.0 * 1.05),   # scenario 126: v2 detoured to 762 km
     (981, 581200.0 * 1.05),   # scenario 982: v1 self-looped to 815 km
     (319, 681200.0 * 1.10),   # scenario 320
-    (674, 531600.0 * 1.10),   # scenario 675
+    pytest.param(674, 531600.0 * 1.10, marks=pytest.mark.xfail(reason="Logic changed on branch")),   # scenario 675
 ]
 
 
@@ -44,7 +44,6 @@ def _plan(seed):
 
 
 @pytest.mark.parametrize("seed,max_dist", CASES)
-@pytest.mark.xfail(reason="Logic changed on branch")
 def test_hard_seed_valid_fast_and_near_baseline(seed, max_dist, monkeypatch):
     monkeypatch.setattr(config, 'TIME_BUDGET_S', _NO_BUDGET_PRESSURE_S)
     scn, pre, result, elapsed = _plan(seed)
