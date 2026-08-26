@@ -64,11 +64,11 @@ def test_smoothing_folds_the_maze_and_stays_oracle_valid():
     scen = mg.get_all_scenarios()[MAZE]
     pre_off, off = _plan(scen(), smooth=False)
     pre_on, on = _plan(scen(), smooth=True)
-    assert off["success"] and on["success"]
+    assert off["is_success"] and on["is_success"]
 
     full_off = mission.full_mission_path(off["path"], pre_off)
-    full_on, (ok, why) = _validate(pre_on, on)
-    assert ok, why
+    full_on, (is_ok, why) = _validate(pre_on, on)
+    assert is_ok, why
     assert len(on["path"]) < len(off["path"]), "expected waypoints to be folded away"
     assert _length(full_on) <= _length(full_off) + 1.0
 
@@ -76,14 +76,14 @@ def test_smoothing_folds_the_maze_and_stays_oracle_valid():
 def test_smoothing_never_lengthens_and_stays_valid_across_presets():
     for name, fn in mg.get_all_scenarios().items():
         pre_off, off = _plan(fn(), smooth=False)
-        if not off["success"]:
+        if not off["is_success"]:
             continue
         pre_on, on = _plan(fn(), smooth=True)
-        assert on["success"], (
+        assert on["is_success"], (
             f"{name}: smoothing lost a solution ({on['failure_reason']})"
         )
-        _full, (ok, why) = _validate(pre_on, on)
-        assert ok, f"{name}: {why}"
+        _full, (is_ok, why) = _validate(pre_on, on)
+        assert is_ok, f"{name}: {why}"
         l_off = _length(mission.full_mission_path(off["path"], pre_off))
         l_on = _length(_full)
         assert l_on <= l_off + 1.0, f"{name}: smoothing lengthened {l_off} -> {l_on}"
@@ -96,7 +96,7 @@ def test_smoothed_path_keeps_the_takeoff_leg_on_its_ray_and_above_L0():
     still clear L0."""
     for name, fn in mg.get_all_scenarios().items():
         pre, res = _plan(fn(), smooth=True)
-        if not res["success"]:
+        if not res["is_success"]:
             continue
         full = mission.full_mission_path(res["path"], pre)
         O = pre["start_pos"]
@@ -131,7 +131,7 @@ def test_smoothed_path_keeps_the_approach_leg_on_goal_heading():
         if goal_h is None:  # free-goal presets: no approach ray
             continue
         pre, res = _plan(scenario, smooth=True)
-        if not res["success"]:
+        if not res["is_success"]:
             continue
         T = pre["goal_pos"]
         last = res["path"][-1][0]

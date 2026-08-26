@@ -149,7 +149,7 @@ def test_shot_paths_satisfy_the_independent_oracle():
     for seed in range(8):
         pre = _preprocessed(seed, REVERSED)
         result = astar_v0.plan_trajectory(pre)
-        if not result["success"]:
+        if not result["is_success"]:
             continue
         full = mission.full_mission_path(result["path"], pre)
         valid, reason = pv.path_is_valid(
@@ -165,7 +165,7 @@ def test_shot_paths_satisfy_the_independent_oracle():
 
 
 def test_ray_memo_never_changes_a_verdict():
-    """Random chords on shared rays: memo answer == a fresh _check_collision."""
+    """Random chords on shared rays: memo answer == a fresh _is_collision_free."""
     planner = astar_v0.KinodynamicAstar(_preprocessed(2, REVERSED))
     rng = random.Random(11)
     for _ in range(60):
@@ -181,7 +181,7 @@ def test_ray_memo_never_changes_a_verdict():
         for distance in distances:
             far = (origin[0] + distance * ux, origin[1] + distance * uy)
             memoised = planner._ray_chord_clear(memo, ray, distance, origin, far)
-            assert memoised == planner._check_collision(origin, far), (
+            assert memoised == planner._is_collision_free(origin, far), (
                 f"memo disagreed at {distance:.1f} m along {math.degrees(ray):.1f} deg"
             )
 
@@ -189,13 +189,13 @@ def test_ray_memo_never_changes_a_verdict():
 def _counting_planner(seed=2):
     planner = astar_v0.KinodynamicAstar(_preprocessed(seed, REVERSED))
     calls = [0]
-    real = planner._check_collision
+    real = planner._is_collision_free
 
     def counting(p1, p2):
         calls[0] += 1
         return real(p1, p2)
 
-    planner._check_collision = counting
+    planner._is_collision_free = counting
     return planner, calls
 
 

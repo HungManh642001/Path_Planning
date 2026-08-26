@@ -62,7 +62,7 @@ def inflate_obstacles(
     # SAFE_MARGIN only. The old `R*(1/cos(alpha_max/2)-1)` turn term covered the
     # worst-case bulge of a fillet arc into the corner it cuts; it is gone
     # because the search now checks that bulge EXACTLY, per corner, with the
-    # real turn angle (`_corner_arc_clear`). Sized for alpha_max and applied to
+    # real turn angle (`_is_corner_arc_clear`). Sized for alpha_max and applied to
     # every obstacle, the term closed 49% of all corridors between obstacle
     # pairs (measured, 1536 pairs) - a straight transit paid the same 3.3 km as
     # a 90-degree corner. Inflation is now purely the operator's minimum

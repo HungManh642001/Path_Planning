@@ -40,7 +40,7 @@ def build_scenario(request: PlanRequest) -> dict[str, Any]:
 
     goal_heading = (
         None
-        if request.goal_heading_free
+        if request.is_goal_heading_free
         else bearing_deg_to_math_rad(request.goal_heading_deg)
     )
 

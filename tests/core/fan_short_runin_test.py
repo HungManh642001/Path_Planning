@@ -124,7 +124,7 @@ def test_premise_goal_is_clear_but_the_run_in_is_short():
     planner = _planner()
     state = _short_runin_state(planner)
     goal_wp = planner.goal_state.waypoint
-    assert planner._check_collision(state.waypoint, goal_wp), (
+    assert planner._is_collision_free(state.waypoint, goal_wp), (
         "goal must be in the clear"
     )
     assert planner._pivot_candidate(state, goal_wp, 0.0) is None
@@ -169,7 +169,7 @@ def test_fixed_goal_mode_is_untouched():
 def test_fan_still_fires_when_the_goal_is_occluded():
     planner = _planner(obstacles=(SIDE, BLOCKER))
     state = _state(planner, (100000.0, 250000.0))
-    assert not planner._check_collision(state.waypoint, planner.goal_state.waypoint)
+    assert not planner._is_collision_free(state.waypoint, planner.goal_state.waypoint)
     with _skip(True):
         _, legs = _fan_legs(planner, state)
     assert legs, "the occluded-reorientation valve must be untouched"

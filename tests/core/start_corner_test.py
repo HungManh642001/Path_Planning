@@ -67,20 +67,20 @@ def test_feasibility_diagonal_corridor(monkeypatch):
     # A: legacy single-corner W1 pokes outside the diagonal band -> no corners
     # survive seeding, and the plan fails.
     _, result_k1 = _plan(scenario, 1, monkeypatch)
-    assert result_k1["success"] is False
+    assert result_k1["is_success"] is False
     assert len(result_k1["planner"].start_corners) == 0
 
     # B: 8 tan-uniform corners include at least one that stays inside the band
     # and affords the ~45deg turn -> succeed.
     pre_k8, result_k8 = _plan(scenario, 8, monkeypatch)
-    assert result_k8["success"] is True
+    assert result_k8["is_success"] is True
     assert len(result_k8["planner"].start_corners) >= 1
 
     full_path = tr.build_full_path(result_k8["path"], pre_k8)
-    ok, detail = pv.straight_segments_ok(
+    is_ok, detail = pv.straight_segments_ok(
         full_path, config.R, config.L0, pre_k8["goal_state"]["engagement_distance"]
     )
-    assert ok, detail
+    assert is_ok, detail
 
     poly = Polygon(scenario["safezones"][0])
     for waypoint in [wp for wp, _ in result_k8["path"]]:
@@ -95,18 +95,18 @@ def test_feasibility_needs_multiple_corners(monkeypatch):
     _, result_k1 = _plan(scenario, 1, monkeypatch)
     k1_corners = len(result_k1["planner"].start_corners)
     assert k1_corners == 0
-    assert result_k1["success"] is False
+    assert result_k1["is_success"] is False
 
     _, result_k8 = _plan(scenario, 8, monkeypatch)
     k8_corners = len(result_k8["planner"].start_corners)
     assert k8_corners > k1_corners
-    assert result_k8["success"] is True
+    assert result_k8["is_success"] is True
 
 
 def test_smoothed_path_keeps_l1_at_least_l0(monkeypatch):
     scenario = _diagonal_corridor_scenario()
     pre, result = _plan(scenario, 8, monkeypatch)
-    assert result["success"] is True
+    assert result["is_success"] is True
 
     path = result["path"]
     p0 = path[0][0]
@@ -125,10 +125,10 @@ def test_smoothed_path_keeps_l1_at_least_l0(monkeypatch):
 
     # Belt-and-braces: the independent oracle agrees.
     full_path = tr.build_full_path(path, pre)
-    ok, detail = pv.straight_segments_ok(
+    is_ok, detail = pv.straight_segments_ok(
         full_path, config.R, config.L0, pre["goal_state"]["engagement_distance"]
     )
-    assert ok, detail
+    assert is_ok, detail
 
 
 def test_backward_compat_k1_equals_legacy(monkeypatch):
@@ -147,7 +147,7 @@ def test_backward_compat_k1_equals_legacy(monkeypatch):
     assert abs(corner_wp[0] - legacy_w1[0]) < 1e-3
     assert abs(corner_wp[1] - legacy_w1[1]) < 1e-3
 
-    assert result["success"] is True
+    assert result["is_success"] is True
     # The search roots exactly at the (single) seeded corner.
     assert abs(result["path"][0][0][0] - legacy_w1[0]) < 1e-3
     assert abs(result["path"][0][0][1] - legacy_w1[1]) < 1e-3
@@ -170,8 +170,8 @@ def test_gentle_adverse_heading_not_longer(monkeypatch):
     pre_k1, result_k1 = _plan(scenario, 1, monkeypatch)
     pre_k8, result_k8 = _plan(scenario, 8, monkeypatch)
 
-    assert result_k1["success"] is True
-    assert result_k8["success"] is True
+    assert result_k1["is_success"] is True
+    assert result_k8["is_success"] is True
 
     len_k1 = _path_length(scenario["start"], result_k1["path"])
     len_k8 = _path_length(scenario["start"], result_k8["path"])

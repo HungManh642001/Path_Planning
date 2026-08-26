@@ -226,10 +226,10 @@ class PlanRunner:
             planner_version,
         )
 
-        # budget_bound chỉ đúng cho TIMEOUT: đó là trạng thái DUY NHẤT nơi
+        # is_budget_bound chỉ đúng cho TIMEOUT: đó là trạng thái DUY NHẤT nơi
         # ngân sách thời gian là lý do request không xong. Một tiến trình con
         # NÉM LỖI (INTERNAL_ERROR) không hề chạm trần thời gian.
-        budget_bound = status is PlanStatus.TIMEOUT
+        is_budget_bound = status is PlanStatus.TIMEOUT
         return PlanReply(
             request_id=request.request_id,
             idl_version=IDL_VERSION,
@@ -239,7 +239,7 @@ class PlanRunner:
             path_length_m=0.0,
             plan_wall_time_s=elapsed_s,
             applied_time_budget_s=effective_time_budget_s(request.budget.time_budget_s),
-            stats=SearchStats(0, 0, True, budget_bound),
+            stats=SearchStats(0, 0, True, is_budget_bound),
             planner_version=planner_version(),
             config_hash=config_hash(),
         )

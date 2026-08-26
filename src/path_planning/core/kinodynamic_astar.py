@@ -92,9 +92,9 @@ class PlanResult(TypedDict):
 
     Attributes:
         path: The planned interior waypoints, or ``None`` if planning failed.
-        success: True only when a path was found AND the independent oracle
+        is_success: True only when a path was found AND the independent oracle
             accepted the full mission path.
-        failure_reason: ``None`` on success, otherwise ``'no_path'``,
+        failure_reason: ``None`` on is_success, otherwise ``'no_path'``,
             ``'start_leg_blocked'``, ``'goal_leg_blocked'`` or the oracle's own
             rejection detail.
         stats: Search counters.
@@ -102,7 +102,7 @@ class PlanResult(TypedDict):
     """
 
     path: list[PlannerState] | None
-    success: bool
+    is_success: bool
     failure_reason: str | None
     stats: SearchStats
     planner: KinodynamicAstar
@@ -291,8 +291,8 @@ class KinodynamicAstar:
         self._polygons = [
             Polygon(coords) for coords in preprocessed_scenario["polygon_obstacles"]
         ]
-        # Plain-float bboxes for the manual prefilter in _check_collision /
-        # _sector_clear. At N <= ~20 polygons a scalar bbox loop beats the
+        # Plain-float bboxes for the manual prefilter in _is_collision_free /
+        # _is_sector_clear. At N <= ~20 polygons a scalar bbox loop beats the
         # STRtree python dispatch, and — the real win — the query geometry
         # (LineString / sector quad) is only CONSTRUCTED when some bbox
         # overlaps: measured ~50% of hard-seed wall time was shapely object
@@ -305,8 +305,8 @@ class KinodynamicAstar:
         # `for (cx, cy), radius in ...` paid a tuple unpack on every circle of
         # every call.
         #
-        # CONTRACT: the obstacle field is FROZEN at construction. _check_collision
-        # and _corner_arc_clear read this list, not scenario['circle_obstacles'],
+        # CONTRACT: the obstacle field is FROZEN at construction. _is_collision_free
+        # and _is_corner_arc_clear read this list, not scenario['circle_obstacles'],
         # so assigning to that key on a live planner has no effect on collision
         # checking. v0 has worked this way since 494e85d; main now matches.
         # tests/kinodynamic_arc_hop_test.py does assign to it (to block a fixed
@@ -315,7 +315,7 @@ class KinodynamicAstar:
         self._circles: list[tuple[float, float, float]] = [
             (c[0], c[1], r) for c, r in preprocessed_scenario["circle_obstacles"]
         ]
-        # Shrunk copies for the deep-hit short-circuit in _check_collision (see
+        # Shrunk copies for the deep-hit short-circuit in _is_collision_free (see
         # config.POLYGON_DEEP_HIT_INSET_M). buffer() can return empty or a
         # MultiPolygon; an empty one simply never short-circuits.
         self._polygons_deep = [
@@ -335,7 +335,7 @@ class KinodynamicAstar:
                 (float(x), float(y)) for x, y in hull.exterior.coords[:-1]
             )
 
-        # NOTE for _corner_arc_clear: the search-time turn-arc check uses the
+        # NOTE for _is_corner_arc_clear: the search-time turn-arc check uses the
         # INFLATED sets above — the same ones the straight-leg check uses. It
         # used to have its OWN sets, aliased here, because inflation carried a
         # `R*(1/cos(alpha_max/2)-1)` turn term and a fillet arc was designed to
@@ -349,7 +349,7 @@ class KinodynamicAstar:
 
         # Operating areas (safezones). When one or more polygons are supplied the
         # aircraft must stay inside their UNION — both every generated waypoint
-        # (_in_bounds) and every edge/chord (_check_collision) are constrained to
+        # (_is_in_bounds) and every edge/chord (_is_collision_free) are constrained to
         # it. The union (a Polygon or MultiPolygon) is prepared once so the
         # repeated point/segment containment tests on the hot search path are
         # cheap. When absent, fall back to the rectangle from the scenario's
@@ -366,7 +366,7 @@ class KinodynamicAstar:
         # global config.MAP_WIDTH/HEIGHT is a legacy 500 km default that is
         # meaningless for scenarios living elsewhere (e.g. real missions at
         # y ~ 1.15e6); enforcing it there would reject every waypoint. When
-        # neither a safezone nor an explicit map_bounds is given, _in_bounds is
+        # neither a safezone nor an explicit map_bounds is given, _is_in_bounds is
         # permissive (the search is still bounded by obstacles, candidates,
         # and the time budget).
         self._has_explicit_bounds = map_bounds is not None
@@ -410,9 +410,9 @@ class KinodynamicAstar:
 
         self.iteration_count = 0
         # Set by search() when the wall-clock budget, not the frontier, ended
-        # the loop. Kept apart from search_failed: "I looked everywhere and
+        # the loop. Kept apart from is_search_failed: "I looked everywhere and
         # there is no path" and "I ran out of clock" are different answers.
-        self.budget_bound = False
+        self.is_budget_bound = False
         self.R = preprocessed_scenario["turn_radius"]
         self.alpha_max_rad = preprocessed_scenario["alpha_max_rad"]
         # Turn limit used when BUILDING and accepting geometry: padded towards
@@ -454,15 +454,15 @@ class KinodynamicAstar:
         self._riding = False
 
         # Which gate rejected the most recent _pivot_candidate (None on
-        # success). Same side-channel style as _riding: it lets the caller ask
+        # is_success). Same side-channel style as _riding: it lets the caller ask
         # "was this an ARC rejection?" — the only kind worth retrying with an
         # along-ray slide — without _pivot_candidate returning a richer type on
         # its hot path.
         self._last_reject: str | None = None
 
-        self.search_failed = False
+        self.is_search_failed = False
 
-        # Search route before arc expansion/smoothing (set on success);
+        # Search route before arc expansion/smoothing (set on is_success);
         # used to verify discretisation invariance.
         self.raw_route: list[PlannerState] | None = None
 
@@ -516,9 +516,9 @@ class KinodynamicAstar:
                 origin[0] + distance * math.cos(takeoff_heading),
                 origin[1] + distance * math.sin(takeoff_heading),
             )
-            if not self._in_bounds(corner):
+            if not self._is_in_bounds(corner):
                 continue
-            if not self._check_collision(origin, corner):
+            if not self._is_collision_free(origin, corner):
                 continue
             state = State(corner, takeoff_heading)
             # True along-ray cost from O. All corners share the same O origin,
@@ -671,7 +671,7 @@ class KinodynamicAstar:
         # exact gate costs +0.0376% (free) / +0.0483% (fixed) and saves nothing.
         # The conclusion stands on a different case: suppressing the fan on
         # every line-of-sight-clear expansion costs seed 51 +73.5%.
-        if successors and not riding and not self._check_collision(position, goal_wp):
+        if successors and not riding and not self._is_collision_free(position, goal_wp):
             # Escape valve: while the goal is occluded, a few budgeted fan
             # expansions provide cheap reorientation moves (e.g. an adverse
             # initial heading) that tangent/vertex candidates cannot express;
@@ -733,11 +733,11 @@ class KinodynamicAstar:
                 budget = self._doan_trinh(current_state, distance_m, turn)
                 if budget is None:
                     continue
-                if not self._in_bounds(next_waypoint):
+                if not self._is_in_bounds(next_waypoint):
                     continue
-                if not self._check_collision(position, next_waypoint):
+                if not self._is_collision_free(position, next_waypoint):
                     continue
-                if config.ARC_CLEARANCE_CHECK and not self._corner_arc_clear(
+                if config.ARC_CLEARANCE_CHECK and not self._is_corner_arc_clear(
                     heading, position, next_waypoint
                 ):
                     continue
@@ -819,7 +819,7 @@ class KinodynamicAstar:
                 # Its USABLE straight length (after the turn fillet at the pivot
                 # bites R*tan(turn/2)) must be at least DSS — checking the raw
                 # distance would let the fillet steal into the seeker leg.
-                # Heading already points at T; _check_collision below keeps it
+                # Heading already points at T; _is_collision_free below keeps it
                 # clear; no fixed goal_heading terminal turn.
                 if seg_len - self.R * math.tan(turn / 2.0) < self._dss:
                     self._last_reject = "goal"
@@ -844,16 +844,16 @@ class KinodynamicAstar:
         if advance > 0.0:
             # The slide is new flying: the extension leg must be clear and stay
             # inside the operating area. (At advance = 0 this is a no-op leg.)
-            if not self._in_bounds(pivot):
+            if not self._is_in_bounds(pivot):
                 self._last_reject = "bounds"
                 return None
-            if not self._check_collision(position, pivot):
+            if not self._is_collision_free(position, pivot):
                 self._last_reject = "ext_leg"
                 return None
-        if not self._check_collision(pivot, node):
+        if not self._is_collision_free(pivot, node):
             self._last_reject = "los"
             return None
-        if config.ARC_CLEARANCE_CHECK and not self._corner_arc_clear(
+        if config.ARC_CLEARANCE_CHECK and not self._is_corner_arc_clear(
             heading, pivot, node
         ):
             self._last_reject = "arc"
@@ -1113,14 +1113,14 @@ class KinodynamicAstar:
                 center[0] + r_out * math.cos(phi_next),
                 center[1] + r_out * math.sin(phi_next),
             )
-            if not self._in_bounds(probe) or not self._sector_clear(
+            if not self._is_in_bounds(probe) or not self._is_sector_clear(
                 center, r_ride, r_out, phi_prev, phi_next
             ):
                 return (k - 1) * step
             phi_prev = phi_next
         return 2.0 * math.pi
 
-    def _sector_clear(
+    def _is_sector_clear(
         self, center: Point, r_in: float, r_out: float, phi_a: float, phi_b: float
     ) -> bool:
         """Test whether an annular sector is free of obstacles.
@@ -1150,7 +1150,7 @@ class KinodynamicAstar:
                 return False  # annulus centre inside the obstacle
             theta = math.atan2(dy, dx)
             half = math.asin(min(1.0, r2 / d))
-            if ag.angular_overlap(theta - half, theta + half, lo, hi):
+            if ag.has_angular_overlap(theta - half, theta + half, lo, hi):
                 return False
 
         if self._poly_bboxes:
@@ -1169,7 +1169,7 @@ class KinodynamicAstar:
                     return False
         return True
 
-    def _check_collision(self, p1: Point, p2: Point) -> bool:
+    def _is_collision_free(self, p1: Point, p2: Point) -> bool:
         """Test whether the straight segment ``p1`` -> ``p2`` is flyable.
 
         Args:
@@ -1259,7 +1259,7 @@ class KinodynamicAstar:
                     return False
 
         # Safezone containment: the WHOLE chord must stay inside the operating
-        # area. Endpoint checks (_in_bounds) are not enough — smoothing shortcuts
+        # area. Endpoint checks (_is_in_bounds) are not enough — smoothing shortcuts
         # a chord to a far waypoint, and for a non-convex safezone that chord can
         # exit the area even when both endpoints are inside. `covers` allows the
         # chord to run along the boundary.
@@ -1270,7 +1270,7 @@ class KinodynamicAstar:
                 return False
         return True
 
-    def _corner_arc_clear(
+    def _is_corner_arc_clear(
         self, h_in: float, w: Point, w_next: Point, exact: bool = False
     ) -> bool:
         """Test whether the radius-R fillet arc rounding corner ``w`` is clear.
@@ -1280,7 +1280,7 @@ class KinodynamicAstar:
         GEOMETRY so the search weighs the same arc the final oracle will, instead
         of committing to it.
 
-        Hot path -- same prefilter economy as :meth:`_check_collision`: the whole
+        Hot path -- same prefilter economy as :meth:`_is_collision_free`: the whole
         arc is sampled once, its bbox computed, and an obstacle is only tested
         when its bbox overlaps the arc's; polygons get ONE LineString for the
         entire arc polyline, not one per segment. An open-water corner therefore
@@ -1410,9 +1410,9 @@ class KinodynamicAstar:
         Returns:
             ``True`` if the fixed approach leg is clear.
         """
-        return self._check_collision(self.goal_state.waypoint, self._target)
+        return self._is_collision_free(self.goal_state.waypoint, self._target)
 
-    def _in_bounds(self, point: Point) -> bool:
+    def _is_in_bounds(self, point: Point) -> bool:
         """Test whether a point lies inside the operating area.
 
         With a safezone polygon the point must be COVERED by it, so a point
@@ -1440,7 +1440,7 @@ class KinodynamicAstar:
 
         Returns:
             The reconstructed waypoints, or ``None`` if none was found.
-            ``budget_bound`` then says which of the two ways the search ended:
+            ``is_budget_bound`` then says which of the two ways the search ended:
             the frontier ran out (a real "no path"), or the clock did.
         """
         started_at = time.perf_counter()
@@ -1450,7 +1450,7 @@ class KinodynamicAstar:
         # (takeoff ray blocked / outside the operating area), the start is
         # blocked: fail fast and honestly.
         if not self.start_corners:
-            self.search_failed = True
+            self.is_search_failed = True
             return None
         for corner in self.start_corners:
             corner.h_cost = self.heuristic(corner, self.goal_state)
@@ -1471,7 +1471,7 @@ class KinodynamicAstar:
             # The budget is the ONLY stop condition. The loop otherwise runs
             # until the frontier is exhausted, which is the honest "no path".
             if (time.perf_counter() - started_at) > budget_s:
-                self.budget_bound = True
+                self.is_budget_bound = True
                 break
             self.iteration_count += 1
 
@@ -1522,7 +1522,7 @@ class KinodynamicAstar:
                 (current.waypoint[0] - self.goal_state.waypoint[0]) ** 2
                 + (current.waypoint[1] - self.goal_state.waypoint[1]) ** 2
             )
-            if dist_to_goal < config.GOAL_THRESHOLD and self._goal_reached(current):
+            if dist_to_goal < config.GOAL_THRESHOLD and self._is_goal_reached(current):
                 return self._reconstruct_path(current)
 
             for next_state, transition_cost in self.get_next_states(current):
@@ -1550,10 +1550,10 @@ class KinodynamicAstar:
                         ),
                     )
 
-        self.search_failed = True
+        self.is_search_failed = True
         return None
 
-    def _goal_reached(self, current: State) -> bool:
+    def _is_goal_reached(self, current: State) -> bool:
         """Test whether a state within the goal threshold may actually terminate.
 
         Reaching the goal region is not enough. In FIXED-goal mode the vehicle
@@ -1596,7 +1596,7 @@ class KinodynamicAstar:
         corner and goal States with parent pointers linked back to ``current``.
 
         The emitted manoeuvre is validated identically to any search edge: each
-        leg passes :meth:`_check_collision` and the đoản-trình reserves are
+        leg passes :meth:`_is_collision_free` and the đoản-trình reserves are
         enforced inside ``two_corner_candidates``, so the returned path is valid.
 
         Args:
@@ -1635,9 +1635,9 @@ class KinodynamicAstar:
             corner = candidate.corner
             leg1_heading = candidate.leg1_heading
             arrival_heading = candidate.arrival_heading
-            if not self._check_collision(current.waypoint, corner):
+            if not self._is_collision_free(current.waypoint, corner):
                 continue
-            if not self._check_collision(corner, goal_wp):
+            if not self._is_collision_free(corner, goal_wp):
                 continue
             # The shot SYNTHESISES two corners — at `current` and at C — that
             # never pass through get_next_states, so nothing else arc-checks
@@ -1648,11 +1648,11 @@ class KinodynamicAstar:
             # The third corner, at gw turning onto goal_heading, is checked too:
             # the flown leg gw -> T is part of the mission path.
             if config.ARC_CLEARANCE_CHECK:
-                if not self._corner_arc_clear(heading, current.waypoint, corner):
+                if not self._is_corner_arc_clear(heading, current.waypoint, corner):
                     continue
-                if not self._corner_arc_clear(leg1_heading, corner, goal_wp):
+                if not self._is_corner_arc_clear(leg1_heading, corner, goal_wp):
                     continue
-                if not self._corner_arc_clear(arrival_heading, goal_wp, self._target):
+                if not self._is_corner_arc_clear(arrival_heading, goal_wp, self._target):
                     continue
 
             # Leg 1: current -> C (stored heading = leg bearing).
@@ -1688,7 +1688,7 @@ class KinodynamicAstar:
         pivot), so they belong in ``raw_route`` too.
 
         Walking per-object parent pointers means every emitted edge is exactly a
-        transition that passed ``_check_collision`` and the turn / đoản-trình
+        transition that passed ``_is_collision_free`` and the turn / đoản-trình
         gates at creation time. In particular ``arc_from``'s frozen arc start
         equals the parent's waypoint by object identity -- no healing needed.
 
@@ -1746,10 +1746,10 @@ class KinodynamicAstar:
         return {
             "iterations": self.iteration_count,
             "time_budget_s": self.time_budget_s,
-            "budget_bound": self.budget_bound,
+            "is_budget_bound": self.is_budget_bound,
             "open_set_size": len(self.open_set),
             "closed_set_size": len(self.closed_set),
-            "search_failed": self.search_failed,
+            "is_search_failed": self.is_search_failed,
         }
 
     def smooth_path(self, path: list[PlannerState]) -> list[PlannerState]:
@@ -1860,7 +1860,7 @@ class KinodynamicAstar:
                 brg[i][j] = math.atan2(
                     waypoints[j][1] - waypoints[i][1], waypoints[j][0] - waypoints[i][0]
                 )
-                clear[i][j] = self._check_collision(waypoints[i], waypoints[j])
+                clear[i][j] = self._is_collision_free(waypoints[i], waypoints[j])
 
         arc_memo: dict[tuple[int, int, int], bool] = {}
 
@@ -1880,7 +1880,7 @@ class KinodynamicAstar:
             key = (u, v, w)
             hit = arc_memo.get(key)
             if hit is None:
-                hit = self._corner_arc_clear(
+                hit = self._is_corner_arc_clear(
                     brg[u][v], waypoints[v], waypoints[w], exact=True
                 )
                 arc_memo[key] = hit
@@ -1987,7 +1987,7 @@ class KinodynamicAstar:
 
         Returns:
             The plan result; on failure ``path`` may still carry the rejected
-            route for inspection, with ``success`` false and ``failure_reason``
+            route for inspection, with ``is_success`` false and ``failure_reason``
             set.
         """
         # Feasibility gates first, each with its own honest reason:
@@ -2007,7 +2007,7 @@ class KinodynamicAstar:
             logger.info(
                 f"Search completed: {stats['iterations']} iterations in "
                 f"<= {stats['time_budget_s']:g} s"
-                + (" (budget exhausted)" if stats["budget_bound"] else "")
+                + (" (budget exhausted)" if stats["is_budget_bound"] else "")
             )
         if path is None:
             return self._result(None, False, "no_path")
@@ -2020,7 +2020,7 @@ class KinodynamicAstar:
         # collision OR the đoản-trình (min-straight) constraint — e.g. two turns
         # ending up too close, so a middle segment's usable straight goes
         # negative. Re-validate the whole path with the INDEPENDENT oracle so
-        # success really means oracle-valid; a path that fails is reported as an
+        # is_success really means oracle-valid; a path that fails is reported as an
         # honest failure, not returned as a silent bad plan. This is exactly the
         # invariant asserted by tests/oracle_validity_test.py. Straight legs AND
         # turn arcs are both checked against the INFLATED obstacles:
@@ -2044,12 +2044,12 @@ class KinodynamicAstar:
         return self._result(path, True, None)
 
     def _result(
-        self, path: list[PlannerState] | None, success: bool, reason: str | None
+        self, path: list[PlannerState] | None, is_success: bool, reason: str | None
     ) -> PlanResult:
         """Package a path, its verdict and the search stats into one result."""
         return {
             "path": path,
-            "success": success,
+            "is_success": is_success,
             "failure_reason": reason,
             "stats": self.get_search_stats(),
             "planner": self,
@@ -2063,7 +2063,7 @@ def plan_trajectory(
 ) -> PlanResult:
     """Plan an autonomous aircraft trajectory end to end.
 
-    ``success`` means the INDEPENDENT oracle accepted the whole mission path,
+    ``is_success`` means the INDEPENDENT oracle accepted the whole mission path,
     not merely that the search returned something.
 
     Args:
@@ -2075,7 +2075,7 @@ def plan_trajectory(
             stop condition; see :class:`KinodynamicAstar`.
 
     Returns:
-        The plan result. ``result['stats']['budget_bound']`` tells a caller
+        The plan result. ``result['stats']['is_budget_bound']`` tells a caller
         whether the answer was cut short by the clock.
     """
     if verbose:

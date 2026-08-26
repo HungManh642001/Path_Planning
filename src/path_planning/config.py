@@ -196,7 +196,7 @@ NUM_FAN_DISTANCES = 2
 RADIAL_FAN_STEP_M = 100.0
 
 # Along-ray pivot slide: number of retry positions tried when a Strategy-A
-# candidate is rejected (usually by _corner_arc_clear at a polygon hull vertex,
+# candidate is rejected (usually by _is_corner_arc_clear at a polygon hull vertex,
 # where the fillet folds into the polygon the vertex belongs to).
 #
 # The pivot slides FORWARD along the incoming heading, P' = P + d*h_in, so the
@@ -248,7 +248,7 @@ SMOOTH_MAX_NODES = 64
 SMOOTH_NODE_PENALTY_M = 1.0
 
 # Inset (m) of the shrunk polygon copies used ONLY to short-circuit the exact
-# interior-overlap measurement in _check_collision. A chord whose interior
+# interior-overlap measurement in _is_collision_free. A chord whose interior
 # reaches into the shrunk copy is overlapping the real polygon by more than this
 # and is unambiguously blocked, so it never needs measuring; measuring costs
 # 63 us against 12 us for the predicate, and 14.4% of collision calls hit a

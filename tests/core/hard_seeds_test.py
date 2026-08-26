@@ -54,7 +54,7 @@ def _plan(seed):
 def test_hard_seed_valid_fast_and_near_baseline(seed, max_dist, monkeypatch):
     monkeypatch.setattr(config, "TIME_BUDGET_S", _NO_BUDGET_PRESSURE_S)
     scn, pre, result, elapsed = _plan(seed)
-    assert result["success"], f"seed {seed} failed to plan"
+    assert result["is_success"], f"seed {seed} failed to plan"
     assert elapsed < 5.0, f"seed {seed} took {elapsed:.2f}s"
 
     full = tr.build_full_path(result["path"], pre)
@@ -88,7 +88,7 @@ def test_route_invariant_to_arc_waypoint_step(monkeypatch):
     for theta in (20.0, 30.0, 45.0):
         monkeypatch.setattr(config, "ARC_WAYPOINT_STEP_DEG", theta)
         _scn, _pre, result, _elapsed = _plan(125)
-        assert result["success"]
+        assert result["is_success"]
         routes.append(result["planner"].raw_route)
         iterations.append(result["stats"]["iterations"])
     assert routes[0] == routes[1] == routes[2]

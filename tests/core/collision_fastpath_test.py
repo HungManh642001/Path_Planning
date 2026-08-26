@@ -1,6 +1,6 @@
 """Semantic-invariance tests for the collision fast paths.
 
-The bbox prefilters in _check_collision/_sector_clear and the State dedup-key
+The bbox prefilters in _is_collision_free/_is_sector_clear and the State dedup-key
 cache are pure refactors: results must agree exactly with an unfiltered
 reference (every polygon tested, no prefilter). These tests pin that
 agreement on real random maps so a prefilter slip (wrong bbox order, strict
@@ -61,7 +61,7 @@ def _reference_sector_clear(planner, center, r_in, r_out, phi_a, phi_b):
             return False
         theta = math.atan2(dy, dx)
         half = math.asin(min(1.0, r2 / d))
-        if ag.angular_overlap(theta - half, theta + half, lo, hi):
+        if ag.has_angular_overlap(theta - half, theta + half, lo, hi):
             return False
     quad = Polygon(ag.sector_polygon(center, r_in, r_out, lo, hi))
     for poly in planner._polygons:
@@ -86,7 +86,7 @@ def test_check_collision_agrees_with_unfiltered_reference():
                     p1[0] + rng.uniform(-20000, 20000),
                     p1[1] + rng.uniform(-20000, 20000),
                 )
-            assert planner._check_collision(p1, p2) == _reference_check_collision(
+            assert planner._is_collision_free(p1, p2) == _reference_check_collision(
                 planner, p1, p2
             ), (seed, p1, p2)
 
@@ -103,7 +103,7 @@ def test_sector_clear_agrees_with_unfiltered_reference():
             r_out = r_in * (1.0 / math.cos(math.pi / 8.0))
             phi_a = rng.uniform(-math.pi, math.pi)
             phi_b = phi_a + rng.uniform(0.01, 0.5)
-            assert planner._sector_clear(
+            assert planner._is_sector_clear(
                 center, r_in, r_out, phi_a, phi_b
             ) == _reference_sector_clear(planner, center, r_in, r_out, phi_a, phi_b), (
                 seed,

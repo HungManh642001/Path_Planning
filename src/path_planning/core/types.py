@@ -164,21 +164,21 @@ class SearchStats(TypedDict):
         time_budget_s: The wall-clock budget the search actually ran under -
             the caller's value, or ``config.TIME_BUDGET_S`` when none was
             given. It is the search's only stop condition.
-        budget_bound: Whether the search was cut off by that budget. A
+        is_budget_bound: Whether the search was cut off by that budget. A
             first-class field, not a detail: a budget-bound search is one whose
             answer depends on the machine it ran on, and "no path" and "ran out
             of clock" are different claims.
         open_set_size: Nodes still queued when the search ended.
-        search_failed: Whether the search ended without reaching the goal.
+        is_search_failed: Whether the search ended without reaching the goal.
         closed_set_size: Distinct lattice cells expanded. Reported by the main
             planner only; the v0 planner omits it.
     """
 
     iterations: int
     time_budget_s: float
-    budget_bound: bool
+    is_budget_bound: bool
     open_set_size: int
-    search_failed: bool
+    is_search_failed: bool
     closed_set_size: NotRequired[int]
 
 
@@ -191,13 +191,13 @@ class PlanResultView(TypedDict):
 
     Attributes:
         path: The planned interior waypoints, or ``None`` if planning failed.
-        success: Whether the independent oracle accepted the full mission path.
-        failure_reason: ``None`` on success, otherwise why planning failed.
+        is_success: Whether the independent oracle accepted the full mission path.
+        failure_reason: ``None`` on is_success, otherwise why planning failed.
         stats: Search counters.
     """
 
     path: list[PlannerState] | None
-    success: bool
+    is_success: bool
     failure_reason: str | None
     stats: SearchStats
 

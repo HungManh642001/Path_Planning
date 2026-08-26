@@ -60,7 +60,7 @@ def _request(request_id: bytes) -> PlanRequest:
         start_heading_deg=45.0,
         goal=(300000.0, 250000.0),
         goal_heading_deg=137.5,
-        goal_heading_free=False,
+        is_goal_heading_free=False,
         islands=(((1e5, 1e5), (1.2e5, 1e5), (1.1e5, 1.3e5)),),
         dynamic_obstacles=(Circle(center=(2e5, 1.5e5), radius_m=12000.0),),
         safezones=(((0.0, 0.0), (5e5, 0.0), (5e5, 5e5)),),
@@ -154,7 +154,7 @@ def test_a_request_survives_the_wire_unchanged() -> None:
         assert got.request_id == request_id
         assert got.start == (50000.0, 50000.0)
         assert got.goal_heading_deg == 137.5
-        assert got.goal_heading_free is False
+        assert got.is_goal_heading_free is False
         assert len(got.islands[0]) == 3
         assert got.dynamic_obstacles[0].radius_m == 12000.0
         assert len(got.safezones[0]) == 3

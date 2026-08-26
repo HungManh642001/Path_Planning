@@ -30,12 +30,12 @@ class ValidationResult(NamedTuple):
     """The verdict of one validity check.
 
     Attributes:
-        ok: Whether the check passed.
-        detail: ``'ok'`` on success, otherwise which waypoint or segment failed
+        is_ok: Whether the check passed.
+        detail: ``'ok'`` on is_success, otherwise which waypoint or segment failed
             and by how much.
     """
 
-    ok: bool
+    is_ok: bool
     detail: str
 
 
@@ -444,12 +444,12 @@ def path_is_valid(
     if not path or len(path) < 2:
         return ValidationResult(False, "path too short")
 
-    ok, reason = segments_clear(path, circle_obstacles, polygon_obstacles)
-    if not ok:
+    is_ok, reason = segments_clear(path, circle_obstacles, polygon_obstacles)
+    if not is_ok:
         return ValidationResult(False, f"segments blocked: {reason}")
 
-    ok, reason = turn_angles_ok(path, alpha_max_rad)
-    if not ok:
+    is_ok, reason = turn_angles_ok(path, alpha_max_rad)
+    if not is_ok:
         return ValidationResult(False, f"turn angles invalid: {reason}")
 
     arc_circles = (
@@ -458,12 +458,12 @@ def path_is_valid(
     arc_polys = (
         polygon_obstacles if raw_polygon_obstacles is None else raw_polygon_obstacles
     )
-    ok, reason = arcs_clear(path, turn_radius, arc_circles, arc_polys)
-    if not ok:
+    is_ok, reason = arcs_clear(path, turn_radius, arc_circles, arc_polys)
+    if not is_ok:
         return ValidationResult(False, f"turn arcs blocked: {reason}")
 
-    ok, reason = straight_segments_ok(path, turn_radius, l0, dss)
-    if not ok:
+    is_ok, reason = straight_segments_ok(path, turn_radius, l0, dss)
+    if not is_ok:
         return ValidationResult(False, f"straight segments invalid: {reason}")
 
     return _OK

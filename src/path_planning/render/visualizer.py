@@ -451,13 +451,13 @@ def _info_footer(
 
     stats = result.get("stats")
     iterations = stats.get("iterations", 0) if stats else 0
-    status = "✓ SUCCESS" if result.get("success", False) else "✗ FAILED"
+    status = "✓ SUCCESS" if result.get("is_success", False) else "✗ FAILED"
     budget_s = (
         stats.get("time_budget_s", config.TIME_BUDGET_S)
         if stats
         else config.TIME_BUDGET_S
     )
-    cut = " (budget)" if stats and stats.get("budget_bound") else ""
+    cut = " (budget)" if stats and stats.get("is_budget_bound") else ""
     text += f"\n{status} | Iter: {iterations} in <= {budget_s:g}s{cut}"
 
     path = result.get("path")

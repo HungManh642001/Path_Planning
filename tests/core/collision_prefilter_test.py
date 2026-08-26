@@ -1,7 +1,7 @@
 """The bbox prefilters must not change a single verdict.
 
-Measured over 40 scenarios, 82% of the circle tests in `_check_collision` and
-97.6% of those in `_corner_arc_clear` were against an obstacle that cannot reach
+Measured over 40 scenarios, 82% of the circle tests in `_is_collision_free` and
+97.6% of those in `_is_corner_arc_clear` were against an obstacle that cannot reach
 the query at all — 93% of all point-to-segment distance work in the planner. The
 prefilter is sound because a point further than `radius` outside the query's
 bounding box is further than `radius` from the query itself; these tests hold it
@@ -22,7 +22,7 @@ from path_planning.core import (
 
 
 def _brute_force_clear(planner, p1, p2):
-    """`_check_collision` with every prefilter removed."""
+    """`_is_collision_free` with every prefilter removed."""
     for cx, cy, radius in planner._circles:
         if su.point_to_line_distance((cx, cy), p1, p2) < radius:
             return False
@@ -50,7 +50,7 @@ def test_prefiltered_and_brute_force_agree_on_random_chords():
     for _ in range(1500):
         a = (rng.uniform(0, w), rng.uniform(0, h))
         b = (rng.uniform(0, w), rng.uniform(0, h))
-        fast = planner._check_collision(a, b)
+        fast = planner._is_collision_free(a, b)
         slow = _brute_force_clear(planner, a, b)
         blocked += not fast
         if fast != slow:
@@ -71,4 +71,4 @@ def test_prefilter_keeps_a_chord_that_only_just_reaches_a_circle():
     assert not (a[0] <= cx <= b[0] and min(a[1], b[1]) <= cy <= max(a[1], b[1])), (
         "centre must be OUTSIDE the raw bbox for this test to bite"
     )
-    assert planner._check_collision(a, b) is _brute_force_clear(planner, a, b)
+    assert planner._is_collision_free(a, b) is _brute_force_clear(planner, a, b)

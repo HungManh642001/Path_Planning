@@ -26,7 +26,7 @@ def _request(**overrides: object) -> PlanRequest:
         start_heading_deg=45.0,
         goal=(300000.0, 250000.0),
         goal_heading_deg=45.0,
-        goal_heading_free=True,
+        is_goal_heading_free=True,
         islands=(),
         dynamic_obstacles=(),
         safezones=(),
@@ -84,7 +84,7 @@ def test_a_requested_budget_is_applied_to_the_search() -> None:
     reply = plan(_request(budget=SearchBudget(time_budget_s=1e-9)))
     assert reply.applied_time_budget_s == 1e-9
     assert reply.status is PlanStatus.NO_PATH
-    assert reply.stats.budget_bound is True
+    assert reply.stats.is_budget_bound is True
 
 
 def test_an_empty_budget_falls_back_to_the_service_default() -> None:

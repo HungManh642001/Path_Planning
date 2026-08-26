@@ -130,7 +130,7 @@ class PerformanceMetrics:
 
             budget_s = self.search_stats.get("time_budget_s", 0.0)
             if budget_s:
-                cut = " (exhausted)" if self.search_stats.get("budget_bound") else ""
+                cut = " (exhausted)" if self.search_stats.get("is_budget_bound") else ""
                 logger.info(f"  Time Budget:  {budget_s:6.2f}s{cut}")
 
         # Path statistics

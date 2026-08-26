@@ -41,7 +41,7 @@ def test_shot_solves_adverse_in_few_iterations(monkeypatch):
     monkeypatch.setattr(config, "GOAL_SHOT_ENABLED", True)
     pre = prep.prepare_scenario(_adverse_scenario(45, 180))
     result = astar.plan_trajectory(pre)
-    assert result["success"]
+    assert result["is_success"]
     # inject-into-open keeps normal A* ordering (quality-safe), so the shot
     # is accepted only once it surfaces as cheapest rather than short-
     # circuiting the search immediately; it still collapses the flood far
@@ -54,7 +54,7 @@ def test_shot_disabled_still_floods(monkeypatch):
     monkeypatch.setattr(config, "GOAL_SHOT_ENABLED", False)
     pre = prep.prepare_scenario(_adverse_scenario(45, 180))
     result = astar.plan_trajectory(pre)
-    assert result["success"]
+    assert result["is_success"]
     assert result["stats"]["iterations"] > 1000  # no shot => flood
 
 
@@ -62,7 +62,7 @@ def test_shot_valid_on_full_reversal(monkeypatch):
     monkeypatch.setattr(config, "GOAL_SHOT_ENABLED", True)
     pre = prep.prepare_scenario(_adverse_scenario(180, 180))
     result = astar.plan_trajectory(pre)
-    assert result["success"]
+    assert result["is_success"]
     assert _oracle_ok(result, pre)
 
 
@@ -72,5 +72,5 @@ def test_free_goal_unaffected(monkeypatch):
     scen["goal_heading"] = None  # free-goal mode
     pre = prep.prepare_scenario(scen)
     result = astar.plan_trajectory(pre)
-    assert result["success"]
+    assert result["is_success"]
     assert _oracle_ok(result, pre)

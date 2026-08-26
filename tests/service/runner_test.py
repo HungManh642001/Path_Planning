@@ -35,7 +35,7 @@ def _request(**overrides: object) -> PlanRequest:
         start_heading_deg=45.0,
         goal=(300000.0, 250000.0),
         goal_heading_deg=45.0,
-        goal_heading_free=True,
+        is_goal_heading_free=True,
         islands=(),
         dynamic_obstacles=(),
         safezones=(),
@@ -135,7 +135,7 @@ def test_a_hung_child_becomes_timeout_and_the_runner_keeps_working() -> None:
         # Elapsed time is essentially the deadline it burned - 0.0 would be
         # the first field an operator would question on a TIMEOUT reply.
         assert hung.plan_wall_time_s > 0.0
-        assert hung.stats.budget_bound is True
+        assert hung.stats.is_budget_bound is True
         # Và runner vẫn phục vụ được ngay sau đó.
         assert instance.submit(_request()).status is PlanStatus.OK
     finally:
@@ -153,7 +153,7 @@ def test_a_child_that_raises_becomes_internal_error_not_a_dead_runner() -> None:
         assert broken.plan_wall_time_s > 0.0
         # A child that raised was never bound by the time budget - only
         # TIMEOUT is.
-        assert broken.stats.budget_bound is False
+        assert broken.stats.is_budget_bound is False
         assert instance.submit(_request()).status is PlanStatus.OK
     finally:
         instance.stop()

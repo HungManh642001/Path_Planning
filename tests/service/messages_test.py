@@ -25,7 +25,7 @@ def _request(**overrides: object) -> PlanRequest:
         start_heading_deg=0.0,
         goal=(100000.0, 0.0),
         goal_heading_deg=90.0,
-        goal_heading_free=False,
+        is_goal_heading_free=False,
         islands=(),
         dynamic_obstacles=(),
         safezones=(),

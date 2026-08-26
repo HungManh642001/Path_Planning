@@ -108,7 +108,7 @@ def plan(request: PlanRequest, preloaded: PreloadedMap | None = None) -> PlanRep
 
 def _classify(result: dict[str, Any]) -> tuple[PlanStatus, str]:
     """Ánh xạ kết quả planner sang trạng thái đối ngoại và phần diễn giải."""
-    if result["success"]:
+    if result["is_success"]:
         return PlanStatus.OK, ""
     reason = result["failure_reason"] or ""
     return _REASON_TO_STATUS.get(reason, PlanStatus.ORACLE_REJECTED), reason
@@ -144,7 +144,7 @@ def _planar_length(result: dict[str, Any], preprocessed: dict[str, Any]) -> floa
 def _stats_out(result: dict[str, Any]) -> SearchStats:
     """Đóng gói bộ đếm search, kèm cờ cho biết ngân sách có chạm trần không.
 
-    ``budget_bound`` đến THẲNG từ planner. Trước đây service tự suy ra nó bằng
+    ``is_budget_bound`` đến THẲNG từ planner. Trước đây service tự suy ra nó bằng
     cách so thời gian đo được ở ngoài với ngân sách - phép so đó tính cả phần
     làm mượt và phần oracle, nên một mission vừa kịp giờ vẫn có thể bị báo là
     chạm trần. Chỉ vòng lặp search biết nó dừng vì đồng hồ hay vì hết biên.
@@ -153,8 +153,8 @@ def _stats_out(result: dict[str, Any]) -> SearchStats:
     return SearchStats(
         iterations=stats["iterations"],
         open_set_size=stats["open_set_size"],
-        search_failed=stats["search_failed"],
-        budget_bound=stats["budget_bound"],
+        is_search_failed=stats["is_search_failed"],
+        is_budget_bound=stats["is_budget_bound"],
     )
 
 

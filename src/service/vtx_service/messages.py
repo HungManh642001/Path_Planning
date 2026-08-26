@@ -128,7 +128,7 @@ class PlanRequest:
         start_heading_deg: The start_heading_deg.
         goal: The goal.
         goal_heading_deg: The goal_heading_deg.
-        goal_heading_free: The goal_heading_free.
+        is_goal_heading_free: The is_goal_heading_free.
         islands: The islands.
         dynamic_obstacles: The dynamic_obstacles.
         safezones: The safezones.
@@ -143,7 +143,7 @@ class PlanRequest:
     start_heading_deg: float
     goal: Point
     goal_heading_deg: float
-    goal_heading_free: bool
+    is_goal_heading_free: bool
     islands: tuple[tuple[Point, ...], ...]
     dynamic_obstacles: tuple[Circle, ...]
     safezones: tuple[tuple[Point, ...], ...]
@@ -176,21 +176,21 @@ class Waypoint:
 class SearchStats:
     """Bộ đếm mô tả một lần chạy search.
 
-    ``budget_bound`` là trường hạng nhất chứ không phải chi tiết ẩn: planner cắt
+    ``is_budget_bound`` là trường hạng nhất chứ không phải chi tiết ẩn: planner cắt
     theo đồng hồ, nên cùng một request trên máy tải nặng có thể ra đường bay
     khác. Che giấu điều đó khiến client tin vào một sự đảm bảo không tồn tại.
 
     Attributes:
         iterations: The iterations.
         open_set_size: The open_set_size.
-        search_failed: The search_failed.
-        budget_bound: The budget_bound.
+        is_search_failed: The is_search_failed.
+        is_budget_bound: The is_budget_bound.
     """
 
     iterations: int
     open_set_size: int
-    search_failed: bool
-    budget_bound: bool
+    is_search_failed: bool
+    is_budget_bound: bool
 
 
 @dataclass(frozen=True)
@@ -224,7 +224,7 @@ class PlanReply:
     config_hash: str
 
     @property
-    def ok(self) -> bool:
+    def is_ok(self) -> bool:
         """Check if status is OK.
 
         Returns:

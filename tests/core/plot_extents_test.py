@@ -101,7 +101,7 @@ def test_content_extents_excludes_far_obstacles_and_giant_safezone():
         scenario, turn_radius=10000, l0=4000, alpha_max_rad=math.pi / 2, dss=20000
     )
     result = astar.plan_trajectory(pre)
-    assert result["success"]
+    assert result["is_success"]
 
     (xmin, xmax), (ymin, ymax) = _content_extents(scenario, pre, result)
 

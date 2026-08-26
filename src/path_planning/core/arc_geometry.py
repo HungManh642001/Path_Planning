@@ -208,7 +208,7 @@ def arc_waypoints(
     return out
 
 
-def angular_overlap(a0: float, a1: float, b0: float, b1: float) -> bool:
+def has_angular_overlap(a0: float, a1: float, b0: float, b1: float) -> bool:
     """Test whether two angular intervals overlap on the circle.
 
     Wrap-aware: intervals are compared modulo ``2*pi``.

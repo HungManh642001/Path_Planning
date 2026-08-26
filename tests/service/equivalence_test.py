@@ -65,7 +65,7 @@ def _request_from_scenario(name: str) -> PlanRequest:
         goal_heading_deg=0.0
         if goal_heading is None
         else math_rad_to_bearing_deg(goal_heading),
-        goal_heading_free=goal_heading is None,
+        is_goal_heading_free=goal_heading is None,
         islands=tuple(tuple(tuple(v) for v in poly) for poly in scenario["islands"]),
         dynamic_obstacles=tuple(
             Circle(center=tuple(center), radius_m=radius)
@@ -103,7 +103,7 @@ def test_adapter_is_transparent(name: str) -> None:
     result, expected_full = _direct_plan(request)
     reply = plan(request)
 
-    assert (reply.status is PlanStatus.OK) == result["success"]
+    assert (reply.status is PlanStatus.OK) == result["is_success"]
     assert len(reply.waypoints) == len(expected_full)
     for got, (position, heading) in zip(reply.waypoints, expected_full, strict=True):
         # Bit-identical: không có phép toán nào chạm vào toạ độ.

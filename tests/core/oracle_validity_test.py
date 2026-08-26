@@ -1,5 +1,5 @@
 """The invariant the old suite lacked: every plan the planner reports as a
-success must be accepted by the independent oracle (with the shared circle
+is_success must be accepted by the independent oracle (with the shared circle
 tolerance) over the FULL O..T path, including the fixed legs."""
 
 import pytest
@@ -22,7 +22,7 @@ def test_successful_plan_is_oracle_valid(seed):
     scn = generate_random_scenario(seed=seed)
     pre = prep.prepare_scenario(scn)
     result = astar.plan_trajectory(pre)
-    if not result["success"]:
+    if not result["is_success"]:
         # A reported failure carries a reason and is not asserted for validity.
         assert result["failure_reason"] in (
             "no_path",
@@ -46,4 +46,4 @@ def test_successful_plan_is_oracle_valid(seed):
         config.DSS,
         raw_circle_obstacles=rawc,
         raw_polygon_obstacles=rawp,
-    ), f"seed {seed}: reported success but oracle rejected the full path"
+    ), f"seed {seed}: reported is_success but oracle rejected the full path"

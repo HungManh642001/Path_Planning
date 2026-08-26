@@ -81,7 +81,7 @@ def test_adverse_full_reversal_still_valid(monkeypatch):
     monkeypatch.setattr(config, "GOAL_SHOT_ENABLED", True)
     pre = prep.prepare_scenario(_scenario(180, 180))
     result = astar.plan_trajectory(pre)
-    assert result["success"]
+    assert result["is_success"]
     full = tr.build_full_path(result["path"], pre)
     assert pv.path_is_valid(
         full,

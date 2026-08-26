@@ -85,7 +85,7 @@ def test_seed4_goal_slot_no_long_detour(no_time_budget):
     # with the fan restored the planner finds ~446.9 km. Bound is loose.
     planner, pre = _planner_for_seed(4)
     res = astar.plan_trajectory(pre, verbose=False)
-    assert res["success"]
+    assert res["is_success"]
     assert _mission_km(pre, res) < 480.0
 
 
@@ -94,5 +94,5 @@ def test_seed964_valve_starvation_no_long_detour(no_time_budget):
     # with corners exempt the planner finds ~481.2 km. Bound is loose.
     planner, pre = _planner_for_seed(964)
     res = astar.plan_trajectory(pre, verbose=False)
-    assert res["success"]
+    assert res["is_success"]
     assert _mission_km(pre, res) < 510.0

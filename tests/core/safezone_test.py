@@ -2,7 +2,7 @@
 
 `safezones` is an optional LIST of polygons (each a list of (x, y)). The aircraft
 must stay inside their UNION: this constrains both every generated waypoint
-(`_in_bounds`) and every edge/chord (`_check_collision`). When absent the planner
+(`_is_in_bounds`) and every edge/chord (`_is_collision_free`). When absent the planner
 falls back to the legacy config.MAP_WIDTH/HEIGHT rectangle.
 """
 
@@ -50,7 +50,7 @@ def _make_planner(
 
 
 # --------------------------------------------------------------------------- #
-# _in_bounds
+# _is_in_bounds
 # --------------------------------------------------------------------------- #
 
 
@@ -58,10 +58,10 @@ def test_in_bounds_single_zone_inside_outside_and_boundary():
     square = [(0, 0), (100, 0), (100, 100), (0, 100)]
     planner = _make_planner(safezones=[square])
 
-    assert planner._in_bounds((50, 50))  # interior
-    assert not planner._in_bounds((150, 50))  # outside to the right
-    assert not planner._in_bounds((-5, 50))  # outside to the left
-    assert planner._in_bounds((0, 50))  # exactly on the boundary (covers)
+    assert planner._is_in_bounds((50, 50))  # interior
+    assert not planner._is_in_bounds((150, 50))  # outside to the right
+    assert not planner._is_in_bounds((-5, 50))  # outside to the left
+    assert planner._is_in_bounds((0, 50))  # exactly on the boundary (covers)
 
 
 def test_in_bounds_union_of_multiple_zones():
@@ -70,9 +70,9 @@ def test_in_bounds_union_of_multiple_zones():
     right = [(200, 0), (300, 0), (300, 100), (200, 100)]
     planner = _make_planner(safezones=[left, right])
 
-    assert planner._in_bounds((50, 50))  # inside left zone
-    assert planner._in_bounds((250, 50))  # inside right zone
-    assert not planner._in_bounds((150, 50))  # in the gap between zones
+    assert planner._is_in_bounds((50, 50))  # inside left zone
+    assert planner._is_in_bounds((250, 50))  # inside right zone
+    assert not planner._is_in_bounds((150, 50))  # in the gap between zones
 
 
 def test_in_bounds_rectangle_with_explicit_map_bounds():
@@ -81,9 +81,9 @@ def test_in_bounds_rectangle_with_explicit_map_bounds():
         safezones=None, map_bounds=(config.MAP_WIDTH, config.MAP_HEIGHT)
     )
     assert planner._safezone is None
-    assert planner._in_bounds((config.MAP_WIDTH / 2, config.MAP_HEIGHT / 2))
-    assert not planner._in_bounds((config.MAP_WIDTH + 1, 10))
-    assert not planner._in_bounds((-1, 10))
+    assert planner._is_in_bounds((config.MAP_WIDTH / 2, config.MAP_HEIGHT / 2))
+    assert not planner._is_in_bounds((config.MAP_WIDTH + 1, 10))
+    assert not planner._is_in_bounds((-1, 10))
 
 
 def test_in_bounds_permissive_without_any_operating_area():
@@ -93,13 +93,13 @@ def test_in_bounds_permissive_without_any_operating_area():
     planner = _make_planner(safezones=None, map_bounds=None)
     assert planner._safezone is None
     assert planner._has_explicit_bounds is False
-    assert planner._in_bounds((config.MAP_WIDTH + 1, 10))
-    assert planner._in_bounds((465395.9, 1151760.6))  # a real out-of-500km point
-    assert planner._in_bounds((-1, -1))
+    assert planner._is_in_bounds((config.MAP_WIDTH + 1, 10))
+    assert planner._is_in_bounds((465395.9, 1151760.6))  # a real out-of-500km point
+    assert planner._is_in_bounds((-1, -1))
 
 
 # --------------------------------------------------------------------------- #
-# _check_collision segment containment (the key non-convex / multi-zone cases)
+# _is_collision_free segment containment (the key non-convex / multi-zone cases)
 # --------------------------------------------------------------------------- #
 
 
@@ -118,9 +118,9 @@ def test_check_collision_rejects_chord_leaving_nonconvex_zone():
     planner = _make_planner(safezones=[u_shape])
 
     # A chord across the gap between the prongs exits the operating area.
-    assert not planner._check_collision((20, 80), (80, 80))
+    assert not planner._is_collision_free((20, 80), (80, 80))
     # A chord that stays within the left prong is fine.
-    assert planner._check_collision((10, 10), (30, 90))
+    assert planner._is_collision_free((10, 10), (30, 90))
 
 
 def test_check_collision_rejects_chord_crossing_gap_between_zones():
@@ -129,14 +129,14 @@ def test_check_collision_rejects_chord_crossing_gap_between_zones():
     planner = _make_planner(safezones=[left, right])
 
     # A chord bridging the two disjoint zones passes through the outside gap.
-    assert not planner._check_collision((50, 50), (250, 50))
+    assert not planner._is_collision_free((50, 50), (250, 50))
     # A chord fully inside the right zone is fine.
-    assert planner._check_collision((210, 10), (290, 90))
+    assert planner._is_collision_free((210, 10), (290, 90))
 
 
 def test_check_collision_allows_interior_chord_without_safezones():
     planner = _make_planner(safezones=None)
-    assert planner._check_collision((1000, 1000), (2000, 2000))
+    assert planner._is_collision_free((1000, 1000), (2000, 2000))
 
 
 # --------------------------------------------------------------------------- #
@@ -167,7 +167,7 @@ def test_open_scenario_path_stays_inside_safezones():
     assert pre["safezones"] == [band]  # propagated through preprocessing
 
     result = astar.plan_trajectory(pre)
-    assert result["success"], "open-water plan with a generous corridor should succeed"
+    assert result["is_success"], "open-water plan with a generous corridor should succeed"
 
     union = unary_union([Polygon(band)])
     for waypoint, _heading in result["path"]:
@@ -180,5 +180,5 @@ def test_backward_compat_open_scenario_without_safezones():
 
     pre = prep.prepare_scenario(scenario)
     result = astar.plan_trajectory(pre)
-    assert result["success"]
+    assert result["is_success"]
     assert result["planner"]._safezone is None

@@ -66,7 +66,7 @@ def test_stats_report_the_budget_not_an_iteration_cap(planner_module, preprocess
     stats = planner.get_search_stats()
     assert "max_iterations" not in stats
     assert stats["time_budget_s"] == 15.0
-    assert stats["budget_bound"] is False
+    assert stats["is_budget_bound"] is False
 
 
 @PLANNERS
@@ -75,18 +75,18 @@ def test_exhausted_budget_is_reported_as_budget_bound(planner_module, preprocess
     planner = planner_module.KinodynamicAstar(preprocessed, time_budget_s=1e-9)
     assert planner.search() is None
     stats = planner.get_search_stats()
-    assert stats["budget_bound"] is True
-    # search_failed says "ended without a path"; budget_bound is what tells the
+    assert stats["is_budget_bound"] is True
+    # is_search_failed says "ended without a path"; is_budget_bound is what tells the
     # two ways of ending apart.
-    assert stats["search_failed"] is True
+    assert stats["is_search_failed"] is True
 
 
 @PLANNERS
 def test_plan_trajectory_forwards_the_budget(planner_module, preprocessed):
     result = planner_module.plan_trajectory(preprocessed, time_budget_s=1e-9)
-    assert result["success"] is False
+    assert result["is_success"] is False
     assert result["failure_reason"] == "no_path"
-    assert result["stats"]["budget_bound"] is True
+    assert result["stats"]["is_budget_bound"] is True
     assert result["stats"]["time_budget_s"] == 1e-9
 
 

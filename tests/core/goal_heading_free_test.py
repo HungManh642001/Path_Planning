@@ -79,7 +79,7 @@ def test_open_water_free_goal_arrives_straight_at_target():
     pre = prep.prepare_scenario(scenario)
 
     result = astar.plan_trajectory(pre)
-    assert result["success"], "free-goal open-water plan should succeed"
+    assert result["is_success"], "free-goal open-water plan should succeed"
 
     path = result["path"]
     T = scenario["goal"]
@@ -109,7 +109,7 @@ def test_free_goal_with_obstacles_has_clear_run_in():
     pre = prep.prepare_scenario(scenario)
 
     result = astar.plan_trajectory(pre)
-    assert result["success"]
+    assert result["is_success"]
 
     path = result["path"]
     assert path[-1][0] == scenario["goal"]
@@ -117,7 +117,7 @@ def test_free_goal_with_obstacles_has_clear_run_in():
     # must be >= DSS: room to bank onto the run-in AND the full seeker leg.
     assert _usable_runin(path, pre["turn_radius"]) >= config.DSS - _LEN_TOL_M
     # The run-in edge is collision-free per the planner's exact check.
-    assert result["planner"]._check_collision(path[-2][0], path[-1][0])
+    assert result["planner"]._is_collision_free(path[-2][0], path[-1][0])
 
 
 def test_free_goal_not_worse_than_fixed():
@@ -133,7 +133,7 @@ def test_free_goal_not_worse_than_fixed():
     free["goal_heading"] = None
     r_free = astar.plan_trajectory(prep.prepare_scenario(free))
 
-    assert r_fixed["success"] and r_free["success"]
+    assert r_fixed["is_success"] and r_free["is_success"]
     len_fixed = _total_len(r_fixed["path"], base["start"], base["goal"])
     len_free = _total_len(r_free["path"], base["start"], base["goal"])
     assert len_free <= len_fixed * 1.02 + _LEN_TOL_M
@@ -149,5 +149,5 @@ def test_fixed_mode_still_requires_alignment():
     assert scenario["goal_heading"] is not None
     pre = prep.prepare_scenario(scenario)
     result = astar.plan_trajectory(pre)
-    assert result["success"]
+    assert result["is_success"]
     assert result["planner"]._free_goal is False

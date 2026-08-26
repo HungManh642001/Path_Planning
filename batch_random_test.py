@@ -141,7 +141,7 @@ def run_scenario(scenario_func, scenario_name, seed=42, output_dir="results"):
             metrics.record_search_stats(result)
 
         # Record path statistics
-        if result.get("success") and result.get("path"):
+        if result.get("is_success") and result.get("path"):
             metrics.record_path_stats(result["path"], preprocessed)
 
         # Visualize
@@ -169,7 +169,7 @@ def run_scenario(scenario_func, scenario_name, seed=42, output_dir="results"):
             "elapsed_time": preprocessed_time + planning_time,
             "preprocessing_time": preprocessed_time,
             "planning_time": planning_time,
-            "success": result["success"],
+            "is_success": result["is_success"],
             "metrics": metrics,
         }
 
@@ -178,7 +178,7 @@ def run_scenario(scenario_func, scenario_name, seed=42, output_dir="results"):
         logger.info(f"   Error: {str(e)}")
         return {
             "scenario_name": scenario_name,
-            "success": False,
+            "is_success": False,
             "elapsed_time": 0,
             "preprocessing_time": 0,
             "planning_time": 0,
@@ -246,14 +246,14 @@ def run_batch_random_tests(num_tests=1000, output_dir="results1"):
 
     summary_results = []
     for i, res in enumerate(all_results):
-        status = "SUCCESS" if res["success"] else "FAILED"
+        status = "SUCCESS" if res["is_success"] else "FAILED"
         scenario_name = res["scenario_name"]
         total_time = res["elapsed_time"]
         preprocessing_time = res["preprocessing_time"]
         planning_time = res["planning_time"]
         waypoints = (
             len(res["result"]["path"])
-            if res["success"] and res["result"].get("path")
+            if res["is_success"] and res["result"].get("path")
             else 0
         )
         iterations = (

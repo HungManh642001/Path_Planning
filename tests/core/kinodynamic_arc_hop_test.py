@@ -73,7 +73,7 @@ def test_synthetic_circle_end_to_end_valid():
     scn = synthetic_circle_scenario()
     pre = prep.prepare_scenario(scn)
     result = astar.plan_trajectory(pre)
-    assert result["success"]
+    assert result["is_success"]
     full = tr.build_full_path(result["path"], pre)
     assert pv.path_is_valid(
         full,
@@ -145,7 +145,7 @@ def test_plan_trajectory_smooths_output():
     """Open water: the smoothed path is the minimal W1->goal route."""
     pre = prep.prepare_scenario(open_water_scenario())
     result = astar.plan_trajectory(pre)
-    assert result["success"]
+    assert result["is_success"]
     assert len(result["path"]) <= 3
 
 
@@ -279,20 +279,20 @@ def test_check_fixed_legs_detects_blocked_start_and_goal():
     # Put an inflated circle on the O->W1 leg (near O, off the body).
     Ocirc = (pre["start_pos"][0] + 50000.0, 0.0)
     planner.scenario["circle_obstacles"] = [(Ocirc, 20000.0)]
-    ok, reason = planner._check_fixed_legs(body)
-    assert ok is False and reason == "start_leg_blocked"
+    is_ok, reason = planner._check_fixed_legs(body)
+    assert is_ok is False and reason == "start_leg_blocked"
 
     # Only a circle on the W_{n-1}->T leg (near T).
     Tcirc = (pre["goal_pos"][0] - 50000.0, 0.0)
     planner.scenario["circle_obstacles"] = [(Tcirc, 20000.0)]
-    ok, reason = planner._check_fixed_legs(body)
-    assert ok is False and reason == "goal_leg_blocked"
+    is_ok, reason = planner._check_fixed_legs(body)
+    assert is_ok is False and reason == "goal_leg_blocked"
 
 
 @pytest.mark.xfail(reason="Signature changed on branch")
 def test_plan_maps_blocked_leg_to_failure_reason():
     """plan_trajectory must translate a blocked-leg verdict from
-    _check_fixed_legs into success=False + the specific reason. Monkeypatched
+    _check_fixed_legs into is_success=False + the specific reason. Monkeypatched
     so the wiring is tested deterministically (real leg geometry is covered by
     test_check_fixed_legs_detects_blocked_start_and_goal and the Task-5 sweep,
     where the ~13 km inflation makes a hand-built blocking scenario fragile)."""
@@ -317,7 +317,7 @@ def test_plan_maps_blocked_leg_to_failure_reason():
         result = astar.plan_trajectory(pre)
     finally:
         k.KinodynamicAstar._check_fixed_legs = orig
-    assert result["success"] is False
+    assert result["is_success"] is False
     assert result["failure_reason"] == "goal_leg_blocked"
 
 
@@ -332,7 +332,7 @@ def test_plan_succeeds_open_water_reason_none():
         "obstacles": [],
     }
     result = astar.plan_trajectory(prep.prepare_scenario(scn))
-    assert result["success"] is True
+    assert result["is_success"] is True
     assert result["failure_reason"] is None
 
 
@@ -359,18 +359,18 @@ def test_plan_no_path_reason():
         result = astar.plan_trajectory(pre)
     finally:
         k.KinodynamicAstar.search = orig
-    assert result["success"] is False
+    assert result["is_success"] is False
     assert result["failure_reason"] == "no_path"
 
 
 def _assert_honest_outcome(seed):
-    """A plan must be either a genuinely flyable success (strict oracle over
+    """A plan must be either a genuinely flyable is_success (strict oracle over
     the full O..T path, zero circle tolerance) or an honest failure with a
     valid reason — never a silent invalid path."""
     scn = generate_random_scenario(seed=seed)
     pre = prep.prepare_scenario(scn)
     result = astar.plan_trajectory(pre)
-    if result["success"]:
+    if result["is_success"]:
         full = tr.build_full_path(result["path"], pre)
         rawc = [
             (o["center"], o["radius"])
@@ -388,7 +388,7 @@ def _assert_honest_outcome(seed):
             config.DSS,
             raw_circle_obstacles=rawc,
             raw_polygon_obstacles=rawp,
-        ), f"seed {seed}: success but strict oracle rejected"
+        ), f"seed {seed}: is_success but strict oracle rejected"
         assert result["failure_reason"] is None
     else:
         assert result["failure_reason"] in (
@@ -402,7 +402,7 @@ def _assert_honest_outcome(seed):
 def test_seed_155_historic_polygon_escape_is_honest():
     """Seed 155 historically emitted an arc-expansion chord through a polygon
     interior (the annulus gap). With sector-based ride clearance the planner
-    must either route around it (success + strict-oracle-valid) or fail
+    must either route around it (is_success + strict-oracle-valid) or fail
     honestly — never return a silently invalid path."""
     _assert_honest_outcome(155)
 

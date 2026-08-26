@@ -139,7 +139,7 @@ class WireRequest(IdlStruct, typename="vtx.planning.VtxPathPlanRequest"):
     start_heading_deg: float
     goal: Point2D
     goal_heading_deg: float
-    goal_heading_free: bool
+    is_goal_heading_free: bool
     islands: sequence[Polygon]
     dynamic_obstacles: sequence[Circle]
     safezones: sequence[Polygon]
@@ -170,8 +170,8 @@ class SearchStats(IdlStruct, typename="vtx.planning.SearchStats"):
     """
     iterations: uint32
     open_set_size: uint32
-    search_failed: bool
-    budget_bound: bool
+    is_search_failed: bool
+    is_budget_bound: bool
 
 
 @dataclass
@@ -220,7 +220,7 @@ def _to_domain(wire: WireRequest) -> msg.PlanRequest:
         start_heading_deg=wire.start_heading_deg,
         goal=(wire.goal.x, wire.goal.y),
         goal_heading_deg=wire.goal_heading_deg,
-        goal_heading_free=wire.goal_heading_free,
+        is_goal_heading_free=wire.is_goal_heading_free,
         islands=tuple(_ring(p) for p in wire.islands),
         dynamic_obstacles=tuple(
             msg.Circle(center=(c.center.x, c.center.y), radius_m=c.radius_m)
@@ -258,7 +258,7 @@ def _to_wire_request(request: msg.PlanRequest) -> WireRequest:
         start_heading_deg=request.start_heading_deg,
         goal=Point2D(*request.goal),
         goal_heading_deg=request.goal_heading_deg,
-        goal_heading_free=request.goal_heading_free,
+        is_goal_heading_free=request.is_goal_heading_free,
         islands=rings(request.islands),
         dynamic_obstacles=[
             Circle(center=Point2D(*c.center), radius_m=c.radius_m)
@@ -293,8 +293,8 @@ def _to_wire_reply(reply: msg.PlanReply) -> WireReply:
         stats=SearchStats(
             reply.stats.iterations,
             reply.stats.open_set_size,
-            reply.stats.search_failed,
-            reply.stats.budget_bound,
+            reply.stats.is_search_failed,
+            reply.stats.is_budget_bound,
         ),
         planner_version=reply.planner_version,
         config_hash=reply.config_hash,
@@ -319,8 +319,8 @@ def _from_wire_reply(wire: WireReply) -> msg.PlanReply:
         stats=msg.SearchStats(
             int(wire.stats.iterations),
             int(wire.stats.open_set_size),
-            wire.stats.search_failed,
-            wire.stats.budget_bound,
+            wire.stats.is_search_failed,
+            wire.stats.is_budget_bound,
         ),
         planner_version=wire.planner_version,
         config_hash=wire.config_hash,

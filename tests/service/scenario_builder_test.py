@@ -32,7 +32,7 @@ def _request(**overrides: object) -> PlanRequest:
         start_heading_deg=90.0,
         goal=(300000.0, 200000.0),
         goal_heading_deg=45.0,
-        goal_heading_free=False,
+        is_goal_heading_free=False,
         islands=(((100000.0, 100000.0), (120000.0, 100000.0), (110000.0, 130000.0)),),
         dynamic_obstacles=(Circle(center=(200000.0, 150000.0), radius_m=12000.0),),
         safezones=(),
@@ -69,7 +69,7 @@ def test_goal_heading_is_converted_to_the_planner_convention_when_fixed() -> Non
 
 
 def test_free_goal_becomes_none_not_a_sentinel_number() -> None:
-    assert build_scenario(_request(goal_heading_free=True))["goal_heading"] is None
+    assert build_scenario(_request(is_goal_heading_free=True))["goal_heading"] is None
 
 
 def test_map_bounds_is_deliberately_none() -> None:
@@ -105,4 +105,4 @@ def test_the_built_scenario_actually_runs_through_the_pipeline() -> None:
         safe_margin=LIMITS.safe_margin_m,
         alpha_max_rad=math.radians(LIMITS.alpha_max_deg),
     )
-    assert astar.plan_trajectory(preprocessed)["success"] is True
+    assert astar.plan_trajectory(preprocessed)["is_success"] is True

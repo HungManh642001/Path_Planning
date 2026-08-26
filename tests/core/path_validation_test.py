@@ -61,7 +61,7 @@ def test_polygon_boundary_touch_passes():
 def test_path_is_valid_rejects_a_grazing_path():
     a, b = _seg_at_depth(0.5)
     path = [(a, 0.0), (b, 0.0)]
-    ok, reason = pv.path_is_valid(
+    is_ok, reason = pv.path_is_valid(
         path,
         circle_obstacles=[(C, R)],
         polygon_obstacles=[],
@@ -72,7 +72,7 @@ def test_path_is_valid_rejects_a_grazing_path():
         raw_circle_obstacles=[(C, 1.0)],
         raw_polygon_obstacles=[],
     )
-    assert ok is False, reason
+    assert is_ok is False, reason
     assert "segment" in reason
 
 
@@ -83,8 +83,8 @@ def test_straight_run_checks_carry_no_metre_of_slack():
     R_turn, L0, dss = 8000.0, 4000.0, 23000.0
     for total, expect in ((L0, True), (L0 - 1e-3, False)):
         path = [((0.0, 0.0), 0.0), ((total, 0.0), 0.0)]
-        ok, reason = pv.straight_segments_ok(path, R_turn, L0, dss)
-        assert ok is expect, f"total={total}: {reason}"
+        is_ok, reason = pv.straight_segments_ok(path, R_turn, L0, dss)
+        assert is_ok is expect, f"total={total}: {reason}"
 
 
 def test_turn_angle_check_carries_no_slack():
@@ -96,5 +96,5 @@ def test_turn_angle_check_carries_no_slack():
         ((1000.0, 0.0), 0.0),
         ((1000.0 + 1000.0 * math.cos(over), 1000.0 * math.sin(over)), 0.0),
     ]
-    ok, _ = pv.turn_angles_ok(path, amax)
-    assert ok is False
+    is_ok, _ = pv.turn_angles_ok(path, amax)
+    assert is_ok is False
