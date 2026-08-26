@@ -9,11 +9,11 @@ Run: PYTHONPATH=. python scripts/goal_shot_ab.py
 import math
 import time
 
-import config
-import core.preprocessing as prep
-import core.kinodynamic_astar as astar
-import core.path_validation as pv
-import render.trajectory as tr
+from path_planning import config
+from path_planning.core import preprocessing as prep
+from path_planning.core import kinodynamic_astar as astar
+from path_planning.core import path_validation as pv
+from path_planning.render import trajectory as tr
 from batch_random_test import generate_random_scenario
 
 # Seeds 5, 7, 8 are FEASIBILITY failures (start in obstacle / DSS leg blocked),

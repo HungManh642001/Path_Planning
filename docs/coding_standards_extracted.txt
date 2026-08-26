@@ -1,0 +1,810 @@
+TÀI LIỆU QUY CHUẨN KỸ THUẬT: LẬP TRÌNH PYTHON
+Table of Contents
+1. MỤC TIÊU3
+2. CẤU TRÚC & ĐỊNH DẠNG MÃ NGUỒN (PEP 8)4
+2.1. Indentation (Thụt lề)4
+2.2. Line Length Policy (Độ dài dòng)4
+2.3. Comments (Chú thích code)5
+2.4. Trailing Commas (Dấu phẩy cuối cùng)5
+3. NGUYÊN TẮC ĐẶT TÊN (NAMING CONVENTIONS) (PEP 8)6
+4. QUY TẮC DOCSTRING VÀ ANNOTATIONS (PEP 257 + PEP 8)7
+5. QUY TẮC TYPE HINTING (PYTHON HIỆN ĐẠI TỪ 3.10+)8
+5.1. Sử dụng Built-in Generics (PEP 585)8
+5.2. Toán tử Union (PEP 604)9
+5.3. Structural Subtyping / Duck Typing với Protocol (PEP 544)9
+5.4. Hạn chế dùng Any9
+6. THIẾT KẾ HÀM (FUNCTION DESIGN STANDARDS)10
+6.1. Nguyên tắc trách nhiệm đơn lẻ (Single Responsibility / Cohesive)10
+6.2. Return Early / Guard Clauses để giảm nesting10
+6.3. TUYỆT ĐỐI không dùng Mutable Default Arguments11
+6.4. Bắt buộc Keyword-only Arguments cho các tham số dễ nhầm lẫn11
+7. THIẾT KẾ LỚP & ĐỐI TƯỢNG (CLASS DESIGN)11
+7.1. Ưu tiên Composition (Thành phần) hơn Inheritance (Kế thừa)11
+7.2. Dùng @dataclass cho các Data-centric Object12
+7.3. Dùng Enum cho tập giá trị hữu hạn12
+8. QUẢN LÝ IMPORTS & MODULE13
+9. XỬ LÝ LỖI (ERROR HANDLING)13
+9.1. Bắt ngoại lệ đúng tầng và không "Nuốt" lỗi13
+9.2. Bắt ngoại lệ cụ thể, không sử dụng ngoại lệ chung chung nếu có loại lỗi cụ thể14
+9.3. Giữ nguyên nguyên nhân gốc khi chuyển đổi ngoại lệ15
+9.4. Không vừa ghi log vừa ném lại cùng một lỗi ở mọi tầng15
+10. LOGGING & OBSERVABILITY16
+10.1. Sử dụng logger theo module16
+10.2. Quy định mức ghi log16
+10.3. Ghi exception bằng logger.exception() tại khối xử lý lỗi17
+10.4 Log phải có đủ ngữ cảnh17
+10.5. Không sử dụng log thay cho xử lý ngoại lệ và xử lý lỗi18
+11. KIỂM THỬ (TESTING STANDARDS)19
+11.1. Phân Cấp Kiểm Thử (Industry Standard – Agile Test Pyramid)19
+11.2. Cấu Trúc & Định Danh Hàm Test (AAA Pattern & Naming)19
+11.3. Tính Quyết Định (Determinism)20
+11.4. Kỹ Thuật Mocking (Mocking Boundaries)20
+11.5. Kiểm Thử Hồi Quy (Regression Tests)21
+12. ĐÓNG GÓI VÀ QUẢN LÝ DEPENDENCIES21
+12.1. Cấu hình Dự án Tập trung (pyproject.toml)21
+12.2. Cấu trúc thư mục "src layout" (Project Layout)22
+12.3. Môi trường Ảo & Phân nhóm Dependencies22
+12.4. Tính Tái tạo cho Production (Reproducibility)23
+13. Cấu hình chung và các thông tin riêng24
+13.1. Không Hardcode Configuration24
+13.2. Không đưa thông tin nhạy cảm vào trong code, commit files chứa Secrets25
+13.3 Các tham số được config là bất biến26
+14. TIÊU CHUẨN CÔNG CỤ (TOOLING STANDARDS)26
+1. MỤC TIÊU 
+Bộ tiêu chuẩn được thiết lập nhằm định hướng xây dựng hệ thống phần mềm với 7 tiêu chí chất lượng:
+Readable (Dễ đọc): Tuân thủ định dạng đồng nhất, dễ dàng đọc code chéo giữa các thành viên.
+Understandable (Dễ hiểu): Cấu trúc logic tường minh, hạn chế tối đa 'clever code' (mã mẹo, rút gọn phức tạp) làm lu mờ ý định nghiệp vụ.
+Testable (Dễ kiểm thử): Tách biệt các tác dụng phụ (side effects), ứng dụng chặt chẽ Dependency Injection để cô lập bài toán khi viết Unit Test.
+Debuggable (Dễ gỡ lỗi): Stack trace rõ ràng, không 'nuốt' lỗi ngầm (swallow exceptions), thông điệp lỗi chỉ ra chính xác bối cảnh và nguyên nhân gốc rễ.
+Maintainable (Dễ bảo trì): Đảm bảo khớp nối lỏng (loose coupling) và gắn kết chặt (high cohesion), tuân thủ các nguyên lý SOLID.
+Secure (Bảo mật): Kiểm soát chặt chẽ dữ liệu đầu vào (validation), không hardcode thông tin nhạy cảm, ngăn chặn lỗ hổng ngay từ tầng thiết kế kiến trúc.
+Production-ready (Sẵn sàng vận hành): Đóng gói chuẩn, quản lý dependency khắt khe, có cơ chế chịu lỗi (timeout, retry, circuit breaker) và tắt ứng dụng an toàn (graceful shutdown).
+2. CẤU TRÚC & ĐỊNH DẠNG MÃ NGUỒN (PEP 8)
+2.1. Indentation (Thụt lề)
+Quy chuẩn: Sử dụng 4 spaces (dấu cách) cho mỗi cấp độ thụt lề. Kông dùng Tab.
+Lý do: Đảm bảo layout nhất quán trên mọi Editor/IDE, tránh lỗi thụt lề sai trong Python.
+# TỐT (Good / Compliant)def calculate_kinematic_constraints(velocity: float, acceleration: float) -> float:    # Thụt vào đúng 4 spaces    return velocity + acceleration * 0.5# CHƯA TỐT (Bad / Non-compliant)def calculate_kinematic_constraints(velocity, acceleration):  # Thụt vào 2 spaces (Sai chuẩn)  return velocity + acceleration * 0.5
+2.2. Line Length Policy (Độ dài dòng)
+Quy chuẩn: Giới hạn tối đa 88 ký tự mỗi dòng (theo tiêu chuẩn của công cụ formatter Ruff / Black).
+Lý do: Tránh việc phải cuộn ngang màn hình, hỗ trợ tốt cho việc chia đôi màn hình (split view) khi review code/diff.
+# TỐTengine_response = vllm_client.generate(    prompt=system_prompt,    max_tokens=2048,    temperature=0.7,    timeout=global_timeout_seconds,)# CHƯA TỐTengine_response = vllm_client.generate(prompt=system_prompt, max_tokens=2048, temperature=0.7, timeout=global_timeout_seconds)
+2.3. Comments (Chú thích code)
+Quy chuẩn: Comment dùng để giải thích tại sao (Why) hoặc bối cảnh (Context), không phải để giải thích cái gì (What). Code phải tự mô tả chính nó.
+Lý do: Không nên viết comment lặp lại những gì code đang làm, lặp lại code sẽ nhanh chóng bị lỗi thời khi code thay đổi, gây hiểu nhầm (stale comments).
+# TỐT# Kích hoạt Numba nopython mode để bỏ qua GIL, tối ưu hóa vòng lặp tính toán ma trận lớn.@njit(fastmath=True)def optimize_trajectory_matrix(matrix: np.ndarray) -> np.ndarray:    ...# CHƯA TỐT# Hàm này dùng để tối ưu hóa quỹ đạodef optimize_trajectory_matrix(matrix):    return matrix
+2.4. Trailing Commas (Dấu phẩy cuối cùng)
+Quy chuẩn: Luôn thêm dấu phẩy ở phần tử cuối cùng trong các danh sách, từ điển, hoặc tham số hàm khi ngắt dòng (multiline).
+Lý do: Giúp git diff "sạch" hơn. Khi thêm một phần tử mới, git chỉ ghi nhận 1 dòng thêm vào thay vì 1 dòng sửa (thêm phẩy) + 1 dòng thêm.
+#  TỐT
+allowed_roles = [
+“admin”,
+“reviewer”,
+]    ...#  CHƯA TỐTallowed_roles = [
+“admin”,
+“reviewer”
+]
+3. NGUYÊN TẮC ĐẶT TÊN (NAMING CONVENTIONS) (PEP 8)
+Nguyên tắc: Rõ ràng hơn là ngầm định, đảm bảo tuân theo một số nguyên tắc cơ bản: tính mô tả, tính nhất quán, tính rõ ràng, và tính ngắn gọn vừa phải. 
+Tính mô tả (Descriptive): Tên nên mô tả chính xác mục đích hoặc chức năng của đối tượng:
+Tính nhất quán (Consistency): Áp dụng cùng một quy ước đặt tên trong toàn bộ dự án.
+Tính rõ ràng (Clarity): Tên nên rõ ràng và tránh viết tắt khó hiểu.
+Tính ngắn gọn vừa phải: Tên nên đủ ngắn để dễ đọc nhưng đủ dài để mô tả chức năng.
+Phong cách đặt tên Hungarian Notation (ví dụ: strName, iCount) không khuyến khích trong Python vì:
+Python là ngôn ngữ kiểu động, kiểu dữ liệu có thể thay đổi.
+Type hints đã hỗ trợ việc chú thích kiểu
+Làm cho tên biến dài và khó đọc hơn.
+Không phù hợp với triết lý “rõ ràng hơn là ngầm định” của Python.
+Quy ước đặt tên
+Thành phần
+Cú pháp (Convention)
+Chuẩn mực (Good)
+Vi phạm (Bad)
+Biến & Thuộc tính
+snake_case
+chunk_size, target_velocity
+chunkSize, t_vel, c
+Biến Boolean/Cờ
+Bắt đầu bằng is_, has_, can_
+is_gpu_available, has_obstacles
+gpu_status, check_obs
+Hàm & Phương thức
+snake_case (Động từ)
+extract_entities(), fuse_radar_data()
+EntityExtraction(), data_fusion()
+Lớp (Class)
+PascalCase (Danh từ)
+TrajectoryPlanner, VectorStore
+trajectory_planner, Router_Class
+Hằng số (Constants)
+SCREAMING_SNAKE_CASE
+MAX_RETRIES, DEFAULT_EMBEDDING_DIM
+max_retries, Dim_Default
+Tên File/Module
+snake_case (ngắn gọn)
+data_ingestion.py, dubin_path.py
+DataIngestion.py, dubin-path.py
+Private/Internal
+Tiền tố __
+(Không thể truy cập từ bên ngoài hoặc lớp con)
+__internal_cache, __normalize_vector()
+__cache (Lạm dụng name mangling)
+Protected
+Tiền tố _
+(Python không chặn việc truy cập từ bên ngoài, nhưng không nên do theo quy ước)
+_name, _age 
+4. QUY TẮC DOCSTRING VÀ ANNOTATIONS (PEP 257 + PEP 8)
+Quy chuẩn Docstring: Bắt buộc áp dụng Google Style cho mọi module, class, và public methods. Cấu trúc Google Style bao gồm: mô tả tổng quan, phần Args:, Returns:, và Raises: (nếu có ném ra exception tường minh).
+Quy chuẩn TODO/FIXME: Không để TODO trống. Bắt buộc đính kèm ID Ticket hoặc người chịu trách nhiệm.
+def search_similar_chunks(query_vector: list[float], top_k: int = 5) -> list[Document]:    """Tìm kiếm các đoạn văn bản có độ tương đồng cosine cao nhất với vector truy vấn.    Args:        query_vector: Vector nhúng (embedding) của câu hỏi người dùng.        top_k: Số lượng tài liệu trả về tối đa. Giới hạn mặc định là 5.    Returns:        Danh sách các đối tượng Document đã được sắp xếp theo điểm số giảm dần.    Raises:        VectorDBConnectionError: Ném ra khi mất kết nối đến cụm Milvus/Qdrant.    """    # TODO(HungManh-ENG42): Thêm cơ chế reranking bằng Cross-Encoder ở sprint sau.    pass
+5. QUY TẮC TYPE HINTING (PYTHON 3.10+)
+Type hint (gợi ý kiểu dữ liệu) trong Python là cú pháp cho phép chỉ định kiểu dữ liệu của biến, tham số hàm hoặc giá trị trả về. Tính năng này hoàn toàn tùy chọn, không làm thay đổi cách Python chạy mã, nhưng giúp code dễ đọc và hỗ trợ công cụ kiểm tra lỗi
+# CÚ PHÁP:
+age: int = 25
+Type Hint trong Python không ép kiểu ở Runtime, nhưng kết hợp với các công cụ Static Analysis (pyright/mypy) giúp phát hiện sớm các lỗi sai kiểu dữ liệu, ngoài ra cải thiện gợi ý mã (IDE autocompletion) và tự động sinh tài liệu.
+5.1. Sử dụng Built-in Generics (PEP 585)
+Dùng thẳng list, dict, tuple, set thay vì phải import List, Dict, Tuple từ thư viện typing.
+# TỐTdef aggregate_metrics(records: list[dict[str, float]]) -> tuple[float, float]: 
+...#  CHƯA TỐTfrom typing import List, Dict, Tuple 
+def aggregate_metrics(records: List[Dict[str, float]]) -> Tuple[float, float]: 
+...
+5.2. Toán tử Union (PEP 604)
+Dùng ký tự | (Toán tử OR) thay cho Union hoặc Optional.
+# TỐTdef parse_coordinate(value: str | None) -> float | None: ...
+# CHƯA TỐT 
+from typing import Optional, Union
+def parse_coordinate(value: Optional[str]) -> Union[float, None]: ...
+5.3. Structural Subtyping / Duck Typing với Protocol (PEP 544)
+Dùng typing Protocol khi bạn chỉ cần yêu cầu một "Hành vi" (Interface) thay vì đa kế thừa hoặc Abstract Base Class (ABC) phức tạp khi chỉ muốn ép kiểu hành vi.
+Lý do: Giảm coupling (sự phụ thuộc chặt) giữa các module. Khớp đúng triết lý Duck Typing của Python: "Nếu nó bơi như vịt, kêu như vịt, thì nó là vịt".
+from typing import Protocolclass LLMEngine(Protocol):    def generate(self, prompt: str) -> str: ...
+# Bất kỳ class nào có hàm `generate(prompt: str) -> str` đều hợp lệ truyền vào đây, 
+# không cần kế thừa từ LLMEngine!def process_rag_pipeline(engine: LLMEngine, context: str):    engine.generate(context)
+5.4. Hạn chế dùng Any
+Hạn chế tối đa Any. Trừ khi thao tác với plugin động hoặc dữ liệu JSON hỗn hợp chưa qua parser.
+Lý do: Any cho phép biến nhận mọi giá trị và cho phép gọi bất kỳ phương thức nào, khiến trình kiểm tra kiểu (như Pyright) bỏ qua việc phát hiện lỗi.
+# Tốt
+def parse_payload(data: Mapping[str, object]) -> ParsedPayload:
+...
+# Chưa tốt
+def parse_payload(data: Any) -> Any:
+...
+6. THIẾT KẾ HÀM (FUNCTION DESIGN STANDARDS)
+6.1. Nguyên tắc trách nhiệm đơn lẻ (Single Responsibility / Cohesive)
+Hàm chỉ nên làm 1 việc duy nhất (orchestration hoặc implementation). Giúp Unit Test dễ dàng và tái sử dụng code tốt hơn.
+6.2. Return Early / Guard Clauses để giảm nesting
+Làm phẳng mã nguồn (flatten logic). Do khi đọc code rất khó theo dõi các khối if/else lồng nhau quá nhiều tầng.
+# TỐTdef update_node_status(node_id: str, status: str) -> bool:    if not node_id:        raise ValueError("node_id is required")    if status not in ALLOWED_STATUSES:            return False        db.update(node_id, status)    return True
+# CHƯA TỐT (Tránh lồng mũi tên / Arrow code) 
+def update_node_status(node_id: str, status: str) -> bool: 
+if node_id: 
+    if status in ALLOWED_STATUSES: 
+               db.update(node_id, status) 
+               return True 
+    else: 
+        return False
+else: 
+    raise ValueError("node_id is required")
+6.3. Không dùng Mutable Default Arguments
+Tham số mặc định dạng mutable (list, dict) trong Python được khởi tạo một lần duy nhất khi define hàm. State sẽ bị chia sẻ ngầm giữa các lần gọi, gây ra lỗi logic cực kỳ khó debug.
+# TỐTdef calculate_path(waypoints: list[str] | None = None) -> list[str]:    if waypoints is None:        waypoints = []    waypoints.append("End_Node")    return waypoints
+# CHƯA TỐTdef calculate_path(waypoints: list[str] = []) -> list[str]:    waypoints.append("End_Node")    return waypoints
+6.4. Dùng Keyword-only Arguments cho các tham số dễ nhầm lẫn
+Dùng dấu * trong tham số để ép buộc người gọi hàm phải truyền tên đối số (keyword).
+# TỐTdef setup_cluster(host: str, port: int, *, timeout_sec: float = 5.0, retries: int = 3): ...
+# Bắt buộc gọi: setup_cluster("127.0.0.1", 8080, timeout_sec=10.0, retries=5) 
+# Lỗi biên dịch nếu gọi: setup_cluster("127.0.0.1", 8080, 10.0, 5)
+7. THIẾT KẾ LỚP & ĐỐI TƯỢNG (CLASS DESIGN)
+7.1. Ưu tiên Composition (Thành phần) hơn Inheritance (Kế thừa)
+Linh hoạt cao hơn: Thay vì cố định hành vi từ lớp cha, bạn có thể lắp ghép các đối tượng (thành phần) khác nhau vào lớp hiện tại và thay đổi chúng ngay khi chương trình đang chạy.
+Tránh lỗi phân cấp phức tạp: Kế thừa nhiều tầng (đa kế thừa hoặc kế thừa đa cấp) làm mã rối rắm, khó hiểu và khó sửa lỗi.
+Giảm phụ thuộc (Loose Coupling): Lớp dùng Composition chỉ gọi các phương thức của đối tượng thành phần, không bị ảnh hưởng nếu bên trong đối tượng đó thay đổi cách hoạt động.
+Tái sử dụng tốt hơn: Bạn dễ dàng dùng lại một tính năng ở nhiều lớp khác nhau mà không cần ép chúng phải có chung một lớp cha.
+# TỐT (Composition - Dependency Injection)class RAGPipeline:    def __init__(self, vector_db: VectorDBClient, llm: LLMEngine):        self._db = vector_db        self._llm = llm
+# CHƯA TỐT (Inheritance lệch khái niệm)class RAGPipeline(VectorDBClient, LLMEngine):    ...
+7.2. Dùng @dataclass cho các Data-centric Object
+Loại bỏ code rác (boilerplate code) cho __init__, __repr__, __eq__.
+# TỐT 
+from dataclasses import dataclass 
+@dataclass(frozen=True) # frozen=True làm cho object Immutable (không thể thay đổi) 
+class RadarTrack: 
+    track_id: str 
+    latitude: float 
+    longitude: float 
+    confidence_score: float
+7.3. Dùng Enum cho tập giá trị hữu hạn
+Giúp code rõ ràng hơn, tránh lỗi dùng sai giá trị (magic numbers/strings), hỗ trợ tự động gợi ý code (autocompete) và dễ dàng bảo trì khi tập giá trị thay đổi.
+# TỐT 
+from enum import StrEnum # Python 3.11+ 
+class ChunkingStrategy(StrEnum): 
+    RECURSIVE = "recursive" 
+    SEMANTIC = "semantic" 
+    MARKDOWN = "markdown" 
+# Sử dụng: strategy = ChunkingStrategy.SEMANTIC
+8. QUẢN LÝ IMPORTS & MODULE
+Quy chuẩn thứ tự Import: Sắp xếp theo 3 khối (Standard library, Third-party, First-party) (PEP 8).
+Quy chuẩn Absolute Import: Dùng đường dẫn tuyệt đối từ root của project. Không dùng dấu . hoặc .. lùi thư mục quá 1 cấp.
+Không sử dụng wildcard import
+from package import *
+Wildcard import làm cho người đọc không xác định được tên nào được đưa vào phạm vi hiện tại, làm giảm khả năng phân tích tĩnh và tăng nguy cơ xung đột tên.
+Đúng:
+from package import Client, RequestError
+Tránh dùng import bên trong function, lý do:
+Chậm tốc độ: Python phải tìm, đọc và biên dịch module đó mỗi khi hàm được gọi. Nếu hàm chạy nhiều lần, chương trình sẽ mất rất nhiều thời gian vô ích.
+Khó theo dõi: Người đọc code sẽ khó biết hàm này phụ thuộc vào những thư viện nào vì các lệnh import bị giấu ở các dòng bên trong.
+Gây lỗi ẩn: Nếu module đó bị lỗi (ví dụ không tồn tại hoặc lỗi cú pháp), chương trình chỉ phát sinh lỗi khi hàm được gọi đến thay vì báo lỗi ngay từ lúc khởi động chương trình.
+import jsonimport loggingimport numpy as npfrom fastapi import FastAPIfrom src.core.config import settings
+9. XỬ LÝ LỖI (ERROR HANDLING)
+9.1. Bắt ngoại lệ đúng tầng và không "Nuốt" lỗi
+try:    execute_gpu_workload()except CUDAOutOfMemoryError as exc:    logger.exception("GPU VRAM exhausted during workload execution.")    raise ResourceExhaustedError("System overloaded") from exc
+9.2. Bắt ngoại lệ cụ thể, không sử dụng ngoại lệ chung chung nếu có loại lỗi cụ thể
+Chỉ bắt các loại ngoại lệ mà đoạn mã thực sự có khả năng xử lý. Đồng thời thông điệp lỗi phải mô tả đủ ngữ cảnh để xác định được nơi bị lỗi
+ĐÚNG
+try:
+    user = repository.get(user_id)
+except DatabaseConnectionError as exc:
+    raise UserRepositoryUnavailableError(
+        "Không thể truy cập kho dữ liệu người dùng."
+    ) from exc
+KHÔNG ĐÚNG
+try:
+    user = repository.get(user_id)
+except Exception:
+    return None
+KHÔNG ĐÚNG:
+raise Exception("Có lỗi xảy ra")
+khi lỗi có thể được biểu diễn chính xác hơn.
+Việc bắt Exception quá sớm có thể không debug đến:
+lỗi lập trình;
+lỗi kiểu dữ liệu;
+lỗi thuộc tính;
+lỗi do giả định sai trong chương trình.
+9.3. Giữ nguyên nguyên nhân gốc khi chuyển đổi ngoại lệ
+Khi chuyển một ngoại lệ tầng thấp thành ngoại lệ có ý nghĩa ở tầng cao hơn, phải giữ nguyên nguyên nhân ban đầu bằng raise ... from ....
+ĐÚNG
+try:
+    execute_gpu_workload()
+except CUDAOutOfMemoryError as exc:
+    raise ResourceExhaustedError(
+        "Không đủ tài nguyên GPU để thực hiện tác vụ."
+    ) from exc
+Điều này bảo toàn chuỗi nguyên nhân và giúp stack trace thể hiện cả lỗi nghiệp vụ cấp cao lẫn nguyên nhân kỹ thuật ban đầu.
+9.4. Không vừa ghi log vừa ném lại cùng một lỗi ở mọi tầng
+Một lỗi không nên được ghi đầy đủ stack trace tại nhiều tầng liên tiếp.
+KHÔNG NÊN
+def repository():
+    try:
+        ...
+    except DatabaseError:
+        logger.exception("Database failed")
+        raise
+def service():
+    try:
+        repository()
+    except DatabaseError:
+        logger.exception("Service failed")
+        raise
+def endpoint():
+    try:
+        service()
+    except DatabaseError:
+        logger.exception("Request failed")
+        raise
+Một lỗi có thể tạo ra ba stack trace gần như giống nhau.
+10. LOGGING & OBSERVABILITY
+10.1. Sử dụng logger theo module
+Mỗi module phải khởi tạo logger bằng tên module.
+import logging
+logger = logging.getLogger(__name__)
+Không sử dụng trực tiếp:
+print(...)
+để ghi thông tin vận hành của ứng dụng production.
+10.2. Quy định mức ghi log
+Các mức log phải được sử dụng theo ý nghĩa thống nhất.
+Mức
+Sử dụng
+DEBUG
+Thông tin chi tiết phục vụ phát triển hoặc sửa lỗi phần mềm.
+INFO
+Sự kiện vận hành bình thường và có ý nghĩa của hệ thống.
+WARNING -ERROR
+Một thao tác đã thất bại nhưng tiến trình hoặc dịch vụ vẫn có thể tiếp tục hoạt động.
+CRITICAL
+Lỗi nghiêm trọng khiến dịch vụ hoặc thành phần chính không thể tiếp tục hoạt động an toàn.
+Không nâng mọi sự kiện bất thường thành ERROR.
+Ví dụ timeout đã được retry thành công có thể là WARNING, không nhất thiết là ERROR.
+10.3. Ghi exception bằng logger.exception() tại khối xử lý lỗi
+Khi cần ghi một ngoại lệ cùng stack trace tại khối except, sử dụng:
+try:
+    execute_gpu_workload()
+except CUDAOutOfMemoryError:
+    logger.exception(
+        "Không thể thực hiện tác vụ GPU do thiếu bộ nhớ."
+    )
+    raise
+Không sử dụng:
+except CUDAOutOfMemoryError as exc:
+    logger.error(exc)
+vì cách này chỉ ghi chuỗi biểu diễn của ngoại lệ và làm mất stack trace. Sử dụng logger.exception() trong khối except để tự động đính kèm toàn bộ Traceback. Không dùng logger.error(exc)
+10.4 Log phải có đủ ngữ cảnh
+Thông điệp log không được quá chung chung.
+KHÔNG ĐÚNG
+logger.error("Có lỗi")
+logger.error("Request failed")
+ĐÚNG
+logger.error(
+    "Không thể hoàn thành quá trình lập chỉ mục tài liệu.",
+    extra={
+        "document_id": document_id,
+        "operation": "document_indexing",
+    },
+)
+Log phải mô tả operation bị ảnh hưởng thay vì chỉ lặp lại nội dung ngoại lệ.
+10.5. Không sử dụng log thay cho xử lý ngoại lệ và xử lý lỗi
+Việc ghi log không đồng nghĩa với việc lỗi đã được xử lý.
+KHÔNG ĐÚNG
+try:
+    save_order(order)
+except DatabaseError:
+    logger.exception("Không thể lưu đơn hàng.")
+Sau đoạn mã này, chương trình tiếp tục chạy mặc dù operation đã thất bại.
+Phải xác định rõ hành vi tiếp theo:
+try:
+    save_order(order)
+except DatabaseError as exc:
+    logger.exception(
+        "Không thể lưu đơn hàng.",
+        extra={"order_id": order.id},
+    )
+    raise OrderPersistenceError(
+        "Không thể lưu đơn hàng."
+    ) from exc
+hoặc trả về một kết quả thất bại được định nghĩa rõ ràng nếu kiến trúc hệ thống sử dụng kiểu kết quả đó.
+11. KIỂM THỬ (TESTING STANDARDS)
+11.1. Phân Cấp Kiểm Thử (Industry Standard – Agile Test Pyramid)
+Unit Tests: Mọi logic nghiệp vụ cốt lõi (thuật toán, tính toán, xử lý dữ liệu) phải có unit test.
+Integration Tests: Các biên giao tiếp bên ngoài (Database, Message Broker, API HTTP, Redis) phải có test tích hợp để kiểm tra rủi ro kết nối.
+E2E Tests: Dùng cho các luồng nghiệp vụ, kiểm thử giao diện, nhưng không được dùng để thay thế Unit/Integration test vì chi phí bảo trì và thời gian chạy cực kỳ lớn.
+11.2. Cấu Trúc & Định Danh Hàm Test (AAA Pattern & Naming)
+Quy chuẩn: Tên hàm test phải tuân thủ định dạng test_<tên_hàm>_<tình_trạng_đầu_vào>_<kết_quả_mong_đợi>. Bên trong hàm test bắt buộc chia làm 3 khối rõ ràng: Arrange (Chuẩn bị) - Act (Thực thi) - Assert (Xác nhận).
+Lý do: Giúp bất kỳ kỹ sư nào khi nhìn vào test bị fail cũng biết ngay kịch bản nào đang sai mà không cần đọc nội bộ mã nguồn.
+# TỐT 
+def test_calculate_total_with_valid_items_returns_sum():
+    # Arrange (Chuẩn bị dữ liệu)
+    items = [10, 20, 30]
+    
+    # Act (Thực thi hành vi)
+    result = calculate_total(items)
+    
+    # Assert (Kiểm chứng kết quả)
+    assert result == 60
+# CHƯA TỐT 
+def test_total():
+    # Tên hàm không nói lên ý nghĩa, logic bị gộp
+assert calculate_total([10, 20, 30]) == 60
+11.3. Tính Quyết Định (Determinism)
+Quy chuẩn Test không được phép phụ thuộc vào trạng thái ngẫu nhiên (random), thời gian thực của hệ thống (wall clock), trạng thái máy local, hoặc thứ tự thực thi của các test khác.
+Lý do: Tránh hiện tượng "Flaky Test" (chạy lúc pass lúc fail). Test mất tính ổn định sẽ làm mất niềm tin của đội ngũ vào hệ thống CI/CD.
+# TỐT
+def test_is_weekend(monkeypatch):
+    # Cố định thời gian để đảm bảo kết quả luôn đúng
+    fixed_saturday = datetime(2026, 8, 22)
+    monkeypatch.setattr("app.utils.today", lambda: fixed_saturday)
+    assert is_weekend() is True
+# CHƯA TỐT
+def test_is_weekend():
+    # Chạy vào thứ 6 thì test fail, chạy vào thứ 7 thì test pass
+    assert is_weekend() is True
+11.4. Kỹ Thuật Mocking (Mocking Boundaries)
+Quy chuẩn: Chỉ Mock các ranh giới hệ thống bên ngoài (External Systems như HTTP Client, DB client). Không mock các logic miền (Domain behavior) nội bộ.  Phải "vá" (Patch) dependency tại nơi mà code đang kiểm thử gọi đến, chứ không phải nơi nó được định nghĩa.
+Lý do: Lạm dụng Mock sẽ dẫn đến việc test chi tiết cài đặt (Implementation details) thay vì test hành vi. Khi refactor code nội bộ, test sẽ bị gãy dù logic vẫn đúng.
+# TỐT
+def test_fetch_user_handles_timeout(mocker):
+    # Mocking thư viện gọi HTTP (Hệ thống bên ngoài)
+    mocker.patch("requests.get", side_effect=Timeout)
+    
+    result = fetch_user_data(user_id=1)
+    
+    # Assert theo logic xử lý khi bị timeout
+    assert result == {"error": "service_unavailable"}
+11.5. Kiểm Thử Hồi Quy (Regression Tests)
+Quy chuẩn: Bất kỳ một con Bug nào xuất hiện trên môi trường Production, trước khi viết code sửa lỗi (hotfix), BẮT BUỘC phải viết một test case tái hiện chính xác con bug đó (lúc này test sẽ Fail). Sau khi sửa code, test phải Pass.
+Lý do: Tạo ra màng lưới an toàn (safety net). Đảm bảo lỗi này vĩnh viễn không bao giờ xuất hiện lại trong tương lai do các đợt refactor vô tình chạm vào.
+12. ĐÓNG GÓI VÀ QUẢN LÝ DEPENDENCIES
+Các tiêu chuẩn dưới đây quy định cách thức quản lý thư viện, đóng gói mã nguồn và thiết lập môi trường nhằm đảm bảo tính nhất quán từ máy cá nhân (Local) lên đến môi trường thực thi (Production)
+12.1. Cấu hình Dự án Tập trung (pyproject.toml)
+Nguồn tham chiếu: Tiêu chuẩn PyPA (PEP 517, PEP 518, PEP 621).
+Quy chuẩn: Mọi dự án Python sử dụng tệp pyproject.toml làm nơi duy nhất khai báo cấu hình. Bắt buộc phải định nghĩa khối [build-system] để chỉ định công cụ build (như hatchling, poetry-core, hoặc uv). Nên khai báo thông tin dự án ở khối [project].
+Lý do: Thay thế hoàn toàn tệp setup.py (vốn tiềm ẩn rủi ro thực thi mã tùy ý khi cài đặt) và gom toàn bộ cấu hình linter, formatter, dependencies vào một tệp duy nhất.
+# TỐT 
+# Tệp pyproject.toml chuẩn mực
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+[project]
+name = "my_awesome_app"
+version = "1.0.0"
+dependencies = [
+    "fastapi>=0.1.1", 
+    "numpy>=2.2.3",
+]
+# CHƯA TỐT 
+# Sử dụng setup.py kiểu cũ (Legacy) để cấu hình dự án
+from setuptools import setup
+setup(name='my_awesome_app', version='1.0.0', install_requires=['fastapi', 'numpy'])
+12.2. Cấu trúc thư mục "src layout" (Project Layout)
+Nguồn tham chiếu: Khuyến nghị của PyPA + Chính sách đội ngũ.
+Quy chuẩn: NÊN sử dụng cấu trúc src layout cho mã nguồn dự án, trừ khi có lý do đặc biệt được ghi chú rõ ràng.
+Lý do: Đặt mã nguồn vào thư mục src/ giúp ngăn chặn việc Python vô tình import nhầm mã nguồn nội bộ (local source) thay vì import gói đã được cài đặt đúng chuẩn trong môi trường ảo khi chạy Unit Test.
+# TỐT (src layout)
+project_root/
+├── pyproject.toml
+├── uv.lock
+└── src/                 <-- Thư mục gốc chứa code
+    └── my_app/
+        ├── __init__.py
+        └── main.py
+# CHƯA TỐT (flat layout)
+project_root/
+├── pyproject.toml
+├── my_app/              <-- Code nằm rải rác cùng cấp với file cấu hình
+│   ├── __init__.py
+│   └── main.py
+12.3. Môi trường Ảo & Phân nhóm Dependencies
+Nguồn tham chiếu: PEP 735 (Dependency Groups).
+Quy chuẩn:
+Quá trình phát triển và thực thi phải cô lập hoàn toàn (Virtual Environments). Không cài thư viện vào Python Global của hệ điều hành.
+Tách biệt rõ ràng các thư viện chỉ dùng cho lúc lập trình (Development-only như pytest, ruff) với thư viện bắt buộc để chạy ứng dụng (Runtime như fastapi, pydantic).
+Lý do: Giảm kích thước Docker image khi deploy lên Production và giản khả năng tấn công bảo mật (ví dụ: không mang pytest hay mypy lên server Production)
+# TỐT (Tách biệt môi trường)
+# Bên trong pyproject.toml
+[project]
+dependencies = ["fastapi", "uvicorn"] # Chỉ cài ở Production
+[dependency-groups]
+dev = ["pytest", "ruff", "pyright"]   # Cài thêm ở Local để code
+# CHƯA TỐT
+# Nhồi nhét tất cả thư viện (cả test, lint, framework) vào một file requirements.txt duy nhất và mang lên Production.
+12.4. Tính Tái tạo cho Production (Reproducibility)
+Nguồn tham chiếu: DevOps / SRE Best Practices.
+Quy chuẩn: Môi trường triển khai Production BẮT BUỘC phải có cơ chế phân giải phụ thuộc mang tính tái tạo (Reproducible). Phải sử dụng cơ chế tệp khóa (Lockfile).
+Lý do: Loại bỏ hội chứng "Chạy bình thường trên máy tôi nhưng lỗi trên server". Lockfile (ví dụ uv.lock, poetry.lock) sẽ ghi nhớ chính xác từng phiên bản đến cả mã băm (hash) của thư viện và các thư viện con của nó, đảm bảo môi trường ở mọi nơi giống nhau 100%.
+# TỐT
+# Cài đặt dựa trên lockfile, đảm bảo phiên bản chính xác tuyệt đối
+uv sync --frozen
+# hoặc
+pip install -r requirements.txt --require-hashes
+# CHƯA TỐT
+# Lệnh cài đặt lỏng lẻo trên Production, có thể tự động tải bản cập nhật gây gãy hệ thống
+pip install my_app
+13. Cấu hình chung và các thông tin riêng
+Mục tiêu của tiêu chuẩn này là đảm bảo cấu hình ứng dụng được quản lý tập trung, có thể kiểm tra, có thể thay đổi giữa các môi trường mà không cần sửa mã nguồn, đồng thời ngăn chặn việc rò rỉ thông tin nhạy cảm.
+13.1. Không Hardcode Configuration
+Không hardcode các giá trị phụ thuộc môi trường hoặc triển khai trực tiếp trong logic code.
+Các giá trị sau phải được xem xét đưa vào configuration:
+Database URL / host / port.
+External service URL.
+API endpoint.
+Timeout.
+Retry count.
+Feature flags.
+Model name.
+Batch size phụ thuộc môi trường.
+Logging level.
+Worker count.
+Các tham số vận hành có thể thay đổi giữa các environment.
+Đúng
+def create_http_client(settings: Settings) -> HttpClient:
+    return HttpClient(
+        base_url=settings.service_url,
+        timeout=settings.request_timeout_seconds,
+    )
+Sai
+def create_http_client() -> HttpClient:
+    return HttpClient(
+        base_url="https://production-service.internal",
+        timeout=30,
+    )
+13.2. Không đưa thông tin nhạy cảm vào trong code, commit files chứa Secrets
+Không lưu trực tiếp thông tin nhạy cảm trong source code.
+Bao gồm nhưng không giới hạn:
+Password.
+API Key.
+Access Token.
+Refresh Token.
+Private Key.
+Database credentials.
+Cloud credentials.
+JWT signing secret.
+Encryption key.
+KHÔNG:
+DATABASE_PASSWORD = "super-secret-password"
+OPENAI_API_KEY = "sk-..."
+JWT_SECRET = "my-secret-key"
+Secret phải được cung cấp từ cơ chế quản lý secret hoặc môi trường (.env) của hệ thống triển khai. Đồng thời những file cấu hình môi trường như vậy phải được thêm vào trong .gitignore:
+Ví dụ:
+.env
+credentials.json
+service-account.json
+*.pem
+*.key
+# Nếu project cần file mẫu, sử dụng:
+.env.example
+13.3 Các tham số được config là bất biến
+Configuration sau khi application startup được xem là bất biến.
+@dataclass(frozen=True)
+class Settings:
+    database_url: str
+    max_retries: int
+# Không được setting ngoài config:
+settings.max_retries = 100
+14. TIÊU CHUẨN CÔNG CỤ (TOOLING STANDARDS)
+Công cụ
+Phân loại
+Chức năng
+ruff
+Linter & Formatter 
+Công cụ định dạng và bắt lỗi code viết bằng Rust. Thay thế đồng thời Black, Flake8, isort, pyupgrade, pydocstyle. Xử lý hằng trăm file trong vài ms.
+pyright
+Static Type Checking
+Bộ kiểm tra dữ liệu tĩnh của  Microsoft. Hiệu năng cao, kiểm soát chặt chẽ None-safety, Type narrowing và Type Hinting.
+pytest
+Test Framework 
+Framework kiểm thử tiêu chuẩn. Cú pháp assert tự nhiên, hệ thống fixture mạnh mẽ, hỗ trợ chạy song song và đo coverage qua pytest-cov. 
+bandit
+Security Linter (SAST)
+Phân tích cây cụ pháp trừ tượng (AST) để phát hiện lỗ hổng bảo mật trong mã nội bộ (hardcoded secrets, SQL/Command injection, eval, insecure SSL/subprocess)
+pip-audit
+Dependency Scanner (SCA)
+Quét toàn bộ cây dependencies/lockfile để phát hiện lỗ hổng bảo mật đã công bố (CVA/GHSA) dựa trên cơ sở dữ liệu PyPA và Google OSV.
+pre-commit
+Git Hooks Automation
+Quản lý và tự động hóa việc kích hoạt các công cụ kiểm tra (Ruff, Pyright, Bandit, …) ngay tại local trước khi git commit để chặn code lỗi đẩy lên Git.
+uv
+Project & Package Manager
+Trình quản lý dự án, môi trường ảo, Python runtime và dependencies viết bằng Rust. Tốc độ resolve phụ thuộc gấp 10-100x pip/poetry. Tích hợp sẵn cache toàn cục, khóa phiên bản tất định bằng uv.lock
+14.1. Ruff (Linter & Formatter)
+Ý nghĩa & Vai trò: Ruff là công cụ viết bằng Rust, thay thế hoàn toàn cho sự kết hợp cồng kềnh của Flake8, Black, isort và hàng chục plugin khác. Vai trò của Ruff là chuẩn hóa định dạng mã nguồn (formatter) và phát hiện các lỗi logic cơ bản, code rác, import thừa (linter). 
+Cách sử dụng:
+Kiểm tra lỗi (Lint): ruff check .
+Tự động sửa lỗi (Auto-fix): ruff check --fix .
+Kiểm tra code có vi phạm format: ruff format –check .
+Định dạng code (Format): ruff format .
+Cách cấu hình chuẩn: Cấu hình tập trung tại pyproject.toml
+[tool.ruff]
+# Phiên bản Python mục tiêu và kích thước dòng
+target-version = "py312"
+line-length = 88
+indent-width = 4
+# Thư mục chứa mã nguồn chính để phân loại import
+src = ["src", "tests"]
+# Bỏ qua các thư mục sinh tự động hoặc cache
+extend-exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "docs",
+]
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+skip-magic-trailing-comma = false
+docstring-code-format = true
+docstring-code-line-length = 80
+[tool.ruff.lint]
+# Danh mục các bộ luật kiểm tra chất lượng
+select = [
+    "E",      # pycodestyle errors (PEP 8)
+    "W",      # pycodestyle warnings (PEP 8)
+    "F",      # Pyflakes (Unused variables/imports)
+    "I",      # isort (Tự động sắp xếp imports)
+    "N",      # pep8-naming (Chuẩn đặt tên biến, hàm, class)
+    "D",      # pydocstyle (Chuẩn tài liệu hóa PEP 257)
+    "UP",     # pyupgrade (Nâng cấp cú pháp hiện đại Python 3.12)
+    "B",      # flake8-bugbear (Bắt lỗi logic tiềm ẩn)
+    "SIM",    # flake8-simplify (Tối ưu hóa biểu thức code)
+    "S",      # flake8-bandit (Quét lỗ hổng bảo mật)
+    "ASYNC",  # flake8-async (Quy chuẩn code bất đồng bộ)
+    "RUF",    # Ruff internal rules
+]
+# Các rule được miễn trừ trên toàn codebase
+ignore = [
+    "D100",   # Không bắt buộc docstring ở file __init__.py cấp module
+    "D104",   # Không bắt buộc docstring ở package root
+    "D107",   # Không bắt buộc docstring ở hàm __init__ (chỉ cần mô tả ở Class)
+    "B008",   # Cho phép khai báo hàm phụ thuộc trong FastAPI/Typer (Depends(...))
+]
+# Cho phép tự động sửa toàn bộ các rule có thể sửa
+fixable = ["ALL"]
+unfixable = []
+[tool.ruff.lint.pydocstyle]
+# Ép buộc viết docstring theo chuẩn Google Style
+convention = "google"
+[tool.ruff.lint.isort]
+# Cấu hình gom nhóm imports
+known-first-party = ["service_core"]
+combine-as-imports = true
+lines-after-imports = 2
+[tool.ruff.lint.per-file-ignores]
+# Miễn trừ các quy tắc khắt khe cho thư mục test
+"tests/**/*" = [
+    "S101",   # Cho phép dùng `assert` trong bài kiểm thử (Bandit chặn assert ở code production)
+    "D",      # Không bắt buộc viết docstring cho từng hàm test
+    "S105",   # Cho phép hardcode secret/token mẫu phục vụ testing
+    "S106",   # Cho phép hardcode mock password trong test
+] 
+14.2. Pyright (Static Type Checking)
+Ý nghĩa & Vai trò: Công cụ phân tích tĩnh, đọc các Type Hints (như list[str], int) trong mã nguồn để phát hiện các lỗi sai kiểu dữ liệu trước cả khi chạy chương trình. Giúp bắt các lỗi như truyền nhầm String vào hàm tính toán Toán học. 
+Cách sử dụng: pyright 
+Cách cấu hình chuẩn (dành cho Pyright): Cấu hình tại pyproject.toml. Bắt buộc bật chế độ kiểm tra khắt khe.
+[tool.pyright]
+# Chỉ định vùng mã nguồn cần phân tích khắt khe
+include = ["src", "tests"]
+exclude = ["**/__pycache__", ".venv", "dist", "build"]
+# Định hướng môi trường phân tích
+pythonVersion = "3.12"
+pythonPlatform = "All"
+# Bật chế độ kiểm tra nghiêm ngặt nhất
+typeCheckingMode = "strict"
+# Cấu hình xử lý Type Stubs cho thư viện thứ 3
+useLibraryCodeForTypes = true
+reportMissingTypeStubs = false
+# Nâng cấp các cảnh báo (warnings) ngầm thành lỗi (errors) bắt buộc sửa
+reportMissingTypeAnnotations = "error"
+reportMissingParameterType = "error"
+reportUnknownVariableType = "error"
+reportUnknownArgumentType = "error"
+# Hạ cấp một số quy tắc quá khắt khe khi làm việc với thư viện ngoài
+reportUnknownMemberType = "warning"
+reportUntypedBaseClass = "warning"
+reportUnnecessaryTypeIgnoreComment = "warning"
+14.3. Pytest (Test Runner)
+Ý nghĩa & Vai trò: Khung kiểm thử (Testing Framework) mạnh mẽ nhất của Python. Chịu trách nhiệm thực thi toàn bộ Unit Test, Integration Test và tạo báo cáo độ phủ mã (Coverage report). 
+Cách sử dụng:
+Chạy toàn bộ test: pytest
+Chạy test kèm báo cáo coverage: pytest --cov=src --cov-report=term-missing
+Cách cấu hình chuẩn: Cấu hình tại pyproject.toml. Ràng buộc đường dẫn test và thư mục nguồn.
+# ==========================================
+# CẤU HÌNH PYTEST (Test Engine & Execution)
+# ==========================================
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# Cấu hình danh mục Marker phân cấp bài test
+markers = [
+    "unit: Kiểm thử đơn vị (nhanh, cô lập, chạy không cần network/DB)",
+    "integration: Kiểm thử tích hợp đa module hoặc database nội bộ",
+    "e2e: Kiểm thử toàn trình End-to-End luồng hệ thống hoặc API",
+    "slow: Các bài test xử lý thuật toán nặng hoặc mất nhiều thời gian",
+]
+# Tùy chọn mặc định khi chạy `uv run pytest`
+addopts = [
+    "-ra",                                      # Hiển thị tóm tắt ngắn gọn cho tất cả test (Pass/Fail/Skip)
+    "--strict-markers",                         # Báo lỗi nếu dùng marker chưa khai báo
+    "--strict-config",                          # Báo lỗi nếu file cấu hình có cú pháp không hợp lệ
+    "--doctest-modules",                        # Tự động quét và chạy các đoạn test mẫu trong Docstrings
+    "--cov=src",                                # Đo code coverage cho toàn bộ mã nguồn trong thư mục src
+    "--cov-report=term-missing:skip-covered",   # Hiển thị số dòng bị thiếu test, ẩn các file đã đạt 100%
+    "--cov-report=xml:coverage.xml",            # Xuất báo cáo XML phục vụ CI/CD SonarQube/GitHub Actions
+    "--cov-fail-under=80",                      # BẮT BUỘC đạt tối thiểu 80% coverage
+]
+# Xử lý warnings: Chuyển toàn bộ warning thành lỗi, bỏ qua các warning ngoại lệ của thư viện cũ
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+# Nếu bài test đánh dấu xfail mà lại pass thì coi là lỗi
+xfail_strict = true
+# ==========================================
+# CẤU HÌNH COVERAGE (pytest-cov & coverage.py)
+# ==========================================
+[tool.coverage.run]
+branch = true                       # Bắt buộc đo Branch Coverage (kiểm tra cả 2 nhánh if/else)
+source = ["src"]
+omit = [
+    "*/__init__.py",                # Bỏ qua các file khởi tạo rỗng
+    "*/py.typed",
+    "src/core/constants.py",        # Bỏ qua file khai báo hằng số thuần túy
+]
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",             # Bỏ qua các dòng gắn comment này
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",            # Bỏ qua các khối chỉ import phục vụ Type Checking
+    "@overload",
+]
+14.4. Bandit & pip-audit (Security Scanners)
+Ý nghĩa & Vai trò: Đảm bảo tiêu chí "Secure".
+Bandit: Đọc mã nguồn Python để tìm các lỗ hổng như hardcode mật khẩu, sử dụng eval() nguy hiểm, cấu hình SQL Injection.
+pip-audit: Quét danh sách thư viện (Dependencies) để tìm các phiên bản chứa lỗ hổng đã được công bố trên cơ sở dữ liệu quốc tế (CVE).
+Cách sử dụng:
+Quét code: bandit -r src/
+Quét thư viện: pip-audit
+[tool.bandit]
+exclude_dirs = ["tests", "venv"]
+skips = ["B101"] # Bỏ qua cảnh báo khi dùng hàm assert trong Python
+14.5. uv (Trình quản lý Môi trường & Dependencies)
+Ý nghĩa & Vai trò: Công cụ viết bằng Rust, tốc độ nhanh gấp 10-100 lần so với pip và poetry. Đóng vai trò tạo môi trường ảo (Virtual Environment), quản lý tệp khóa (lockfile) và cài đặt thư viện một cách tái tạo được (reproducible). 
+Cách sử dụng:
+Tạo môi trường và khởi tạo dự án: uv init
+Thêm thư viện: uv add fastapi
+Thêm thư viện dev: uv add --dev pytest
+Đồng bộ thư viện theo lockfile (trên Production): 
+uv sync                   # Cài đặt đầy đủ cả dev tools
+uv sync --no-dev          # Chỉ cài đặt nhóm production (dùng trên server/Docker)
+uv sync --frozen          # Không cập nhật lockfile, báo lỗi nếu pyproject.toml bị lệch
+Cách cấu hình chuẩn: Không cần cấu hình đặc biệt, tuân thủ chặt chẽ khối [project] và [dependency-groups] trong pyproject.toml như đã nêu ở Mục 12.
+[project]
+name = "enterprise_service_core"
+version = "0.1.0"
+description = "Hệ thống xử lý và điều phối dữ liệu chuẩn Enterprise"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    { name = "Platform Engineering Team", email = "platform@internal.corp" }
+]
+# Thư viện phục vụ chạy Production
+dependencies = [
+    "pydantic>=2.7.0,<3.0.0",
+    "numpy>=1.26.0,<2.0.0",
+    "qdrant-client>=1.9.0",
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+]
+# Cấu hình PiPy server
+[tool.uv]
+index-url = “http://192.168.105.40:8510/repository/pypi/simple”
+# Phân nhóm công cụ phát triển theo chuẩn PEP 735
+[dependency-groups]
+dev = [
+    "ruff>=0.6.0",
+    "pyright>=1.1.370",
+    "pre-commit>=3.8.0",
+    { include-group = "test" }  # Nhóm dev tự động kế thừa toàn bộ nhóm test
+]
+test = [
+    "pytest>=8.2.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.14.0",
+    "pytest-xdist>=3.6.0",
+]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+[tool.hatch.build.targets.wheel]
+packages = ["src/enterprise_service_core"]
+14.6. pre-commit (Tự động hóa Hooks)
+Ý nghĩa & Vai trò: "Người gác cổng" của dự án. Mỗi khi lập trình viên gõ lệnh git commit, pre-commit sẽ tự động chạy Ruff, Pyright, Bandit. Nếu code có lỗi, nó sẽ chặn không cho phép commit. Điều này giúp giữ cho kho lưu trữ Git luôn sạch sẽ. 
+Cách sử dụng:
+Cài đặt hook vào local git: pre-commit install
+Chạy thủ công: pre-commit run --all-files
+Cách cấu hình chuẩn: Tạo tệp .pre-commit-config.yaml ở thư mục gốc dự án:
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.3.0
+    hooks:
+      - id: ruff
+        args: [ --fix ]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: pyright
+        additional_dependencies: [pydantic]
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.7
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml"]
+        additional_dependencies: ["bandit[toml]"]

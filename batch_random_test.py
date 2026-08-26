@@ -6,15 +6,15 @@ import random
 import json
 import os
 import matplotlib.pyplot as plt
-from logger_config import setup_logging
+from path_planning.logger_config import setup_logging
 
-import config
-import core.map_generator as mg 
-import core.preprocessing as prep
-import core.kinodynamic_astar as astar
-import core.spatial_utils as su
-import render.visualizer as viz
-import render.trajectory as tr
+from path_planning import config
+from path_planning.core import map_generator as mg 
+from path_planning.core import preprocessing as prep
+from path_planning.core import kinodynamic_astar as astar
+from path_planning.core import spatial_utils as su
+from path_planning.render import visualizer as viz
+from path_planning.render import trajectory as tr
 import performance_eval as perf
 
 

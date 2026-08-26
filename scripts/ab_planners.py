@@ -23,11 +23,11 @@ import math
 import random
 import time
 
-import config
-import core.map_generator as mg
-import core.mission as mission
-import core.preprocessing as prep
-import core.spatial_utils as su
+from path_planning import config
+from path_planning.core import map_generator as mg
+from path_planning.core import mission as mission
+from path_planning.core import preprocessing as prep
+from path_planning.core import spatial_utils as su
 
 
 def make_scenario(seed, mode='free'):
@@ -65,9 +65,9 @@ def make_scenario(seed, mode='free'):
 
 def _load_planner(name):
     if name == 'v0':
-        import core.kinodynamic_astar_v0 as m
+        from path_planning.core import kinodynamic_astar_v0 as m
     elif name == 'main':
-        import core.kinodynamic_astar as m
+        from path_planning.core import kinodynamic_astar as m
     else:
         raise SystemExit(f"unknown planner {name!r}")
     return m
