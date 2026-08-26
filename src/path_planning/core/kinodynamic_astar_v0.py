@@ -13,6 +13,10 @@ this one is the standard and the main file follows it.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import heapq
 import math
 import time
@@ -1450,11 +1454,11 @@ class KinodynamicAstar:
             return self._result(None, False, "goal_leg_blocked")
 
         if verbose:
-            print("Starting A* search...")
+            logger.info("Starting A* search...")
         path = self.search()
         if verbose:
             stats = self.get_search_stats()
-            print(
+            logger.info(
                 f"Search completed: {stats['iterations']} iterations in "
                 f"<= {stats['time_budget_s']:g} s"
                 + (" (budget exhausted)" if stats["budget_bound"] else "")
@@ -1490,7 +1494,7 @@ class KinodynamicAstar:
             return self._result(path, False, failure_reason)
 
         if verbose:
-            print(f"Path found with {len(path)} waypoints")
+            logger.info(f"Path found with {len(path)} waypoints")
         return self._result(path, True, None)
 
     def _result(
@@ -1529,7 +1533,7 @@ def plan_trajectory(
         whether the answer was cut short by the clock.
     """
     if verbose:
-        print("Initializing Kinodynamic A*...")
+        logger.info("Initializing Kinodynamic A*...")
     return KinodynamicAstar(preprocessed_scenario, time_budget_s=time_budget_s).plan(
         verbose=verbose
     )

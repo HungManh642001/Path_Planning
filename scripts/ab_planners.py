@@ -18,6 +18,10 @@ because that is what batch_random_test -- the production harness -- runs;
 a separate RNG so the obstacle field stays byte-identical between the modes.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import argparse
 import json
 import math
@@ -101,7 +105,7 @@ def _apply_overrides(pairs):
         if not hasattr(config, key):
             raise SystemExit(f"config has no attribute {key!r}")
         setattr(config, key, _coerce(value))
-        print(f"  config.{key} = {getattr(config, key)!r}")
+        logger.info(f"  config.{key} = {getattr(config, key)!r}")
 
 
 def _coerce(v):
@@ -144,7 +148,7 @@ def run(args):
         }
         if args.verbose:
             r = results[str(seed)]
-            print(
+            logger.info(
                 f"  seed {seed:4d}  {'OK ' if r['success'] else 'FAIL'} "
                 f"{r['failure_reason'] or ''} {dt:.2f}s"
             )
@@ -159,14 +163,14 @@ def run(args):
     with open(args.out, "w") as fh:
         json.dump(payload, fh)
     _summary(payload)
-    print(f"written: {args.out}")
+    logger.info(f"written: {args.out}")
 
 
 def _summary(payload):
     res = payload["results"]
     solved = [k for k, v in res.items() if v["success"]]
     total_len = sum(res[k]["length_m"] for k in solved)
-    print(
+    logger.info(
         f"{payload['planner']:>4} [{payload['mode']}] "
         f"seeds={len(res)} solved={len(solved)} "
         f"time={payload['total_time_s']:.1f}s "
@@ -183,17 +187,17 @@ def compare(args):
     ra, rb = a["results"], b["results"]
     keys = sorted(set(ra) & set(rb), key=int)
     if len(keys) != len(ra) or len(keys) != len(rb):
-        print(f"WARNING: seed sets differ ({len(ra)} vs {len(rb)}, {len(keys)} shared)")
+        logger.info(f"WARNING: seed sets differ ({len(ra)} vs {len(rb)}, {len(keys)} shared)")
 
     identical = sum(1 for k in keys if ra[k]["waypoints"] == rb[k]["waypoints"])
-    print(f"\nbit-identical paths: {identical}/{len(keys)}")
+    logger.info(f"\nbit-identical paths: {identical}/{len(keys)}")
     if identical != len(keys):
         diff = [k for k in keys if ra[k]["waypoints"] != rb[k]["waypoints"]]
-        print(f"  differing seeds: {diff[:20]}{' ...' if len(diff) > 20 else ''}")
+        logger.info(f"  differing seeds: {diff[:20]}{' ...' if len(diff) > 20 else ''}")
 
     gained = [k for k in keys if rb[k]["success"] and not ra[k]["success"]]
     lost = [k for k in keys if ra[k]["success"] and not rb[k]["success"]]
-    print(
+    logger.info(
         f"solved: {sum(ra[k]['success'] for k in keys)} -> "
         f"{sum(rb[k]['success'] for k in keys)}   gained={gained} lost={lost}"
     )
@@ -206,13 +210,13 @@ def compare(args):
         wb = sum(len(rb[k]["waypoints"]) for k in both)
         ia = sum(ra[k]["iterations"] for k in both)
         ib = sum(rb[k]["iterations"] for k in both)
-        print(
+        logger.info(
             f"length:     {la / 1000:.1f}km -> {lb / 1000:.1f}km  ({100 * (lb - la) / la:+.4f}%)"
         )
-        print(f"waypoints:  {wa} -> {wb}")
-        print(f"iterations: {ia} -> {ib}  ({100 * (ib - ia) / ia:+.2f}%)")
+        logger.info(f"waypoints:  {wa} -> {wb}")
+        logger.info(f"iterations: {ia} -> {ib}  ({100 * (ib - ia) / ia:+.2f}%)")
     ta, tb = a["total_time_s"], b["total_time_s"]
-    print(
+    logger.info(
         f"time:       {ta:.1f}s -> {tb:.1f}s  ({100 * (tb - ta) / ta:+.2f}%)"
         "   [single runs drift ~5%; pair repeats before trusting this]"
     )
@@ -249,4 +253,5 @@ def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

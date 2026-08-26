@@ -3,6 +3,10 @@ Performance Evaluation Module
 Measures and analyzes algorithm runtime, path quality, and system efficiency
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import math
 import time
 
@@ -58,7 +62,7 @@ class PerformanceMetrics:
             dist = math.dist(full_wps[i], full_wps[i + 1])
             segment_distances.append(dist)
             total_distance += dist
-            # print(f"Segment {i}: {full_wps[i]} -> {full_wps[i + 1]}, Distance: {dist:.2f} m")
+            # logger.info(f"Segment {i}: {full_wps[i]} -> {full_wps[i + 1]}, Distance: {dist:.2f} m")
 
         # Calculate turn angles
         turn_angles = []
@@ -101,54 +105,54 @@ class PerformanceMetrics:
 
     def print_report(self):
         """Print formatted performance report"""
-        print(f"\n{'─' * 70}")
-        print(f"Performance Report: {self.scenario_name}")
-        print(f"{'─' * 70}")
+        logger.info(f"\n{'─' * 70}")
+        logger.info(f"Performance Report: {self.scenario_name}")
+        logger.info(f"{'─' * 70}")
 
         # Timing breakdown
-        print("\n⏱️  Timing Breakdown:")
+        logger.info("\n⏱️  Timing Breakdown:")
         total_time = 0
         for phase, data in self.timings.items():
             if "elapsed" in data:
                 elapsed = data["elapsed"]
                 total_time += elapsed
                 percentage = (elapsed / (total_time + 0.0001)) * 100
-                print(f"  {phase:25} {elapsed:8.4f}s ({percentage:5.1f}%)")
+                logger.info(f"  {phase:25} {elapsed:8.4f}s ({percentage:5.1f}%)")
 
-        print(f"  {'Total':25} {total_time:8.4f}s (100.0%)")
+        logger.info(f"  {'Total':25} {total_time:8.4f}s (100.0%)")
 
         # Search statistics
         if self.search_stats:
-            print("\n🔍 A* Search Statistics:")
-            print(f"  Iterations: {self.search_stats.get('iterations', 0):6}")
-            print(f"  Open Set Size: {self.search_stats.get('open_set_size', 0):6}")
-            print(f"  Closed Set Size: {self.search_stats.get('closed_set_size', 0):6}")
+            logger.info("\n🔍 A* Search Statistics:")
+            logger.info(f"  Iterations: {self.search_stats.get('iterations', 0):6}")
+            logger.info(f"  Open Set Size: {self.search_stats.get('open_set_size', 0):6}")
+            logger.info(f"  Closed Set Size: {self.search_stats.get('closed_set_size', 0):6}")
 
             budget_s = self.search_stats.get("time_budget_s", 0.0)
             if budget_s:
                 cut = " (exhausted)" if self.search_stats.get("budget_bound") else ""
-                print(f"  Time Budget:  {budget_s:6.2f}s{cut}")
+                logger.info(f"  Time Budget:  {budget_s:6.2f}s{cut}")
 
         # Path statistics
         if self.path_stats:
-            print("\n📍 Path Statistics:")
-            print(
+            logger.info("\n📍 Path Statistics:")
+            logger.info(
                 f"  Total Distance: {self.path_stats.get('total_distance', 0) / 1000:8.2f} km"
             )
-            print(f"  Waypoints: {self.path_stats.get('waypoints', 0):6}")
-            print(f"  Segments: {self.path_stats.get('segments', 0):6}")
+            logger.info(f"  Waypoints: {self.path_stats.get('waypoints', 0):6}")
+            logger.info(f"  Segments: {self.path_stats.get('segments', 0):6}")
 
             if self.path_stats.get("segments", 0) > 0:
-                print(f"  Avg Segment: {self.path_stats.get('avg_segment', 0):8.1f} m")
-                print(f"  Min Segment: {self.path_stats.get('min_segment', 0):8.1f} m")
-                print(f"  Max Segment: {self.path_stats.get('max_segment', 0):8.1f} m")
+                logger.info(f"  Avg Segment: {self.path_stats.get('avg_segment', 0):8.1f} m")
+                logger.info(f"  Min Segment: {self.path_stats.get('min_segment', 0):8.1f} m")
+                logger.info(f"  Max Segment: {self.path_stats.get('max_segment', 0):8.1f} m")
 
-            print(
+            logger.info(
                 f"  Max Turn Angle: {math.degrees(self.path_stats.get('max_turn_angle', 0)):8.2f}°"
             )
 
             if self.path_stats.get("turns_count", 0) > 0:
-                print(
+                logger.info(
                     f"  Avg Turn Angle: {math.degrees(self.path_stats.get('avg_turn_angle', 0)):8.2f}°"
                 )
 
@@ -168,15 +172,15 @@ class PerformanceComparator:
         if not self.results:
             return
 
-        print("\n" + "=" * 100)
-        print("  PERFORMANCE COMPARISON ACROSS ALL SCENARIOS")
-        print("=" * 100)
+        logger.info("\n" + "=" * 100)
+        logger.info("  PERFORMANCE COMPARISON ACROSS ALL SCENARIOS")
+        logger.info("=" * 100)
 
         # Summary table
-        print(
+        logger.info(
             f"\n{'Scenario':<20} {'Status':<10} {'Time (s)':<12} {'Distance (km)':<15} {'Waypoints':<12} {'Iterations':<12}"
         )
-        print("─" * 100)
+        logger.info("─" * 100)
 
         total_time = 0
         total_distance = 0
@@ -208,40 +212,40 @@ class PerformanceComparator:
                 "✓ SUCCESS" if result["path"].get("waypoints", 0) > 0 else "✗ FAILED"
             )
 
-            print(
+            logger.info(
                 f"{scenario:<20} {status:<10} {timing_sum:>10.4f}s {distance:>13.2f} {waypoints:>11} {iterations:>11}"
             )
 
             if result["path"].get("waypoints", 0) > 0:
                 successful += 1
 
-        print("─" * 100)
-        print(
+        logger.info("─" * 100)
+        logger.info(
             f"{'TOTAL':<20} {f'{successful}/{len(self.results)}':<10} {total_time:>10.4f}s {total_distance:>13.2f}"
         )
-        print("=" * 100)
+        logger.info("=" * 100)
 
         # Detailed statistics
-        print("\n📊 DETAILED STATISTICS:\n")
+        logger.info("\n📊 DETAILED STATISTICS:\n")
 
         for result in self.results:
             scenario = result["scenario"]
-            print(f"\n{scenario}:")
+            logger.info(f"\n{scenario}:")
 
             timing_sum = sum(
                 data.get("elapsed", 0)
                 for data in result["timings"].values()
                 if isinstance(data, dict)
             )
-            print(f"  Total Runtime: {timing_sum:.4f}s")
+            logger.info(f"  Total Runtime: {timing_sum:.4f}s")
 
             if result["path"].get("waypoints", 0) > 0:
-                print(
+                logger.info(
                     f"  Distance: {result['path'].get('total_distance', 0) / 1000:.2f} km"
                 )
-                print(f"  Waypoints: {result['path'].get('waypoints', 0)}")
-                print(
+                logger.info(f"  Waypoints: {result['path'].get('waypoints', 0)}")
+                logger.info(
                     f"  Max Turn: {math.degrees(result['path'].get('max_turn_angle', 0)):.2f}°"
                 )
 
-            print(f"  Iterations: {result['search'].get('iterations', 0)}")
+            logger.info(f"  Iterations: {result['search'].get('iterations', 0)}")

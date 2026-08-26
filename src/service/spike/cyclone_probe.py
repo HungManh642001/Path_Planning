@@ -15,6 +15,10 @@ annotation đã bị hoãn và ném TypeError ngay lúc tạo Topic, ở CẢ HA
 fastdds_probe.md / decision doc để biết log traceback gốc.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import sys
 import time
 from dataclasses import dataclass
@@ -93,7 +97,7 @@ def send() -> None:
         length_m=123456.78901234567,
     )
     writer.write(sample)
-    print("đã gửi", sample.length_m)
+    logger.info("đã gửi %s", sample.length_m)
     time.sleep(2.0)
 
 
@@ -107,13 +111,13 @@ def listen() -> None:
     waitset = WaitSet(participant)
     waitset.attach(condition)
     if waitset.wait(duration(seconds=30)) == 0:
-        print("KHÔNG nhận được gì trong 30 s")
+        logger.info("KHÔNG nhận được gì trong 30 s")
         return
     for sample in reader.take(N=10, condition=condition):
-        print("request_id  :", list(sample.request_id) == list(range(16)))
-        print("detail      :", repr(sample.detail))
-        print("đỉnh đảo    :", len(sample.islands[0].vertices))
-        print("double khớp :", sample.length_m == 123456.78901234567)
+        logger.info("request_id  : %s", list(sample.request_id) == list(range(16)))
+        logger.info("detail      : %s", repr(sample.detail))
+        logger.info("đỉnh đảo    : %s", len(sample.islands[0].vertices))
+        logger.info("double khớp : %s", sample.length_m == 123456.78901234567)
 
 
 if __name__ == "__main__":

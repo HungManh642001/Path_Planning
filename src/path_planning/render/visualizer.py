@@ -12,6 +12,10 @@ signatures be fully known.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import math
 from itertools import pairwise
 from typing import TYPE_CHECKING, Literal
@@ -558,7 +562,7 @@ def plot_scenario(
 
     if save_path:
         plt.savefig(save_path, dpi=config.FIGURE_DPI, bbox_inches="tight")
-        print(f"Figure saved to {save_path}")
+        logger.info(f"Figure saved to {save_path}")
         plt.close()
 
     return fig

@@ -7,6 +7,10 @@ length regression on the seeds that already passed.
 Run: PYTHONPATH=. python scripts/goal_shot_ab.py
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import math
 import time
 
@@ -60,12 +64,12 @@ def main():
     results = {}  # enabled -> {seed: (ok, it, dt, plen, valid)}
     for enabled in (False, True):
         config.GOAL_SHOT_ENABLED = enabled
-        print(f"\n=== GOAL_SHOT_ENABLED = {enabled} ===")
+        logger.info(f"\n=== GOAL_SHOT_ENABLED = {enabled} ===")
         per_seed = {}
         for seed in SEEDS:
             ok, it, dt, plen, valid = _run(seed)
             per_seed[seed] = (ok, it, dt, plen, valid)
-            print(
+            logger.info(
                 f"  seed {seed}: solved={ok!s:5s} iters={it:6d} "
                 f"t={dt:5.2f}s len={plen / 1000:7.1f}km oracle={valid}"
             )
@@ -75,19 +79,19 @@ def main():
         n_solved = len(solved)
         mean_it = (sum(v[1] for v in solved) / n_solved) if n_solved else float("nan")
         mean_t = (sum(v[2] for v in solved) / n_solved) if n_solved else float("nan")
-        print(
+        logger.info(
             f"  --- SUMMARY (shot={enabled}): solved {n_solved}/{len(SEEDS)}, "
             f"mean iters (solved) = {mean_it:.1f}, mean time (solved) = {mean_t:.2f}s"
         )
 
     off, on = results[False], results[True]
-    print("\n=== PER-SEED COMPARISON (OFF -> ON) ===")
+    logger.info("\n=== PER-SEED COMPARISON (OFF -> ON) ===")
     header = (
         f"  {'seed':>4} {'off':>6} {'on':>6} {'speedup':>9} "
         f"{'len_off(km)':>12} {'len_on(km)':>12} {'delta(km)':>10} "
         f"{'ok_off':>7} {'ok_on':>6}"
     )
-    print(header)
+    logger.info(header)
     for seed in SEEDS:
         ok_off, it_off, _, plen_off, _ = off[seed]
         ok_on, it_on, _, plen_on, _ = on[seed]
@@ -99,7 +103,7 @@ def main():
         len_off_km = plen_off / 1000 if ok_off else float("nan")
         len_on_km = plen_on / 1000 if ok_on else float("nan")
         delta_km = (len_on_km - len_off_km) if (ok_off and ok_on) else float("nan")
-        print(
+        logger.info(
             f"  {seed:>4} {it_off:>6} {it_on:>6} {speedup_s} "
             f"{len_off_km:>12.1f} {len_on_km:>12.1f} {delta_km:>10.1f} "
             f"{str(ok_off):>7} {str(ok_on):>6}"
@@ -117,17 +121,18 @@ def main():
     mean_it_on = (
         (sum(v[1] for v in solved_on) / len(solved_on)) if solved_on else float("nan")
     )
-    print("\n=== OVERALL SUMMARY ===")
-    print(
+    logger.info("\n=== OVERALL SUMMARY ===")
+    logger.info(
         f"  OFF: solved {n_off}/{len(SEEDS)}, mean iters (solved) = {mean_it_off:.1f}"
     )
-    print(f"  ON : solved {n_on}/{len(SEEDS)}, mean iters (solved) = {mean_it_on:.1f}")
+    logger.info(f"  ON : solved {n_on}/{len(SEEDS)}, mean iters (solved) = {mean_it_on:.1f}")
     if solved_off and solved_on:
-        print(
+        logger.info(
             f"  Mean iters speedup (OFF/ON, over each side's own solved set) = "
             f"{mean_it_off / mean_it_on:.2f}x"
         )
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

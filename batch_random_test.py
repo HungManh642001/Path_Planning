@@ -2,6 +2,10 @@
 Run tests with random scenarios and visualize the results.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import json
 import math
 import os
@@ -84,9 +88,9 @@ def print_header(text):
     Args:
         text: Header text to print
     """
-    print("\n" + "=" * 80)
-    print(text)
-    print("=" * 80 + "\n")
+    logger.info("\n" + "=" * 80)
+    logger.info(text)
+    logger.info("=" * 80 + "\n")
 
 
 def run_scenario(scenario_func, scenario_name, seed=42, output_dir="results"):
@@ -113,21 +117,21 @@ def run_scenario(scenario_func, scenario_name, seed=42, output_dir="results"):
 
     try:
         # Generate scenario
-        print("  Generating scenario...")
+        logger.info("  Generating scenario...")
         metrics.start_timer("generation")
         scenario = scenario_func(seed=seed)
         metrics.end_timer("generation")
-        print(f"    Islands: {len(scenario.get('islands', []))}")
-        print(f"    Dynamic Obstacles: {len(scenario.get('dynamic_obstacles', []))}")
+        logger.info(f"    Islands: {len(scenario.get('islands', []))}")
+        logger.info(f"    Dynamic Obstacles: {len(scenario.get('dynamic_obstacles', []))}")
 
         # Preprocess
-        print("  Preprocessing...")
+        logger.info("  Preprocessing...")
         metrics.start_timer("preprocessing")
         preprocessed = prep.prepare_scenario(scenario)
         preprocessed_time = metrics.end_timer("preprocessing")
 
         # Plan trajectory
-        print("  Planning trajectory...")
+        logger.info("  Planning trajectory...")
         metrics.start_timer("planning")
         result = astar.plan_trajectory(preprocessed, verbose=False)
         planning_time = metrics.end_timer("planning")
@@ -141,7 +145,7 @@ def run_scenario(scenario_func, scenario_name, seed=42, output_dir="results"):
             metrics.record_path_stats(result["path"], preprocessed)
 
         # Visualize
-        print("  Creating visualizations...")
+        logger.info("  Creating visualizations...")
         metrics.start_timer("visualization")
 
         # Main trajectory plot
@@ -170,8 +174,8 @@ def run_scenario(scenario_func, scenario_name, seed=42, output_dir="results"):
         }
 
     except Exception as e:
-        print(f"\n❌ {scenario_name}: FAILED")
-        print(f"   Error: {str(e)}")
+        logger.info(f"\n❌ {scenario_name}: FAILED")
+        logger.info(f"   Error: {str(e)}")
         return {
             "scenario_name": scenario_name,
             "success": False,
@@ -195,13 +199,13 @@ def run_batch_random_tests(num_tests=1000, output_dir="results1"):
         "AUTONOMOUS AIRCRAFT PATH PLANNING SYSTEM - COMPREHENSIVE TEST SUITE (16 SCENARIOS)"
     )
 
-    print("\nConfiguration:")
-    print(f"  R (turn radius): {config.R} m")
-    print(f"  alpha_max: {config.ALPHA_MAX}°")
-    print(f"  L_0 (stabilization distance): {config.L0} m")
-    print(f"  d_ss (engagement distance): {config.DSS} m")
-    print(f"  Safe margin: {config.SAFE_MARGIN} m")
-    print(
+    logger.info("\nConfiguration:")
+    logger.info(f"  R (turn radius): {config.R} m")
+    logger.info(f"  alpha_max: {config.ALPHA_MAX}°")
+    logger.info(f"  L_0 (stabilization distance): {config.L0} m")
+    logger.info(f"  d_ss (engagement distance): {config.DSS} m")
+    logger.info(f"  Safe margin: {config.SAFE_MARGIN} m")
+    logger.info(
         f"  Map bounds: {config.MAP_WIDTH / 1000:.0f}km x {config.MAP_HEIGHT / 1000:.0f}km"
     )
 
@@ -310,6 +314,7 @@ def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     # Configure logging
     logger = setup_logging("BatchRandomTest", log_file="logs/batch_random_test.log")
     main()
