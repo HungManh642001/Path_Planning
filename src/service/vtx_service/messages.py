@@ -47,12 +47,18 @@ class PlanStatus(IntEnum):
 
 @dataclass(frozen=True)
 class Circle:
-    """Chướng ngại vật tròn."""
+    """Chướng ngại vật tròn.
+
+    Attributes:
+        center: The center.
+        radius_m: The radius_m.
+    """
 
     center: Point
     radius_m: float
 
     def __post_init__(self) -> None:
+        """Validate values."""
         if not self.radius_m > 0.0:
             raise ValueError(f"radius_m phải dương, nhận {self.radius_m}")
 
@@ -63,6 +69,13 @@ class VehicleLimits:
 
     Ánh xạ 1-1 sang tham số của ``core.preprocessing.prepare_scenario``. Mọi
     hằng số khác của planner là global và cố định lúc triển khai.
+
+    Attributes:
+        turn_radius_m: The turn_radius_m.
+        l0_m: The l0_m.
+        dss_m: The dss_m.
+        safe_margin_m: The safe_margin_m.
+        alpha_max_deg: The alpha_max_deg.
     """
 
     turn_radius_m: float
@@ -72,6 +85,7 @@ class VehicleLimits:
     alpha_max_deg: float
 
     def __post_init__(self) -> None:
+        """Validate limits."""
         for name in ("turn_radius_m", "l0_m", "dss_m", "alpha_max_deg"):
             value = getattr(self, name)
             if not value > 0.0:
@@ -95,6 +109,9 @@ class SearchBudget:
     con số vòng lặp không phải đại lượng người vận hành suy luận được, và hai
     điều kiện dừng độc lập khiến một lần search có thể kết thúc vì lý do mà
     reply không hề nói ra.
+
+    Attributes:
+        time_budget_s: The time_budget_s.
     """
 
     time_budget_s: float
@@ -102,7 +119,23 @@ class SearchBudget:
 
 @dataclass(frozen=True)
 class PlanRequest:
-    """Một mission cần lập kế hoạch."""
+    """Một mission cần lập kế hoạch.
+
+    Attributes:
+        request_id: The request_id.
+        idl_version: The idl_version.
+        start: The start.
+        start_heading_deg: The start_heading_deg.
+        goal: The goal.
+        goal_heading_deg: The goal_heading_deg.
+        goal_heading_free: The goal_heading_free.
+        islands: The islands.
+        dynamic_obstacles: The dynamic_obstacles.
+        safezones: The safezones.
+        use_preloaded_map: The use_preloaded_map.
+        limits: The limits.
+        budget: The budget.
+    """
 
     request_id: bytes
     idl_version: int
@@ -119,6 +152,7 @@ class PlanRequest:
     budget: SearchBudget
 
     def __post_init__(self) -> None:
+        """Validate request ID."""
         if len(self.request_id) != 16:
             raise ValueError(
                 f"request_id phải đúng 16 byte, nhận {len(self.request_id)}"
@@ -127,7 +161,12 @@ class PlanRequest:
 
 @dataclass(frozen=True)
 class Waypoint:
-    """Một điểm trên đường bay trả về."""
+    """Một điểm trên đường bay trả về.
+
+    Attributes:
+        position: The position.
+        heading_deg: The heading_deg.
+    """
 
     position: Point
     heading_deg: float
@@ -140,6 +179,12 @@ class SearchStats:
     ``budget_bound`` là trường hạng nhất chứ không phải chi tiết ẩn: planner cắt
     theo đồng hồ, nên cùng một request trên máy tải nặng có thể ra đường bay
     khác. Che giấu điều đó khiến client tin vào một sự đảm bảo không tồn tại.
+
+    Attributes:
+        iterations: The iterations.
+        open_set_size: The open_set_size.
+        search_failed: The search_failed.
+        budget_bound: The budget_bound.
     """
 
     iterations: int
@@ -150,7 +195,21 @@ class SearchStats:
 
 @dataclass(frozen=True)
 class PlanReply:
-    """Kết quả trả về client."""
+    """Kết quả trả về client.
+
+    Attributes:
+        request_id: The request_id.
+        idl_version: The idl_version.
+        status: The status.
+        detail: The detail.
+        waypoints: The waypoints.
+        path_length_m: The path_length_m.
+        plan_wall_time_s: The plan_wall_time_s.
+        applied_time_budget_s: The applied_time_budget_s.
+        stats: The stats.
+        planner_version: The planner_version.
+        config_hash: The config_hash.
+    """
 
     request_id: bytes
     idl_version: int
@@ -166,4 +225,9 @@ class PlanReply:
 
     @property
     def ok(self) -> bool:
+        """Check if status is OK.
+
+        Returns:
+            bool: True if OK, False otherwise.
+        """
         return self.status is PlanStatus.OK

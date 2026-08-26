@@ -18,6 +18,14 @@ from types import FrameType
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Chạy service lập lịch đường bay DDS.
+
+    Args:
+        argv: Danh sách tham số dòng lệnh. Nếu None, dùng sys.argv.
+
+    Returns:
+        int: Mã exit của tiến trình.
+    """
     parser = argparse.ArgumentParser(description="VTX path planning DDS service")
     parser.add_argument("--domain-id", type=int, default=0)
     parser.add_argument(
@@ -74,6 +82,14 @@ def main(argv: list[str] | None = None) -> int:
     log.info("sẵn sàng trên domain %d", args.domain_id)
 
     def handle(request: PlanRequest) -> PlanReply:
+        """Xử lý một request lập lịch từ DDS.
+
+        Args:
+            request: Yêu cầu lập lịch nhận được.
+
+        Returns:
+            PlanReply: Kết quả lập lịch trả về cho client.
+        """
         reply = runner.submit(request)
         log.info(
             "request %s -> %s, %d waypoint, %.3f s",
@@ -92,6 +108,12 @@ def main(argv: list[str] | None = None) -> int:
         return reply
 
     def stop(signum: int, frame: FrameType | None) -> None:
+        """Xử lý tín hiệu dừng service.
+
+        Args:
+            signum: Mã tín hiệu hệ thống.
+            frame: Khung thực thi hiện tại.
+        """
         log.info("nhận tín hiệu %s, đang dừng", signal.Signals(signum).name)
         transport.close()
 

@@ -43,17 +43,20 @@ DOMAIN = 91
 
 @dataclass
 class Point2D(IdlStruct, typename="vtx.planning.Point2D"):
+    """Point 2D."""
     x: float
     y: float
 
 
 @dataclass
 class Polygon(IdlStruct, typename="vtx.planning.Polygon"):
+    """Polygon."""
     vertices: sequence[Point2D]
 
 
 @dataclass
 class Probe(IdlStruct, typename="vtx.planning.Probe"):
+    """Probe."""
     request_id: array[uint8, 16]
     key("request_id")
     idl_version: int
@@ -76,6 +79,7 @@ def _endpoint():
 
 
 def send() -> None:
+    """Send probe message."""
     participant, topic = _endpoint()
     writer = DataWriter(Publisher(participant), topic, qos=REQ_QOS)
     time.sleep(2.0)  # discovery
@@ -94,6 +98,7 @@ def send() -> None:
 
 
 def listen() -> None:
+    """Listen for probe messages."""
     participant, topic = _endpoint()
     reader = DataReader(Subscriber(participant), topic, qos=REQ_QOS)
     condition = ReadCondition(

@@ -1228,7 +1228,11 @@ class KinodynamicAstar:
         return path
 
     def get_search_stats(self) -> SearchStats:
-        """Return the counters describing how the last search ran."""
+        """Return the counters describing how the last search ran.
+
+        Returns:
+            SearchStats: The search statistics.
+        """
         return {
             "iterations": self.iteration_count,
             "time_budget_s": self.time_budget_s,
@@ -1323,7 +1327,16 @@ class KinodynamicAstar:
         arc_memo: dict[tuple[int, int, int], bool] = {}
 
         def arc_ok(u: int, v: int, w: int) -> bool:
-            """Memoised fillet-arc gate for the corner at ``v`` between ``u`` and ``w``."""
+            """Memoised fillet-arc gate for the corner at ``v`` between ``u`` and ``w``.
+
+            Args:
+                u: The first waypoint index.
+                v: The corner waypoint index.
+                w: The next waypoint index.
+
+            Returns:
+                bool: True if the arc is clear of obstacles, False otherwise.
+            """
             if not config.ARC_CLEARANCE_CHECK:
                 return True
             hit = arc_memo.get((u, v, w))

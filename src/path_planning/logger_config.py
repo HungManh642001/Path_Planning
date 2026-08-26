@@ -1,3 +1,4 @@
+"""Logger configuration."""
 import logging
 import os
 import sys
@@ -6,8 +7,7 @@ from logging.handlers import RotatingFileHandler
 
 # Set up logging configuration
 def setup_logging(service_name, log_file="app.log"):
-    """
-    Set up logging configuration for the application.
+    """Set up logging configuration for the application.
 
     Args:
         service_name (str): Name of the service or application.

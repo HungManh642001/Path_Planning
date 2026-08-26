@@ -64,7 +64,9 @@ _SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _ensure_pythonpath_for_forkserver() -> None:
-    """Đảm bảo tiến trình forkserver import được ``_PRELOAD`` - ĐO ĐƯỢC cái giá
+    """Đảm bảo tiến trình forkserver import được ``_PRELOAD``.
+
+    ĐO ĐƯỢC cái giá - ĐO ĐƯỢC cái giá
     của việc không làm điều này: ~50x mỗi request, ÂM THẦM.
 
     ``forkserver`` là fork+exec một interpreter HOÀN TOÀN MỚI (xem docstring

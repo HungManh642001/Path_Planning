@@ -57,7 +57,13 @@ RidingSense = Literal[-1, 0, 1]
 
 
 class CircleObstacle(TypedDict):
-    """A circular (dynamic) obstacle."""
+    """A circular (dynamic) obstacle.
+
+    Attributes:
+        type: The obstacle type.
+        center: Center point.
+        radius: Radius.
+    """
 
     type: Literal["circle"]
     center: Point
@@ -65,7 +71,12 @@ class CircleObstacle(TypedDict):
 
 
 class PolygonObstacle(TypedDict):
-    """A polygonal (island) obstacle."""
+    """A polygonal (island) obstacle.
+
+    Attributes:
+        type: The obstacle type.
+        polygon: Polygon coordinates.
+    """
 
     type: Literal["polygon"]
     polygon: PolygonCoords
@@ -85,6 +96,18 @@ class ScenarioConfig(TypedDict, total=False):
     generator knobs, but ``start`` and ``goal`` are validated at runtime: the
     obstacle samplers place obstacles relative to the start-goal line and cannot
     run without them.
+
+    Attributes:
+        start: Start point.
+        start_heading: Start heading.
+        goal: Goal point.
+        goal_heading: Goal heading.
+        num_islands: Number of islands.
+        num_dynamic_obstacles: Number of dynamic obstacles.
+        map_bounds: Map bounds.
+        safezones: Safe zones.
+        topology: Topology.
+        seed: Seed.
     """
 
     start: Point
@@ -106,6 +129,17 @@ class Scenario(TypedDict):
     ``obstacles`` is the unified tagged-union list the rest of the pipeline
     consumes. A ``goal_heading`` of ``None`` selects free-goal mode, in which
     the planner chooses the terminal approach direction.
+
+    Attributes:
+        start: Start point.
+        start_heading: Start heading.
+        goal: Goal point.
+        goal_heading: Goal heading.
+        map_bounds: Map bounds.
+        safezones: Safe zones.
+        islands: Islands.
+        dynamic_obstacles: Dynamic obstacles.
+        obstacles: Obstacles.
     """
 
     start: Point
@@ -172,7 +206,14 @@ class PlanResultView(TypedDict):
 
 
 class StartState(TypedDict):
-    """The first searched waypoint ``W_1``, offset from takeoff point ``O``."""
+    """The first searched waypoint ``W_1``, offset from takeoff point ``O``.
+
+    Attributes:
+        waypoint: Waypoint.
+        heading: Heading.
+        straight_length: Straight length.
+        distance_from_origin: Distance from origin.
+    """
 
     waypoint: Point
     heading: float
@@ -186,6 +227,12 @@ class GoalState(TypedDict):
     In free-goal mode ``heading`` is ``None`` and ``waypoint`` is ``T`` itself:
     there is no fixed approach direction to offset along, so the final searched
     edge becomes the seeker run-in.
+
+    Attributes:
+        waypoint: Waypoint.
+        heading: Heading.
+        engagement_distance: Engagement distance.
+        distance_to_target: Distance to target.
     """
 
     waypoint: Point
@@ -195,7 +242,13 @@ class GoalState(TypedDict):
 
 
 class InflatedObstacleSets(TypedDict):
-    """Obstacles inflated by the stand-off margin, split by type for the search."""
+    """Obstacles inflated by the stand-off margin, split by type for the search.
+
+    Attributes:
+        inflated_obstacles: Inflated obstacles.
+        circle_obstacles: Circle obstacles.
+        polygon_obstacles: Polygon obstacles.
+    """
 
     inflated_obstacles: list[Obstacle]
     circle_obstacles: list[CircleGeometry]
@@ -215,6 +268,26 @@ class PreprocessedScenario(TypedDict):
     small hand-chosen geometry -- and the consumers already read them through
     ``.get``. Marking them required would make the type checker bless code that
     raises ``KeyError`` on those inputs.
+
+    Attributes:
+        start_state: Start state.
+        goal_state: Goal state.
+        turn_radius: Turn radius.
+        alpha_max_rad: Alpha max rad.
+        circle_obstacles: Circle obstacles.
+        polygon_obstacles: Polygon obstacles.
+        safezones: Safe zones.
+        map_bounds: Map bounds.
+        start_pos: Start pos.
+        goal_pos: Goal pos.
+        start_heading: Start heading.
+        goal_heading: Goal heading.
+        safe_margin: Safe margin.
+        obstacles: Obstacles.
+        raw_circle_obstacles: Raw circle obstacles.
+        raw_polygon_obstacles: Raw polygon obstacles.
+        islands: Islands.
+        dynamic_obstacles: Dynamic obstacles.
     """
 
     start_state: StartState

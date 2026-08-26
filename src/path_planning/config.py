@@ -1,5 +1,5 @@
-"""
-Configuration Module for Autonomous Aircraft Path Planning System
+"""Configuration Module for Autonomous Aircraft Path Planning System.
+
 Defines operational parameters and parameters
 """
 
@@ -552,12 +552,12 @@ SPAWN_CLEARANCE_M = 5000.0
 
 
 def deg_to_rad(degrees: float) -> float:
-    """Convert degrees to radians"""
+    """Convert degrees to radians."""
     return math.radians(degrees)
 
 
 def rad_to_deg(radians: float) -> float:
-    """Convert radians to degrees"""
+    """Convert radians to degrees."""
     return math.degrees(radians)
 
 

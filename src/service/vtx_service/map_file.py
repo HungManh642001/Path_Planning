@@ -27,7 +27,13 @@ _CLOSING_TOL_M = 1e-9
 
 @dataclass(frozen=True)
 class PreloadedMap:
-    """Vùng bay và chướng ngại vật nền, toạ độ mét trong hệ Oxy."""
+    """Vùng bay và chướng ngại vật nền, toạ độ mét trong hệ Oxy.
+
+    Attributes:
+        safezones: Danh sách vùng an toàn.
+        islands: Danh sách đảo.
+        dynamic_obstacles: Danh sách chướng ngại vật động.
+    """
 
     safezones: tuple[tuple[Point, ...], ...]
     islands: tuple[tuple[Point, ...], ...]

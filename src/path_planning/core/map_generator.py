@@ -332,7 +332,11 @@ def create_scenario(scenario_config: ScenarioConfig) -> Scenario:
 
 
 def scenario1_open_ocean() -> Scenario:
-    """Scenario 1: Open ocean - no obstacles."""
+    """Scenario 1: Open ocean - no obstacles.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (2000, 2000),
@@ -347,7 +351,11 @@ def scenario1_open_ocean() -> Scenario:
 
 
 def scenario2_single_obstacle() -> Scenario:
-    """Scenario 2: Single large obstacle in the way."""
+    """Scenario 2: Single large obstacle in the way.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (2000, 2000),
@@ -362,7 +370,11 @@ def scenario2_single_obstacle() -> Scenario:
 
 
 def scenario3_narrow_gap() -> Scenario:
-    """Scenario 3: Two obstacles very close together (narrow gap)."""
+    """Scenario 3: Two obstacles very close together (narrow gap).
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     scenario = create_scenario(
         {
             "start": (2000, 2000),
@@ -402,7 +414,11 @@ def scenario3_narrow_gap() -> Scenario:
 
 
 def scenario4_complex_maze() -> Scenario:
-    """Scenario 4: Complex maze with many obstacles."""
+    """Scenario 4: Complex maze with many obstacles.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (1000, 1000),
@@ -420,7 +436,11 @@ def scenario4_complex_maze() -> Scenario:
 
 
 def scenario5_sparse_islands() -> Scenario:
-    """Scenario 5: Easy - Sparse islands, plenty of open water."""
+    """Scenario 5: Easy - Sparse islands, plenty of open water.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (5000, 5000),
@@ -435,7 +455,11 @@ def scenario5_sparse_islands() -> Scenario:
 
 
 def scenario6_coastal_path() -> Scenario:
-    """Scenario 6: Easy - Light coastal dynamic obstacles, open corridor."""
+    """Scenario 6: Easy - Light coastal dynamic obstacles, open corridor.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (10000, 10000),
@@ -450,7 +474,11 @@ def scenario6_coastal_path() -> Scenario:
 
 
 def scenario7_diagonal_crossing() -> Scenario:
-    """Scenario 7: Easy - Minimal obstacles, diagonal crossing."""
+    """Scenario 7: Easy - Minimal obstacles, diagonal crossing.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (20000, 20000),
@@ -465,7 +493,11 @@ def scenario7_diagonal_crossing() -> Scenario:
 
 
 def scenario8_open_with_dynamic_obstacles() -> Scenario:
-    """Scenario 8: Easy - Open terrain with scattered dynamic obstacles."""
+    """Scenario 8: Easy - Open terrain with scattered dynamic obstacles.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (10000, 250000),
@@ -483,7 +515,11 @@ def scenario8_open_with_dynamic_obstacles() -> Scenario:
 
 
 def scenario9_island_archipelago() -> Scenario:
-    """Scenario 9: Medium - Archipelago with multiple islands."""
+    """Scenario 9: Medium - Archipelago with multiple islands.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (5000, 250000),
@@ -498,7 +534,11 @@ def scenario9_island_archipelago() -> Scenario:
 
 
 def scenario10_dense_dynamic_obstacles() -> Scenario:
-    """Scenario 10: Medium - Dense dynamic obstacle field with some islands."""
+    """Scenario 10: Medium - Dense dynamic obstacle field with some islands.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (50000, 50000),
@@ -513,7 +553,11 @@ def scenario10_dense_dynamic_obstacles() -> Scenario:
 
 
 def scenario11_serpentine_route() -> Scenario:
-    """Scenario 11: Medium - Serpentine path through obstacle field."""
+    """Scenario 11: Medium - Serpentine path through obstacle field.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (50000, 100000),
@@ -528,7 +572,11 @@ def scenario11_serpentine_route() -> Scenario:
 
 
 def scenario12_perimeter_dynamic_obstacles() -> Scenario:
-    """Scenario 12: Medium - Goal protected by perimeter dynamic obstacles."""
+    """Scenario 12: Medium - Goal protected by perimeter dynamic obstacles.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (10000, 250000),
@@ -546,7 +594,11 @@ def scenario12_perimeter_dynamic_obstacles() -> Scenario:
 
 
 def scenario13_dense_island_field() -> Scenario:
-    """Scenario 13: Hard - Very dense island field."""
+    """Scenario 13: Hard - Very dense island field.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (25000, 25000),
@@ -561,7 +613,11 @@ def scenario13_dense_island_field() -> Scenario:
 
 
 def scenario14_combined_obstacles() -> Scenario:
-    """Scenario 14: Hard - Combined island and dynamic obstacle."""
+    """Scenario 14: Hard - Combined island and dynamic obstacle.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (30000, 30000),
@@ -576,7 +632,11 @@ def scenario14_combined_obstacles() -> Scenario:
 
 
 def scenario15_narrow_channel() -> Scenario:
-    """Scenario 15: Hard - Forced through narrow channels between obstacles."""
+    """Scenario 15: Hard - Forced through narrow channels between obstacles.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (50000, 250000),
@@ -591,7 +651,11 @@ def scenario15_narrow_channel() -> Scenario:
 
 
 def scenario16_extreme_complexity() -> Scenario:
-    """Scenario 16: Very Hard - Extreme complexity test."""
+    """Scenario 16: Very Hard - Extreme complexity test.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (10000, 10000),
@@ -613,6 +677,9 @@ def scenario17_reversed_approach_open() -> Scenario:
     the terminal is a genuine turn-around. Every other preset here approaches
     within 45 deg of the outbound bearing, which left the whole regime
     unmeasured -- and the analytic goal shot exists precisely for it.
+
+    Returns:
+        Scenario: The configured mission scenario.
     """
     return create_scenario(
         {
@@ -628,7 +695,11 @@ def scenario17_reversed_approach_open() -> Scenario:
 
 
 def scenario18_reversed_approach_cluttered() -> Scenario:
-    """Scenario 18: the same turn-around, with obstacles to turn around inside."""
+    """Scenario 18: the same turn-around, with obstacles to turn around inside.
+
+    Returns:
+        Scenario: The configured mission scenario.
+    """
     return create_scenario(
         {
             "start": (50000, 100000),
@@ -643,7 +714,11 @@ def scenario18_reversed_approach_cluttered() -> Scenario:
 
 
 def get_all_scenarios() -> dict[str, Callable[[], Scenario]]:
-    """Return all 18 predefined scenarios organized by difficulty."""
+    """Return all 18 predefined scenarios organized by difficulty.
+
+    Returns:
+        dict[str, Callable]: A dictionary mapping scenario names to their builder functions.
+    """
     return {
         # Original scenarios
         "scenario_01_open_ocean": scenario1_open_ocean,

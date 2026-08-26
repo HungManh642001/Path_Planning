@@ -64,23 +64,46 @@ REPLY_QOS = Qos(
 
 @dataclass
 class Point2D(IdlStruct, typename="vtx.planning.Point2D"):
+    """Point 2D structure.
+
+    Attributes:
+        x: X coordinate.
+        y: Y coordinate.
+    """
     x: float
     y: float
 
 
 @dataclass
 class Polygon(IdlStruct, typename="vtx.planning.Polygon"):
+    """Polygon structure.
+
+    Attributes:
+        vertices: List of vertices.
+    """
     vertices: sequence[Point2D]
 
 
 @dataclass
 class Circle(IdlStruct, typename="vtx.planning.Circle"):
+    """Circle structure.
+
+    Attributes:
+        center: Center point.
+        radius_m: Radius in meters.
+    """
     center: Point2D
     radius_m: float
 
 
 @dataclass
 class VehicleLimits(IdlStruct, typename="vtx.planning.VehicleLimits"):
+    """Vehicle limits structure.
+
+    Attributes:
+        turn_radius_m: Turn radius in meters.
+        l0_m: L0 in meters.
+    """
     turn_radius_m: float
     l0_m: float
     dss_m: float
@@ -90,11 +113,21 @@ class VehicleLimits(IdlStruct, typename="vtx.planning.VehicleLimits"):
 
 @dataclass
 class SearchBudget(IdlStruct, typename="vtx.planning.SearchBudget"):
+    """Search budget structure.
+
+    Attributes:
+        time_budget_s: Time budget in seconds.
+    """
     time_budget_s: float
 
 
 @dataclass
 class WireRequest(IdlStruct, typename="vtx.planning.VtxPathPlanRequest"):
+    """Wire request structure.
+
+    Attributes:
+        request_id: Request ID.
+    """
     request_id: array[uint8, 16]
     key("request_id")
     idl_version: uint32
@@ -113,12 +146,24 @@ class WireRequest(IdlStruct, typename="vtx.planning.VtxPathPlanRequest"):
 
 @dataclass
 class Waypoint(IdlStruct, typename="vtx.planning.Waypoint"):
+    """Waypoint structure.
+
+    Attributes:
+        position: Waypoint position.
+        heading_deg: Heading in degrees.
+    """
     position: Point2D
     heading_deg: float
 
 
 @dataclass
 class SearchStats(IdlStruct, typename="vtx.planning.SearchStats"):
+    """Search stats structure.
+
+    Attributes:
+        iterations: Number of iterations.
+        open_set_size: Size of open set.
+    """
     iterations: uint32
     open_set_size: uint32
     search_failed: bool
@@ -127,6 +172,11 @@ class SearchStats(IdlStruct, typename="vtx.planning.SearchStats"):
 
 @dataclass
 class WireReply(IdlStruct, typename="vtx.planning.VtxPathPlanReply"):
+    """Wire reply structure.
+
+    Attributes:
+        request_id: Request ID.
+    """
     request_id: array[uint8, 16]
     key("request_id")
     idl_version: uint32
@@ -187,6 +237,14 @@ def _to_domain(wire: WireRequest) -> msg.PlanRequest:
 
 def _to_wire_request(request: msg.PlanRequest) -> WireRequest:
     def rings(source: tuple[tuple[msg.Point, ...], ...]) -> list[Polygon]:
+        """Convert a tuple of rings to a list of Polygons.
+
+        Args:
+            source: The source tuple of rings.
+
+        Returns:
+            list[Polygon]: The list of polygons.
+        """
         return [Polygon(vertices=[Point2D(x, y) for x, y in ring]) for ring in source]
 
     return WireRequest(
@@ -331,6 +389,11 @@ class DdsTransport:
     """
 
     def __init__(self, domain_id: int = 0) -> None:
+        """Initialize DdsTransport.
+
+        Args:
+            domain_id: DDS domain ID.
+        """
         self._participant = DomainParticipant(domain_id)
         self._request_topic = Topic(
             self._participant, REQUEST_TOPIC, WireRequest, qos=REQUEST_QOS
