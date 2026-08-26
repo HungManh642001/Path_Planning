@@ -50,13 +50,19 @@ def full_mission_path(
     start_heading = preprocessed.get("start_heading", 0.0)
     goal_heading = preprocessed.get("goal_heading", 0.0)
 
-    if takeoff is not None and (not waypoints or math.dist(takeoff, waypoints[0][0]) > 1.0):
+    if takeoff is not None and (
+        not waypoints or math.dist(takeoff, waypoints[0][0]) > 1.0
+    ):
         waypoints.insert(0, ((takeoff[0], takeoff[1]), start_heading))
-    if target is not None and (not waypoints or math.dist(target, waypoints[-1][0]) > 1.0):
+    if target is not None and (
+        not waypoints or math.dist(target, waypoints[-1][0]) > 1.0
+    ):
         if goal_heading is None:
             # Free-goal mode leaves goal_heading None; the arrival heading is
             # then the bearing of the final leg into T.
             last = waypoints[-1][0] if waypoints else None
-            goal_heading = math.atan2(target[1] - last[1], target[0] - last[0]) if last else 0.0
+            goal_heading = (
+                math.atan2(target[1] - last[1], target[0] - last[0]) if last else 0.0
+            )
         waypoints.append(((target[0], target[1]), goal_heading))
     return waypoints

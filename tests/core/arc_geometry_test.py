@@ -1,9 +1,13 @@
 """Unit tests for core/arc_geometry.py (pure geometry, no planner)."""
+
 import math
 
-from path_planning.core import arc_geometry as ag
-from path_planning.core import path_validation as pv
-from path_planning.core import spatial_utils as su
+from path_planning.core import (
+    arc_geometry as ag,
+    path_validation as pv,
+    spatial_utils as su,
+)
+
 
 C = (100000.0, 100000.0)
 R_C = 20000.0
@@ -75,8 +79,12 @@ def test_bitangent_departures_disjoint_circles():
     res = ag.bitangent_departures(c1, r1, c2, r2, +1)
     assert len(res) == 2  # one outer + one inner survive the sense filter
     for dep, arr in res:
-        assert math.isclose(math.hypot(dep[0] - c1[0], dep[1] - c1[1]), r1, rel_tol=1e-9)
-        assert math.isclose(math.hypot(arr[0] - c2[0], arr[1] - c2[1]), r2, rel_tol=1e-9)
+        assert math.isclose(
+            math.hypot(dep[0] - c1[0], dep[1] - c1[1]), r1, rel_tol=1e-9
+        )
+        assert math.isclose(
+            math.hypot(arr[0] - c2[0], arr[1] - c2[1]), r2, rel_tol=1e-9
+        )
         # The line dep->arr is tangent to both circles.
         assert math.isclose(su.point_to_line_distance(c1, dep, arr), r1, rel_tol=1e-6)
         assert math.isclose(su.point_to_line_distance(c2, dep, arr), r2, rel_tol=1e-6)

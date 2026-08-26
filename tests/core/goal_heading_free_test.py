@@ -8,9 +8,11 @@ straight seeker run-in of length >= DSS in a search-chosen direction.
 import math
 
 from path_planning import config
-from path_planning.core import map_generator as mg
-from path_planning.core import preprocessing as prep
-from path_planning.core import kinodynamic_astar as astar
+from path_planning.core import (
+    kinodynamic_astar as astar,
+    map_generator as mg,
+    preprocessing as prep,
+)
 
 
 # Comparison slack for a length in metres. Was config.EPS, which is gone: it
@@ -29,7 +31,9 @@ def _usable_runin(path, R):
     straight seeker leg."""
     a, b = path[-2][0], path[-1][0]
     bearing = math.atan2(b[1] - a[1], b[0] - a[0])
-    turn = abs(math.atan2(math.sin(bearing - path[-2][1]), math.cos(bearing - path[-2][1])))
+    turn = abs(
+        math.atan2(math.sin(bearing - path[-2][1]), math.cos(bearing - path[-2][1]))
+    )
     return _leg_len(a, b) - R * math.tan(turn / 2.0)
 
 
@@ -46,67 +50,74 @@ def _total_len(path, start_pos, goal_pos):
 # preprocessing
 # --------------------------------------------------------------------------- #
 
+
 def test_prepare_scenario_free_goal_state():
     scenario = mg.scenario1_open_ocean()
-    scenario['goal_heading'] = None
+    scenario["goal_heading"] = None
     pre = prep.prepare_scenario(scenario)
 
-    assert pre['goal_heading'] is None
-    assert pre['goal_state']['heading'] is None
-    assert pre['goal_state']['waypoint'] == scenario['goal']
-    assert pre['goal_state']['engagement_distance'] == config.DSS
+    assert pre["goal_heading"] is None
+    assert pre["goal_state"]["heading"] is None
+    assert pre["goal_state"]["waypoint"] == scenario["goal"]
+    assert pre["goal_state"]["engagement_distance"] == config.DSS
 
 
 def test_create_scenario_defaults_goal_heading_to_none():
     # Omitting goal_heading => free mode.
-    scenario = mg.create_scenario({'start': (2000, 2000), 'goal': (400000, 400000)})
-    assert scenario['goal_heading'] is None
+    scenario = mg.create_scenario({"start": (2000, 2000), "goal": (400000, 400000)})
+    assert scenario["goal_heading"] is None
 
 
 # --------------------------------------------------------------------------- #
 # end-to-end free-mode planning
 # --------------------------------------------------------------------------- #
 
+
 def test_open_water_free_goal_arrives_straight_at_target():
     scenario = mg.scenario1_open_ocean()
-    scenario['goal_heading'] = None
+    scenario["goal_heading"] = None
     pre = prep.prepare_scenario(scenario)
 
     result = astar.plan_trajectory(pre)
-    assert result['success'], "free-goal open-water plan should succeed"
+    assert result["success"], "free-goal open-water plan should succeed"
 
-    path = result['path']
-    T = scenario['goal']
+    path = result["path"]
+    T = scenario["goal"]
     # Path ends exactly at T.
     assert path[-1][0] == T
     assert len(path) >= 2
 
     # Final leg is a straight run-in whose USABLE length (after the turn fillet
     # at the previous waypoint) is >= DSS, heading pointing at T.
-    usable = _usable_runin(path, pre['turn_radius'])
-    assert usable >= config.DSS - _LEN_TOL_M, f"usable run-in {usable} shorter than DSS {config.DSS}"
+    usable = _usable_runin(path, pre["turn_radius"])
+    assert usable >= config.DSS - _LEN_TOL_M, (
+        f"usable run-in {usable} shorter than DSS {config.DSS}"
+    )
 
     bearing_to_T = math.atan2(T[1] - path[-2][0][1], T[0] - path[-2][0][0])
-    dh = abs(math.atan2(math.sin(path[-1][1] - bearing_to_T),
-                        math.cos(path[-1][1] - bearing_to_T)))
+    dh = abs(
+        math.atan2(
+            math.sin(path[-1][1] - bearing_to_T), math.cos(path[-1][1] - bearing_to_T)
+        )
+    )
     assert dh < 1e-3, "arrival heading should point straight at T"
 
 
 def test_free_goal_with_obstacles_has_clear_run_in():
     scenario = mg.scenario2_single_obstacle()
-    scenario['goal_heading'] = None
+    scenario["goal_heading"] = None
     pre = prep.prepare_scenario(scenario)
 
     result = astar.plan_trajectory(pre)
-    assert result['success']
+    assert result["success"]
 
-    path = result['path']
-    assert path[-1][0] == scenario['goal']
+    path = result["path"]
+    assert path[-1][0] == scenario["goal"]
     # Usable straight run-in (after the turn fillet at the previous waypoint)
     # must be >= DSS: room to bank onto the run-in AND the full seeker leg.
-    assert _usable_runin(path, pre['turn_radius']) >= config.DSS - _LEN_TOL_M
+    assert _usable_runin(path, pre["turn_radius"]) >= config.DSS - _LEN_TOL_M
     # The run-in edge is collision-free per the planner's exact check.
-    assert result['planner']._check_collision(path[-2][0], path[-1][0])
+    assert result["planner"]._check_collision(path[-2][0], path[-1][0])
 
 
 def test_free_goal_not_worse_than_fixed():
@@ -115,16 +126,16 @@ def test_free_goal_not_worse_than_fixed():
     base = mg.scenario1_open_ocean()
 
     fixed = dict(base)
-    fixed['goal_heading'] = math.pi / 4
+    fixed["goal_heading"] = math.pi / 4
     r_fixed = astar.plan_trajectory(prep.prepare_scenario(fixed))
 
     free = dict(base)
-    free['goal_heading'] = None
+    free["goal_heading"] = None
     r_free = astar.plan_trajectory(prep.prepare_scenario(free))
 
-    assert r_fixed['success'] and r_free['success']
-    len_fixed = _total_len(r_fixed['path'], base['start'], base['goal'])
-    len_free = _total_len(r_free['path'], base['start'], base['goal'])
+    assert r_fixed["success"] and r_free["success"]
+    len_fixed = _total_len(r_fixed["path"], base["start"], base["goal"])
+    len_free = _total_len(r_free["path"], base["start"], base["goal"])
     assert len_free <= len_fixed * 1.02 + _LEN_TOL_M
 
 
@@ -132,10 +143,11 @@ def test_free_goal_not_worse_than_fixed():
 # fixed mode is unaffected
 # --------------------------------------------------------------------------- #
 
+
 def test_fixed_mode_still_requires_alignment():
     scenario = mg.scenario1_open_ocean()  # explicit goal_heading = pi/4
-    assert scenario['goal_heading'] is not None
+    assert scenario["goal_heading"] is not None
     pre = prep.prepare_scenario(scenario)
     result = astar.plan_trajectory(pre)
-    assert result['success']
-    assert result['planner']._free_goal is False
+    assert result["success"]
+    assert result["planner"]._free_goal is False

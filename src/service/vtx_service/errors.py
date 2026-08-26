@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import secrets
 
+
 ERROR_ID_LEN = 8
 """Số ký tự hex của một mã lỗi.
 

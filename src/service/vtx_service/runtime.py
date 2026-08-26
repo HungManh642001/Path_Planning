@@ -18,6 +18,7 @@ from pathlib import Path
 from path_planning import config
 from path_planning.core import kinodynamic_astar_v0 as astar
 
+
 _log = logging.getLogger("vtx-planner")
 
 _CONFIG_REF = re.compile(r"\bconfig\.([A-Z][A-Z0-9_]*)\b")

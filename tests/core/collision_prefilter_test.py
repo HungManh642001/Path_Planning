@@ -7,15 +7,18 @@ prefilter is sound because a point further than `radius` outside the query's
 bounding box is further than `radius` from the query itself; these tests hold it
 to that, against a brute-force check that keeps no prefilter.
 """
-import math
+
 import random
 
-from path_planning import config
-from path_planning.core import map_generator as mg
-from path_planning.core import preprocessing as prep
-from path_planning.core import kinodynamic_astar_v0 as astar
-from path_planning.core import spatial_utils as su
 from shapely.geometry import LineString
+
+from path_planning import config
+from path_planning.core import (
+    kinodynamic_astar_v0 as astar,
+    map_generator as mg,
+    preprocessing as prep,
+    spatial_utils as su,
+)
 
 
 def _brute_force_clear(planner, p1, p2):
@@ -25,7 +28,7 @@ def _brute_force_clear(planner, p1, p2):
             return False
     line = LineString([p1, p2])
     for poly in planner._polygons:
-        if poly.relate_pattern(line, 'T********'):
+        if poly.relate_pattern(line, "T********"):
             return False
     if planner._safezone is not None and not planner._safezone.covers(line):
         return False
@@ -33,13 +36,13 @@ def _brute_force_clear(planner, p1, p2):
 
 
 def _planner():
-    scen = mg.get_all_scenarios()['scenario_16_extreme_complexity']()
+    scen = mg.get_all_scenarios()["scenario_16_extreme_complexity"]()
     return astar.KinodynamicAstar(prep.prepare_scenario(scen))
 
 
 def test_prefiltered_and_brute_force_agree_on_random_chords():
     planner = _planner()
-    assert planner._circles and planner._polygons, 'scenario lost its obstacles'
+    assert planner._circles and planner._polygons, "scenario lost its obstacles"
     rng = random.Random(7)
     w, h = config.MAP_WIDTH, config.MAP_HEIGHT
     disagreements = []
@@ -53,7 +56,7 @@ def test_prefiltered_and_brute_force_agree_on_random_chords():
         if fast != slow:
             disagreements.append((a, b, fast, slow))
     assert not disagreements, disagreements[:3]
-    assert blocked > 100, 'sample never hit an obstacle; the test proves nothing'
+    assert blocked > 100, "sample never hit an obstacle; the test proves nothing"
 
 
 def test_prefilter_keeps_a_chord_that_only_just_reaches_a_circle():
@@ -65,6 +68,7 @@ def test_prefilter_keeps_a_chord_that_only_just_reaches_a_circle():
     # outside the chord's raw bbox but within `r` of it.
     a = (cx - 3 * r, cy - r * 0.5)
     b = (cx - r * 0.5, cy - r * 0.5)
-    assert not (a[0] <= cx <= b[0] and min(a[1], b[1]) <= cy <= max(a[1], b[1])), \
-        'centre must be OUTSIDE the raw bbox for this test to bite'
+    assert not (a[0] <= cx <= b[0] and min(a[1], b[1]) <= cy <= max(a[1], b[1])), (
+        "centre must be OUTSIDE the raw bbox for this test to bite"
+    )
     assert planner._check_collision(a, b) is _brute_force_clear(planner, a, b)

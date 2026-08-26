@@ -12,10 +12,11 @@ import math
 import time
 from typing import Any
 
-from path_planning.core import kinodynamic_astar_v0 as astar
-from path_planning.core import mission as mission
-from path_planning.core import preprocessing as prep
-
+from path_planning.core import (
+    kinodynamic_astar_v0 as astar,
+    mission as mission,
+    preprocessing as prep,
+)
 from service.vtx_service.angles import math_rad_to_bearing_deg
 from service.vtx_service.map_file import PreloadedMap
 from service.vtx_service.messages import (
@@ -32,6 +33,7 @@ from service.vtx_service.runtime import (
     planner_version,
 )
 from service.vtx_service.scenario_builder import build_scenario
+
 
 _REASON_TO_STATUS = {
     "no_path": PlanStatus.NO_PATH,

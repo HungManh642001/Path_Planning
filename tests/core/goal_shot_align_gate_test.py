@@ -1,4 +1,6 @@
 import pytest
+
+
 """Alignment gate for the goal shot: when the approach bearing to the goal is
 already within alpha_max of goal_heading, a 1-corner terminal (the normal
 Strategy-A goal candidate) can arrive legally, so the expensive 625-candidate
@@ -7,20 +9,24 @@ shot grid is redundant and must be skipped. The gate fires ~100% on aligned
 import math
 
 from path_planning import config
-from path_planning.core import preprocessing as prep
-from path_planning.core import kinodynamic_astar as astar
-from path_planning.core import path_validation as pv
-from path_planning.render import trajectory as tr
+from path_planning.core import (
+    kinodynamic_astar as astar,
+    path_validation as pv,
+    preprocessing as prep,
+)
 from path_planning.core.kinodynamic_astar import KinodynamicAstar, State
+from path_planning.render import trajectory as tr
 
 
 def _scenario(start_heading_deg, goal_heading_deg):
     return {
-        'start': (100000.0, 100000.0),
-        'start_heading': math.radians(start_heading_deg),
-        'goal': (300000.0, 100000.0),
-        'goal_heading': math.radians(goal_heading_deg),
-        'islands': [], 'dynamic_obstacles': [], 'obstacles': [],
+        "start": (100000.0, 100000.0),
+        "start_heading": math.radians(start_heading_deg),
+        "goal": (300000.0, 100000.0),
+        "goal_heading": math.radians(goal_heading_deg),
+        "islands": [],
+        "dynamic_obstacles": [],
+        "obstacles": [],
     }
 
 
@@ -59,7 +65,7 @@ def test_gate_skips_aligned_shot():
 def test_knob_off_restores_aligned_shot(monkeypatch):
     """Disabling the gate makes the same aligned state produce its shot again,
     proving the gate (not some other filter) is what suppressed it."""
-    monkeypatch.setattr(config, 'GOAL_SHOT_ALIGN_GATE', False)
+    monkeypatch.setattr(config, "GOAL_SHOT_ALIGN_GATE", False)
     planner, _ = _planner()
     assert planner._try_goal_shot(_aligned_state(planner)) is not None
 
@@ -72,10 +78,17 @@ def test_gate_allows_adverse_shot():
 
 def test_adverse_full_reversal_still_valid(monkeypatch):
     """End-to-end no-regression: the gate leaves adverse solving intact."""
-    monkeypatch.setattr(config, 'GOAL_SHOT_ENABLED', True)
+    monkeypatch.setattr(config, "GOAL_SHOT_ENABLED", True)
     pre = prep.prepare_scenario(_scenario(180, 180))
     result = astar.plan_trajectory(pre)
-    assert result['success']
-    full = tr.build_full_path(result['path'], pre)
-    assert pv.path_is_valid(full, pre['circle_obstacles'], pre['polygon_obstacles'],
-                            config.R, config.ALPHA_MAX_RAD, config.L0, config.DSS)
+    assert result["success"]
+    full = tr.build_full_path(result["path"], pre)
+    assert pv.path_is_valid(
+        full,
+        pre["circle_obstacles"],
+        pre["polygon_obstacles"],
+        config.R,
+        config.ALPHA_MAX_RAD,
+        config.L0,
+        config.DSS,
+    )

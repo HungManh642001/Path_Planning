@@ -232,7 +232,9 @@ def prepare_scenario(
     # (raw + SAFE_MARGIN) now that inflation carries no turn term - see
     # path_validation.path_is_valid.
     raw_circles: list[CircleGeometry] = [
-        (o["center"], o["radius"]) for o in scenario["obstacles"] if o["type"] == "circle"
+        (o["center"], o["radius"])
+        for o in scenario["obstacles"]
+        if o["type"] == "circle"
     ]
     raw_polygons: list[PolygonCoords] = [
         o["polygon"] for o in scenario["obstacles"] if o["type"] == "polygon"

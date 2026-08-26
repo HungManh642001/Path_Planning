@@ -12,14 +12,15 @@ import pytest
 
 from service.vtx_service.angles import bearing_deg_to_math_rad, math_rad_to_bearing_deg
 
+
 # phương vị (độ, thuận kim đồng hồ từ bắc) -> heading toán học (rad, ngược kim
 # đồng hồ từ +x). Quy ước: +y bắc, +x đông.
 KNOWN = [
-    (0.0, math.pi / 2),      # bắc  -> +y
-    (90.0, 0.0),             # đông -> +x
-    (180.0, -math.pi / 2),   # nam  -> -y
-    (270.0, math.pi),        # tây  -> -x
-    (45.0, math.pi / 4),     # đông bắc
+    (0.0, math.pi / 2),  # bắc  -> +y
+    (90.0, 0.0),  # đông -> +x
+    (180.0, -math.pi / 2),  # nam  -> -y
+    (270.0, math.pi),  # tây  -> -x
+    (45.0, math.pi / 4),  # đông bắc
 ]
 
 

@@ -12,9 +12,10 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from path_planning import config
 import pytest
 
+from path_planning import config
+from service.vtx_service import runtime as runtime
 from service.vtx_service.runtime import (
     MAX_REQUEST_TIME_BUDGET_S,
     config_hash,
@@ -22,7 +23,7 @@ from service.vtx_service.runtime import (
     planner_config_snapshot,
     planner_version,
 )
-from service.vtx_service import runtime as runtime
+
 
 # Derived independently of vtx_service.runtime._REPO_ROOT: this must locate
 # the real repo root on its own, so the test can tell a correct root from a
@@ -81,7 +82,9 @@ def test_version_matches_git_describe_inside_a_checkout() -> None:
     assert planner_version() == expected
 
 
-def test_planner_version_never_calls_subprocess(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_planner_version_never_calls_subprocess(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """`planner_version()` không được gọi subprocess - giá trị đã có sẵn từ lúc import.
 
     Thiết kế cũ (cache "tính lúc gọi đầu tiên", function-level) đo được KHÔNG

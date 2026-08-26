@@ -1,4 +1,3 @@
-
 """Ràng buộc số 1: service không được sửa thuật toán.
 
 Cơ chế cưỡng chế, không phải lời nhắc. So với nhánh gốc `main` nên nó đỏ ngay cả
@@ -6,10 +5,12 @@ khi thay đổi đã được commit.
 """
 
 from __future__ import annotations
-import pytest
 
 import subprocess
 from pathlib import Path
+
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROTECTED = ["core/", "render/", "config.py"]

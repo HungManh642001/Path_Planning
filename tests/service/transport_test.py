@@ -26,6 +26,7 @@ from service.vtx_service.messages import (
     Waypoint,
 )
 
+
 pytest.importorskip(
     "cyclonedds", reason="chưa cài binding DDS; xem quyết định ở Task 1"
 )
@@ -40,7 +41,14 @@ from service.vtx_service.transport import (  # noqa: E402
     _to_wire_request,
 )
 
-IDL_PATH = Path(__file__).resolve().parents[2] / "src" / "service" / "idl" / "vtx_path_planning.idl"
+
+IDL_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "src"
+    / "service"
+    / "idl"
+    / "vtx_path_planning.idl"
+)
 DOMAIN = 92
 
 
@@ -167,6 +175,7 @@ def test_a_request_survives_the_wire_unchanged() -> None:
 
 def test_a_reply_for_another_request_is_ignored() -> None:
     """Tương quan bằng request_id, không phải bằng thứ tự đến."""
+
     def handler(incoming: PlanRequest) -> PlanReply:
         return _reply(incoming)
 

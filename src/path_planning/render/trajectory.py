@@ -33,6 +33,7 @@ from typing import Literal, TypedDict
 from path_planning.core import mission as mission
 from path_planning.core.types import PlannerState, Point, PreprocessedScenario
 
+
 _ARC_SAMPLES = 24  # even -> a sample lands exactly on the waypoint (arc midpoint)
 
 RenderMode = Literal["straight", "dubins"]
@@ -201,7 +202,11 @@ def _dubins_arc_path(
         _extend_straight(points, start, step)  # straight leg into the turn
         for k in range(1, arc_samples + 1):
             a = ang0 + s * a_abs * (k / arc_samples)
-            points.append((cx + turn_radius * math.cos(a), cy + turn_radius * math.sin(a)))
-        turns.append({"start": start, "mid": wp, "end": end, "angle_deg": math.degrees(alpha)})
+            points.append(
+                (cx + turn_radius * math.cos(a), cy + turn_radius * math.sin(a))
+            )
+        turns.append(
+            {"start": start, "mid": wp, "end": end, "angle_deg": math.degrees(alpha)}
+        )
     _extend_straight(points, waypoints[-1], step)  # final straight leg
     return points, turns

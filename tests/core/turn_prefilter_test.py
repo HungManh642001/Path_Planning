@@ -8,19 +8,23 @@ rejects what is over by more than config.TURN_PREFILTER_BAND_RAD; anything
 inside the band falls through to the exact test and the cheap form never decides
 a borderline case. These tests hold it to exactly that.
 """
+
 import math
 
 from path_planning import config
-from path_planning.core import map_generator as mg
-from path_planning.core import preprocessing as prep
-from path_planning.core import kinodynamic_astar as astar
-from path_planning.core import kinodynamic_astar_v0 as astar_v0
+from path_planning.core import (
+    kinodynamic_astar as astar,
+    kinodynamic_astar_v0 as astar_v0,
+    map_generator as mg,
+    preprocessing as prep,
+)
+
 
 PLANNERS = (astar.KinodynamicAstar, astar_v0.KinodynamicAstar)
 
 
 def _planners():
-    scen = mg.get_all_scenarios()['scenario_01_open_ocean']()
+    scen = mg.get_all_scenarios()["scenario_01_open_ocean"]()
     pre = prep.prepare_scenario(scen)
     return [cls(pre) for cls in PLANNERS]
 
@@ -40,19 +44,23 @@ def test_no_legal_turn_is_ever_rejected_by_the_cheap_gate():
             turn = amax * i / 200.0
             for sign in (1.0, -1.0):
                 for heading in (0.0, 1.1, -2.7, math.pi):
-                    assert _passes_prefilter(planner, heading, sign * turn), \
-                        f'cheap gate rejected a legal turn of {math.degrees(turn)} deg'
+                    assert _passes_prefilter(planner, heading, sign * turn), (
+                        f"cheap gate rejected a legal turn of {math.degrees(turn)} deg"
+                    )
 
 
 def test_a_turn_exactly_on_the_limit_survives_to_the_exact_test():
     """The case that has bitten this codebase repeatedly: geometry built to sit
     ON the limit, then re-measured."""
     for planner in _planners():
-        for turn in (planner._alpha_build,
-                     planner._alpha_build + 1e-15,
-                     planner.alpha_max_rad):
-            assert _passes_prefilter(planner, 0.7, turn), \
-                f'{math.degrees(turn)} deg was decided by the cheap gate'
+        for turn in (
+            planner._alpha_build,
+            planner._alpha_build + 1e-15,
+            planner.alpha_max_rad,
+        ):
+            assert _passes_prefilter(planner, 0.7, turn), (
+                f"{math.degrees(turn)} deg was decided by the cheap gate"
+            )
 
 
 def test_a_turn_well_over_the_limit_is_rejected_cheaply():

@@ -8,14 +8,16 @@ goal_heading. Both are constraints the oracle cannot see — path_validation
 derives every angle from waypoint geometry and never compares the arrival
 bearing against goal_heading — so they are asserted here directly.
 """
+
 import math
 
-from path_planning import config
-from path_planning.core import map_generator as mg
-from path_planning.core import preprocessing as prep
-from path_planning.core import kinodynamic_astar as astar
-from path_planning.core import mission as mission
-from path_planning.core import path_validation as pv
+from path_planning.core import (
+    kinodynamic_astar as astar,
+    map_generator as mg,
+    mission as mission,
+    path_validation as pv,
+    preprocessing as prep,
+)
 
 
 def _plan(scenario, smooth):
@@ -30,17 +32,20 @@ def _plan(scenario, smooth):
 
 
 def _length(full):
-    return sum(math.dist(full[i][0], full[i + 1][0])
-               for i in range(len(full) - 1))
+    return sum(math.dist(full[i][0], full[i + 1][0]) for i in range(len(full) - 1))
 
 
 def _validate(pre, result):
-    full = mission.full_mission_path(result['path'], pre)
+    full = mission.full_mission_path(result["path"], pre)
     return full, pv.path_is_valid(
-        full, pre['circle_obstacles'], pre['polygon_obstacles'],
-        pre['turn_radius'], pre['alpha_max_rad'],
-        pre['start_state']['straight_length'],
-        pre['goal_state']['engagement_distance'])
+        full,
+        pre["circle_obstacles"],
+        pre["polygon_obstacles"],
+        pre["turn_radius"],
+        pre["alpha_max_rad"],
+        pre["start_state"]["straight_length"],
+        pre["goal_state"]["engagement_distance"],
+    )
 
 
 # scenario_04 is the preset where smoothing bites: the DP folds the route down
@@ -52,34 +57,36 @@ def _validate(pre, result):
 # The oracle passed it (it never checks the arrival bearing), so the assertion
 # encoded the bug. What smoothing actually buys on these presets is node
 # reduction, not length; the length property is the one-sided guarantee below.
-MAZE = 'scenario_04_complex_maze'
+MAZE = "scenario_04_complex_maze"
 
 
 def test_smoothing_folds_the_maze_and_stays_oracle_valid():
     scen = mg.get_all_scenarios()[MAZE]
     pre_off, off = _plan(scen(), smooth=False)
     pre_on, on = _plan(scen(), smooth=True)
-    assert off['success'] and on['success']
+    assert off["success"] and on["success"]
 
-    full_off = mission.full_mission_path(off['path'], pre_off)
+    full_off = mission.full_mission_path(off["path"], pre_off)
     full_on, (ok, why) = _validate(pre_on, on)
     assert ok, why
-    assert len(on['path']) < len(off['path']), 'expected waypoints to be folded away'
+    assert len(on["path"]) < len(off["path"]), "expected waypoints to be folded away"
     assert _length(full_on) <= _length(full_off) + 1.0
 
 
 def test_smoothing_never_lengthens_and_stays_valid_across_presets():
     for name, fn in mg.get_all_scenarios().items():
         pre_off, off = _plan(fn(), smooth=False)
-        if not off['success']:
+        if not off["success"]:
             continue
         pre_on, on = _plan(fn(), smooth=True)
-        assert on['success'], f'{name}: smoothing lost a solution ({on["failure_reason"]})'
+        assert on["success"], (
+            f"{name}: smoothing lost a solution ({on['failure_reason']})"
+        )
         _full, (ok, why) = _validate(pre_on, on)
-        assert ok, f'{name}: {why}'
-        l_off = _length(mission.full_mission_path(off['path'], pre_off))
+        assert ok, f"{name}: {why}"
+        l_off = _length(mission.full_mission_path(off["path"], pre_off))
         l_on = _length(_full)
-        assert l_on <= l_off + 1.0, f'{name}: smoothing lengthened {l_off} -> {l_on}'
+        assert l_on <= l_off + 1.0, f"{name}: smoothing lengthened {l_off} -> {l_on}"
 
 
 def test_smoothed_path_keeps_the_takeoff_leg_on_its_ray_and_above_L0():
@@ -89,22 +96,26 @@ def test_smoothed_path_keeps_the_takeoff_leg_on_its_ray_and_above_L0():
     still clear L0."""
     for name, fn in mg.get_all_scenarios().items():
         pre, res = _plan(fn(), smooth=True)
-        if not res['success']:
+        if not res["success"]:
             continue
-        full = mission.full_mission_path(res['path'], pre)
-        O = pre['start_pos']
+        full = mission.full_mission_path(res["path"], pre)
+        O = pre["start_pos"]
         assert math.dist(O, full[0][0]) < 1.0
 
         bearing = math.atan2(full[1][0][1] - O[1], full[1][0][0] - O[0])
-        drift = abs(math.atan2(math.sin(bearing - pre['start_state']['heading']),
-                               math.cos(bearing - pre['start_state']['heading'])))
-        assert drift < 1e-6, f'{name}: first chord left the takeoff ray by {drift} rad'
+        drift = abs(
+            math.atan2(
+                math.sin(bearing - pre["start_state"]["heading"]),
+                math.cos(bearing - pre["start_state"]["heading"]),
+            )
+        )
+        assert drift < 1e-6, f"{name}: first chord left the takeoff ray by {drift} rad"
 
-        R = pre['turn_radius']
+        R = pre["turn_radius"]
         alphas = [0.0] + pv.turn_angles(full) + [0.0]
         l1 = math.dist(full[0][0], full[1][0]) - R * math.tan(alphas[1] / 2.0)
-        L0 = pre['start_state']['straight_length']
-        assert l1 >= L0 - 1.0, f'{name}: takeoff straight {l1:.1f} < L0 {L0}'
+        L0 = pre["start_state"]["straight_length"]
+        assert l1 >= L0 - 1.0, f"{name}: takeoff straight {l1:.1f} < L0 {L0}"
 
 
 def test_smoothed_path_keeps_the_approach_leg_on_goal_heading():
@@ -116,17 +127,17 @@ def test_smoothed_path_keeps_the_approach_leg_on_goal_heading():
     here."""
     for name, fn in mg.get_all_scenarios().items():
         scenario = fn()
-        goal_h = scenario.get('goal_heading')
-        if goal_h is None:                      # free-goal presets: no approach ray
+        goal_h = scenario.get("goal_heading")
+        if goal_h is None:  # free-goal presets: no approach ray
             continue
         pre, res = _plan(scenario, smooth=True)
-        if not res['success']:
+        if not res["success"]:
             continue
-        T = pre['goal_pos']
-        last = res['path'][-1][0]
-        assert math.dist(T, last) > 1.0, f'{name}: path already ends at T'
+        T = pre["goal_pos"]
+        last = res["path"][-1][0]
+        assert math.dist(T, last) > 1.0, f"{name}: path already ends at T"
         bearing = math.atan2(T[1] - last[1], T[0] - last[0])
-        drift = abs(math.atan2(math.sin(bearing - goal_h),
-                               math.cos(bearing - goal_h)))
-        assert drift < 1e-6, \
-            f'{name}: run-in into T left the approach ray by {math.degrees(drift):.2f} deg'
+        drift = abs(math.atan2(math.sin(bearing - goal_h), math.cos(bearing - goal_h)))
+        assert drift < 1e-6, (
+            f"{name}: run-in into T left the approach ray by {math.degrees(drift):.2f} deg"
+        )

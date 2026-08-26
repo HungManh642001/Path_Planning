@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     log = logging.getLogger("vtx-planner")
 
     from service.vtx_service.map_file import PreloadedMap
-    from service.vtx_service.messages import PlanRequest, PlanReply, PlanStatus
+    from service.vtx_service.messages import PlanReply, PlanRequest, PlanStatus
     from service.vtx_service.runner import PlanRunner
     from service.vtx_service.runtime import (
         MAX_REQUEST_TIME_BUDGET_S,

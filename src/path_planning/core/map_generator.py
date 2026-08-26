@@ -13,8 +13,7 @@ import random
 from collections.abc import Callable
 from typing import NamedTuple
 
-from shapely import Point as ShapelyPoint
-from shapely import Polygon as ShapelyPolygon
+from shapely import Point as ShapelyPoint, Polygon as ShapelyPolygon
 
 from path_planning import config
 from path_planning.core.types import (
@@ -27,6 +26,7 @@ from path_planning.core.types import (
     ScenarioConfig,
     Topology,
 )
+
 
 _MAX_PLACEMENT_ATTEMPTS = 1000
 """Consecutive rejected placements before a generator gives up on the rest."""
@@ -62,7 +62,9 @@ def _start_goal_geometry(start: Point, goal: Point) -> _StartGoalGeometry:
     )
 
 
-def _sample_center(topology: Topology, map_bounds: MapBounds, geom: _StartGoalGeometry) -> Point:
+def _sample_center(
+    topology: Topology, map_bounds: MapBounds, geom: _StartGoalGeometry
+) -> Point:
     """Draw one candidate obstacle centre, clamped into the middle 80% of the map.
 
     Shared by both generators -- they placed centres with the same 20 lines and
@@ -95,8 +97,16 @@ def _sample_center(topology: Topology, map_bounds: MapBounds, geom: _StartGoalGe
         # Along a line perpendicular to the start-goal line.
         t = random.uniform(-150000, 150000)
         noise = random.uniform(-geom.dist_sg / 3, geom.dist_sg / 3)
-        center_x = geom.mx + t * math.cos(geom.angle_perp) + noise * math.cos(geom.angle_start_goal)
-        center_y = geom.my + t * math.sin(geom.angle_perp) + noise * math.sin(geom.angle_start_goal)
+        center_x = (
+            geom.mx
+            + t * math.cos(geom.angle_perp)
+            + noise * math.cos(geom.angle_start_goal)
+        )
+        center_y = (
+            geom.my
+            + t * math.sin(geom.angle_perp)
+            + noise * math.sin(geom.angle_start_goal)
+        )
     else:
         # Previously this fell through with center_x unbound: a NameError on the
         # first pass, or -- worse -- silently reusing the previous iteration's
@@ -163,7 +173,9 @@ def generate_random_islands(
     while len(islands) < num_islands and attempts < _MAX_PLACEMENT_ATTEMPTS:
         center_x, center_y = _sample_center(topology, map_bounds, geom)
         size = random.uniform(config.ISLAND_SIZE_MIN, config.ISLAND_SIZE_MAX)
-        num_vertices = random.randint(config.ISLAND_VERTICES_MIN, config.ISLAND_VERTICES_MAX)
+        num_vertices = random.randint(
+            config.ISLAND_VERTICES_MIN, config.ISLAND_VERTICES_MAX
+        )
 
         # Irregular star-like polygon: each vertex radius perturbed independently.
         island: PolygonCoords = []
@@ -171,7 +183,10 @@ def generate_random_islands(
             angle = 2 * math.pi * i / num_vertices
             radius = size * random.uniform(0.6, 1.0)
             island.append(
-                (center_x + radius * math.cos(angle), center_y + radius * math.sin(angle))
+                (
+                    center_x + radius * math.cos(angle),
+                    center_y + radius * math.sin(angle),
+                )
             )
 
         island_polygon = ShapelyPolygon(island)
@@ -267,12 +282,19 @@ def create_scenario(scenario_config: ScenarioConfig) -> Scenario:
     if start is None or goal is None:
         raise ValueError("scenario_config requires both 'start' and 'goal'")
 
-    map_bounds = scenario_config.get("map_bounds", (config.MAP_WIDTH, config.MAP_HEIGHT))
+    map_bounds = scenario_config.get(
+        "map_bounds", (config.MAP_WIDTH, config.MAP_HEIGHT)
+    )
     topology = scenario_config.get("topology", "random")
     seed = scenario_config.get("seed")
 
     islands = generate_random_islands(
-        scenario_config.get("num_islands", 0), map_bounds, start, goal, topology, seed=seed
+        scenario_config.get("num_islands", 0),
+        map_bounds,
+        start,
+        goal,
+        topology,
+        seed=seed,
     )
     dynamic_obstacles = generate_dynamic_obstacles(
         scenario_config.get("num_dynamic_obstacles", 0),

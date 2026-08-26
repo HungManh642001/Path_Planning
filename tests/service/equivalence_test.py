@@ -17,13 +17,15 @@ from __future__ import annotations
 
 import math
 
-from path_planning import config
-from path_planning.core import kinodynamic_astar_v0 as astar
-from path_planning.core import map_generator as mg
-from path_planning.core import mission as mission
-from path_planning.core import preprocessing as prep
 import pytest
 
+from path_planning import config
+from path_planning.core import (
+    kinodynamic_astar_v0 as astar,
+    map_generator as mg,
+    mission as mission,
+    preprocessing as prep,
+)
 from service.vtx_service import plan
 from service.vtx_service.angles import math_rad_to_bearing_deg
 from service.vtx_service.messages import (
@@ -35,6 +37,7 @@ from service.vtx_service.messages import (
     VehicleLimits,
 )
 from service.vtx_service.scenario_builder import build_scenario
+
 
 LIMITS = VehicleLimits(
     turn_radius_m=config.R,
@@ -59,7 +62,9 @@ def _request_from_scenario(name: str) -> PlanRequest:
         start=scenario["start"],
         start_heading_deg=math_rad_to_bearing_deg(scenario["start_heading"]),
         goal=scenario["goal"],
-        goal_heading_deg=0.0 if goal_heading is None else math_rad_to_bearing_deg(goal_heading),
+        goal_heading_deg=0.0
+        if goal_heading is None
+        else math_rad_to_bearing_deg(goal_heading),
         goal_heading_free=goal_heading is None,
         islands=tuple(tuple(tuple(v) for v in poly) for poly in scenario["islands"]),
         dynamic_obstacles=tuple(
@@ -84,7 +89,11 @@ def _direct_plan(request: PlanRequest):
         alpha_max_rad=math.radians(request.limits.alpha_max_deg),
     )
     result = astar.plan_trajectory(preprocessed)
-    full = mission.full_mission_path(result["path"], preprocessed) if result["path"] else []
+    full = (
+        mission.full_mission_path(result["path"], preprocessed)
+        if result["path"]
+        else []
+    )
     return result, full
 
 
@@ -99,7 +108,9 @@ def test_adapter_is_transparent(name: str) -> None:
     for got, (position, heading) in zip(reply.waypoints, expected_full, strict=True):
         # Bit-identical: không có phép toán nào chạm vào toạ độ.
         assert got.position == position
-        assert got.heading_deg == pytest.approx(math_rad_to_bearing_deg(heading), abs=1e-9)
+        assert got.heading_deg == pytest.approx(
+            math_rad_to_bearing_deg(heading), abs=1e-9
+        )
 
     expected_length = sum(
         math.dist(expected_full[i][0], expected_full[i + 1][0])

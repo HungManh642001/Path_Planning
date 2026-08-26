@@ -88,7 +88,9 @@ def two_corner_candidates(
             the sampler divide by zero.
     """
     if num_dir < 2 or num_cone < 2:
-        raise ValueError(f"num_dir and num_cone must be >= 2; got {num_dir}, {num_cone}")
+        raise ValueError(
+            f"num_dir and num_cone must be >= 2; got {num_dir}, {num_cone}"
+        )
 
     px, py = position
     delta_x, delta_y = goal_waypoint[0] - px, goal_waypoint[1] - py
@@ -100,7 +102,9 @@ def two_corner_candidates(
     # re-tested num_dir times.
     cone: list[tuple[float, float, float, float]] = []
     for j in range(num_cone):
-        arrival_heading = goal_heading - alpha_max + (2.0 * alpha_max) * j / (num_cone - 1)
+        arrival_heading = (
+            goal_heading - alpha_max + (2.0 * alpha_max) * j / (num_cone - 1)
+        )
         turn_at_goal = abs(_angdiff(goal_heading, arrival_heading))
         if turn_at_goal > alpha_max:
             continue
@@ -118,7 +122,10 @@ def two_corner_candidates(
         leg1_heading = heading - alpha_max + (2.0 * alpha_max) * i / (num_dir - 1)
         turn_at_position = abs(_angdiff(leg1_heading, heading))
         # Deferred đoản-trình of the incoming leg (near reserve = R*tan(a/2)).
-        if straight_budget_in - turn_radius * math.tan(turn_at_position / 2.0) < min_straight_in:
+        if (
+            straight_budget_in - turn_radius * math.tan(turn_at_position / 2.0)
+            < min_straight_in
+        ):
             continue
         ux, uy = math.cos(leg1_heading), math.sin(leg1_heading)
         reserve_1 = turn_radius * math.tan(turn_at_position / 2.0)

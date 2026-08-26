@@ -12,6 +12,7 @@ correctly accepted:
     — must not be reported as blocked because the discretised arc's tangency
     point lands a float-hair inside (seed 166).
 """
+
 import math
 
 from path_planning.core import path_validation as pv
@@ -50,13 +51,13 @@ def test_collinear_waypoint_does_not_split_the_straight_run():
     """
     O = (0.0, 0.0)
     A = _step(O, 0.0, 12000.0)
-    B = _step(A, 20.0, 4100.0)           # turn 20 deg at A
-    C = _step(B, 20.0, 1701.0)           # collinear: no turn at B
-    D = _step(C, 20.0 + 53.130102354156, 40000.0)   # turn 53.13 deg at C
+    B = _step(A, 20.0, 4100.0)  # turn 20 deg at A
+    C = _step(B, 20.0, 1701.0)  # collinear: no turn at B
+    D = _step(C, 20.0 + 53.130102354156, 40000.0)  # turn 53.13 deg at C
 
     path = _wp([O, A, B, C, D])
     alphas = pv.turn_angles(path)
-    assert alphas[1] < 1e-12, f'B must be collinear, got {alphas[1]}'
+    assert alphas[1] < 1e-12, f"B must be collinear, got {alphas[1]}"
     assert abs(R * math.tan(alphas[2] / 2.0) - 4000.0) < 1.0
 
     # the offending piece on its own really is too short for that fillet
@@ -72,14 +73,14 @@ def test_short_segment_between_two_real_turns_is_still_rejected():
     O = (0.0, 0.0)
     A = _step(O, 0.0, 12000.0)
     B = _step(A, 20.0, 4100.0)
-    C = _step(B, 60.0, 1701.0)           # real turn at B
+    C = _step(B, 60.0, 1701.0)  # real turn at B
     D = _step(C, 60.0 + 53.130102354156, 40000.0)
 
     path = _wp([O, A, B, C, D])
     assert pv.turn_angles(path)[1] > math.radians(39.0)
     ok, reason = pv.straight_segments_ok(path, R, L0, DSS)
     assert not ok
-    assert 'l=' in reason
+    assert "l=" in reason
 
 
 # --------------------------------------------------------------------------
@@ -121,7 +122,7 @@ def test_arc_actually_entering_a_polygon_is_still_blocked():
     path = _wp([SEED166_PREV, inside, SEED166_NEXT])
     ok, reason = pv.arcs_clear(path, R, [], [SEED166_POLY])
     assert not ok
-    assert 'blocked' in reason
+    assert "blocked" in reason
 
 
 def test_segment_running_along_a_polygon_edge_is_clear():

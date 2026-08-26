@@ -14,7 +14,13 @@ from __future__ import annotations
 import math
 
 from path_planning.core import spatial_utils as su
-from path_planning.core.types import PlannerState, Point, PolygonCoords, RidingSense, WrapSense
+from path_planning.core.types import (
+    PlannerState,
+    Point,
+    PolygonCoords,
+    RidingSense,
+    WrapSense,
+)
 
 
 def riding_sense(
@@ -83,7 +89,9 @@ def arc_angle(start: Point, end: Point, center: Point, sense: WrapSense) -> floa
     return (sense * (a1 - a0)) % (2.0 * math.pi)
 
 
-def departure_point(target: Point, center: Point, radius: float, sense: WrapSense) -> Point | None:
+def departure_point(
+    target: Point, center: Point, radius: float, sense: WrapSense
+) -> Point | None:
     """Find the boundary point from which leaving toward a target is tangent-continuous.
 
     Args:
@@ -100,7 +108,9 @@ def departure_point(target: Point, center: Point, radius: float, sense: WrapSens
         nx = (dep[0] - center[0]) / radius
         ny = (dep[1] - center[1]) / radius
         # Velocity at dep for this sense is sense * perp_ccw(n) = (-s*ny, s*nx).
-        if (-sense * ny) * (target[0] - dep[0]) + (sense * nx) * (target[1] - dep[1]) > 0:
+        if (-sense * ny) * (target[0] - dep[0]) + (sense * nx) * (
+            target[1] - dep[1]
+        ) > 0:
             return dep
     return None
 
@@ -190,7 +200,10 @@ def arc_waypoints(
         mid = phi0 + sense * step * (k + 0.5)
         vertex = (center[0] + rv * math.cos(mid), center[1] + rv * math.sin(mid))
         nxt = phi0 + sense * step * (k + 1)
-        tangent_pt = (center[0] + radius * math.cos(nxt), center[1] + radius * math.sin(nxt))
+        tangent_pt = (
+            center[0] + radius * math.cos(nxt),
+            center[1] + radius * math.sin(nxt),
+        )
         out.append((vertex, tangent_heading(tangent_pt, center, sense)))
     return out
 

@@ -22,29 +22,40 @@ Two invariants are asserted here.
    are tested (39.1 -> 11.4 per shot, measured over 300 fixed-goal seeds), never
    the verdict -- which is what the randomised equivalence test below pins.
 """
+
 import math
 import random
 
 from path_planning import config
-from path_planning.core import kinodynamic_astar_v0 as astar_v0
-from path_planning.core import map_generator as mg
-from path_planning.core import mission as mission
-from path_planning.core import path_validation as pv
-from path_planning.core import preprocessing as prep
+from path_planning.core import (
+    kinodynamic_astar_v0 as astar_v0,
+    map_generator as mg,
+    mission as mission,
+    path_validation as pv,
+    preprocessing as prep,
+)
 
 
 def _preprocessed(seed, goal_heading):
     """Start south-west of the goal, so the start->goal bearing is 45 deg."""
-    return prep.prepare_scenario(mg.create_scenario({
-        'map_bounds': (config.MAP_WIDTH, config.MAP_HEIGHT),
-        'start': (60000.0, 60000.0), 'start_heading': math.radians(20.0),
-        'goal': (380000.0, 380000.0), 'goal_heading': goal_heading,
-        'num_islands': 5, 'num_dynamic_obstacles': 4, 'seed': seed,
-    }))
+    return prep.prepare_scenario(
+        mg.create_scenario(
+            {
+                "map_bounds": (config.MAP_WIDTH, config.MAP_HEIGHT),
+                "start": (60000.0, 60000.0),
+                "start_heading": math.radians(20.0),
+                "goal": (380000.0, 380000.0),
+                "goal_heading": goal_heading,
+                "num_islands": 5,
+                "num_dynamic_obstacles": 4,
+                "seed": seed,
+            }
+        )
+    )
 
 
-REVERSED = math.radians(-135.0)   # 180 deg off the 45 deg travel bearing
-FORWARD = math.radians(30.0)      # 15 deg off it
+REVERSED = math.radians(-135.0)  # 180 deg off the 45 deg travel bearing
+FORWARD = math.radians(30.0)  # 15 deg off it
 
 
 def test_shot_is_armed_only_when_the_approach_reverses():
@@ -82,19 +93,27 @@ def test_shot_is_disabled_in_free_goal_mode():
 
 def test_shot_connects_an_adverse_approach_in_fixed_mode():
     """The case the shot exists for: the goal heading points back at the state."""
-    pre = prep.prepare_scenario(mg.create_scenario({
-        'map_bounds': (config.MAP_WIDTH, config.MAP_HEIGHT),
-        'start': (100000.0, 100000.0), 'start_heading': 0.0,
-        'goal': (300000.0, 100000.0), 'goal_heading': math.pi,
-        'num_islands': 0, 'num_dynamic_obstacles': 0, 'seed': 1,
-    }))
+    pre = prep.prepare_scenario(
+        mg.create_scenario(
+            {
+                "map_bounds": (config.MAP_WIDTH, config.MAP_HEIGHT),
+                "start": (100000.0, 100000.0),
+                "start_heading": 0.0,
+                "goal": (300000.0, 100000.0),
+                "goal_heading": math.pi,
+                "num_islands": 0,
+                "num_dynamic_obstacles": 0,
+                "seed": 1,
+            }
+        )
+    )
     planner = astar_v0.KinodynamicAstar(pre)
     goal_wp = planner.goal_state.waypoint
     state = astar_v0.State((goal_wp[0] - 80000.0, goal_wp[1] - 80000.0), 0.0)
     planner.g_scores[state] = 0.0
 
     shot = planner._try_goal_shot(state)
-    assert shot is not None, 'an adverse approach in open water must be shootable'
+    assert shot is not None, "an adverse approach in open water must be shootable"
     assert shot.waypoint == goal_wp
     corner = shot.parent
     assert corner is not None and corner.parent is state
@@ -118,7 +137,7 @@ def test_knob_off_removes_the_shot():
         result = astar_v0.plan_trajectory(pre)
     finally:
         config.GOAL_SHOT_ENABLED = previous
-    assert result['stats']['iterations'] > 0
+    assert result["stats"]["iterations"] > 0
 
 
 def test_shot_paths_satisfy_the_independent_oracle():
@@ -130,19 +149,19 @@ def test_shot_paths_satisfy_the_independent_oracle():
     for seed in range(8):
         pre = _preprocessed(seed, REVERSED)
         result = astar_v0.plan_trajectory(pre)
-        if not result['success']:
+        if not result["success"]:
             continue
-        full = mission.full_mission_path(result['path'], pre)
+        full = mission.full_mission_path(result["path"], pre)
         valid, reason = pv.path_is_valid(
             full,
-            pre['circle_obstacles'],
-            pre['polygon_obstacles'],
-            turn_radius=pre['turn_radius'],
-            alpha_max_rad=pre['alpha_max_rad'],
+            pre["circle_obstacles"],
+            pre["polygon_obstacles"],
+            turn_radius=pre["turn_radius"],
+            alpha_max_rad=pre["alpha_max_rad"],
             l0=config.L0,
             dss=config.DSS,
         )
-        assert valid, f'seed {seed}: {reason}'
+        assert valid, f"seed {seed}: {reason}"
 
 
 def test_ray_memo_never_changes_a_verdict():
@@ -163,7 +182,7 @@ def test_ray_memo_never_changes_a_verdict():
             far = (origin[0] + distance * ux, origin[1] + distance * uy)
             memoised = planner._ray_chord_clear(memo, ray, distance, origin, far)
             assert memoised == planner._check_collision(origin, far), (
-                f'memo disagreed at {distance:.1f} m along {math.degrees(ray):.1f} deg'
+                f"memo disagreed at {distance:.1f} m along {math.degrees(ray):.1f} deg"
             )
 
 
@@ -198,8 +217,8 @@ def test_memo_skips_shorter_chords_once_a_long_one_is_clear():
     for distance in distances:
         far = (origin[0] + distance * ux, origin[1] + distance * uy)
         verdicts.append(planner._ray_chord_clear(memo, ray, distance, origin, far))
-    assert verdicts[0] and all(verdicts), 'this ray was meant to be clear throughout'
-    assert calls[0] == 1, f'only the longest chord needed testing, but {calls[0]} were'
+    assert verdicts[0] and all(verdicts), "this ray was meant to be clear throughout"
+    assert calls[0] == 1, f"only the longest chord needed testing, but {calls[0]} were"
 
 
 def test_memo_skips_longer_chords_once_a_short_one_is_blocked():
@@ -209,7 +228,7 @@ def test_memo_skips_longer_chords_once_a_short_one_is_blocked():
     origin = (100000.0, 100000.0)
     # Aim at the centre of an inflated circle, so every chord from short to long
     # is blocked and the shortest settles the ray.
-    centre, _radius = planner.scenario['circle_obstacles'][0]
+    centre, _radius = planner.scenario["circle_obstacles"][0]
     ray = math.atan2(centre[1] - origin[1], centre[0] - origin[0])
     ux, uy = math.cos(ray), math.sin(ray)
     reach = math.dist(origin, centre)
@@ -218,5 +237,5 @@ def test_memo_skips_longer_chords_once_a_short_one_is_blocked():
     for distance in distances:
         far = (origin[0] + distance * ux, origin[1] + distance * uy)
         verdicts.append(planner._ray_chord_clear(memo, ray, distance, origin, far))
-    assert not any(verdicts), 'this ray was meant to be blocked throughout'
-    assert calls[0] == 1, f'only the shortest chord needed testing, but {calls[0]} were'
+    assert not any(verdicts), "this ray was meant to be blocked throughout"
+    assert calls[0] == 1, f"only the shortest chord needed testing, but {calls[0]} were"

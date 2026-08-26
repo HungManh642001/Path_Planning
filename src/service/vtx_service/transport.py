@@ -39,8 +39,8 @@ from cyclonedds.sub import DataReader, Subscriber
 from cyclonedds.topic import Topic
 from cyclonedds.util import duration
 
-from service.vtx_service import messages as msg
-from service.vtx_service import runtime
+from service.vtx_service import messages as msg, runtime
+
 
 REQUEST_TOPIC = "VtxPathPlanRequest"
 REPLY_TOPIC = "VtxPathPlanReply"
@@ -51,8 +51,12 @@ _RELIABLE = Policy.Reliability.Reliable(duration(seconds=10))
 # `wait_for_service` trả True ngay cả khi không có service nào - đã đo:
 # current_count = 1 với một participant duy nhất, = 0 khi bật IgnoreLocal.
 _IGNORE_SELF = Policy.IgnoreLocal.Participant
-REQUEST_QOS = Qos(_RELIABLE, Policy.History.KeepAll, Policy.Durability.Volatile, _IGNORE_SELF)
-REPLY_QOS = Qos(_RELIABLE, Policy.History.KeepLast(8), Policy.Durability.Volatile, _IGNORE_SELF)
+REQUEST_QOS = Qos(
+    _RELIABLE, Policy.History.KeepAll, Policy.Durability.Volatile, _IGNORE_SELF
+)
+REPLY_QOS = Qos(
+    _RELIABLE, Policy.History.KeepLast(8), Policy.Durability.Volatile, _IGNORE_SELF
+)
 
 
 # --- kiểu trên dây, khớp service/idl/vtx_path_planning.idl --------------------
@@ -242,7 +246,9 @@ def _from_wire_reply(wire: WireReply) -> msg.PlanReply:
         status=msg.PlanStatus(int(wire.status)),
         detail=wire.detail,
         waypoints=tuple(
-            msg.Waypoint(position=(w.position.x, w.position.y), heading_deg=w.heading_deg)
+            msg.Waypoint(
+                position=(w.position.x, w.position.y), heading_deg=w.heading_deg
+            )
             for w in wire.waypoints
         ),
         path_length_m=wire.path_length_m,
@@ -329,11 +335,17 @@ class DdsTransport:
         self._request_topic = Topic(
             self._participant, REQUEST_TOPIC, WireRequest, qos=REQUEST_QOS
         )
-        self._reply_topic = Topic(self._participant, REPLY_TOPIC, WireReply, qos=REPLY_QOS)
+        self._reply_topic = Topic(
+            self._participant, REPLY_TOPIC, WireReply, qos=REPLY_QOS
+        )
         publisher = Publisher(self._participant)
         subscriber = Subscriber(self._participant)
-        self._request_writer = DataWriter(publisher, self._request_topic, qos=REQUEST_QOS)
-        self._request_reader = DataReader(subscriber, self._request_topic, qos=REQUEST_QOS)
+        self._request_writer = DataWriter(
+            publisher, self._request_topic, qos=REQUEST_QOS
+        )
+        self._request_reader = DataReader(
+            subscriber, self._request_topic, qos=REQUEST_QOS
+        )
         self._reply_writer = DataWriter(publisher, self._reply_topic, qos=REPLY_QOS)
         self._reply_reader = DataReader(subscriber, self._reply_topic, qos=REPLY_QOS)
         self._running = False
@@ -346,7 +358,8 @@ class DdsTransport:
                 lượt, không bao giờ đồng thời.
         """
         condition = ReadCondition(
-            self._request_reader, ViewState.Any | InstanceState.Alive | SampleState.NotRead
+            self._request_reader,
+            ViewState.Any | InstanceState.Alive | SampleState.NotRead,
         )
         waitset = WaitSet(self._participant)
         waitset.attach(condition)
@@ -410,7 +423,9 @@ class DdsTransport:
                     f"{traceback.format_exc(limit=5)}",
                     file=sys.stderr,
                 )
-                reply = _internal_error_reply(request_id, "internal error khi xử lý request")
+                reply = _internal_error_reply(
+                    request_id, "internal error khi xử lý request"
+                )
 
         try:
             wire_reply = _to_wire_reply(reply)
@@ -461,7 +476,9 @@ class DdsTransport:
             time.sleep(0.1)
         return False
 
-    def request(self, request: msg.PlanRequest, timeout_s: float = 30.0) -> msg.PlanReply:
+    def request(
+        self, request: msg.PlanRequest, timeout_s: float = 30.0
+    ) -> msg.PlanReply:
         """Gửi một request và chờ reply khớp ``request_id``.
 
         Args:
@@ -475,7 +492,8 @@ class DdsTransport:
             TimeoutError: Khi không có reply khớp trong thời gian chờ.
         """
         condition = ReadCondition(
-            self._reply_reader, ViewState.Any | InstanceState.Alive | SampleState.NotRead
+            self._reply_reader,
+            ViewState.Any | InstanceState.Alive | SampleState.NotRead,
         )
         waitset = WaitSet(self._participant)
         waitset.attach(condition)

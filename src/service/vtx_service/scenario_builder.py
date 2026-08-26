@@ -34,7 +34,8 @@ def build_scenario(request: PlanRequest) -> dict[str, Any]:
         {"type": "polygon", "polygon": polygon} for polygon in islands
     ]
     obstacles.extend(
-        {"type": "circle", "center": center, "radius": radius} for center, radius in circles
+        {"type": "circle", "center": center, "radius": radius}
+        for center, radius in circles
     )
 
     goal_heading = (

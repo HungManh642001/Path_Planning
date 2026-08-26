@@ -50,10 +50,10 @@ import core.preprocessing as prep
 import core.kinodynamic_astar as astar
 import render.visualizer as viz
 
-scenario = mg.scenario4_complex_maze()         # any builder in get_all_scenarios()
-pre = prep.prepare_scenario(scenario)          # inflate obstacles, compute W1/W_{n-1}
+scenario = mg.scenario4_complex_maze()  # any builder in get_all_scenarios()
+pre = prep.prepare_scenario(scenario)  # inflate obstacles, compute W1/W_{n-1}
 result = astar.plan_trajectory(pre, verbose=True)
-if result['success']:
+if result["success"]:
     viz.plot_scenario(scenario, pre, result, save_path="out.png")
 ```
 

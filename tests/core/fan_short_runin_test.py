@@ -19,33 +19,53 @@ more than the case, so most of what is asserted here is what must STILL fire:
 Widening this to every goal-line-of-sight-clear expansion is a different change
 and a bad one: it costs seed 51 +73.5%.
 """
+
 import contextlib
 import math
 
 from path_planning import config
-from path_planning.core import kinodynamic_astar_v0 as astar_v0
-from path_planning.core import map_generator as mg
-from path_planning.core import preprocessing as prep
+from path_planning.core import (
+    kinodynamic_astar_v0 as astar_v0,
+    map_generator as mg,
+    preprocessing as prep,
+)
+
 
 START = (0.0, 250000.0)
 GOAL = (400000.0, 250000.0)
 # Off the goal chord but REACHABLE from the test state: its hull vertices are a
 # legal turn away, so Strategy A has successors and the fan gate is the one
 # under test rather than the no-successor fallback.
-SIDE = [(420000.0, 300000.0), (460000.0, 300000.0), (460000.0, 340000.0), (420000.0, 340000.0)]
+SIDE = [
+    (420000.0, 300000.0),
+    (460000.0, 300000.0),
+    (460000.0, 340000.0),
+    (420000.0, 340000.0),
+]
 # Squarely on the goal chord, for the occluded case.
-BLOCKER = [(200000.0, 210000.0), (240000.0, 210000.0), (240000.0, 290000.0), (200000.0, 290000.0)]
+BLOCKER = [
+    (200000.0, 210000.0),
+    (240000.0, 210000.0),
+    (240000.0, 290000.0),
+    (200000.0, 290000.0),
+]
 
 
 def _planner(goal_heading=None, obstacles=(SIDE,)):
-    scenario = mg.create_scenario({
-        'map_bounds': (config.MAP_WIDTH, config.MAP_HEIGHT),
-        'start': START, 'start_heading': 0.0,
-        'goal': GOAL, 'goal_heading': goal_heading,
-        'num_islands': 0, 'num_dynamic_obstacles': 0, 'seed': 1,
-    })
-    scenario['islands'] = list(obstacles)
-    scenario['obstacles'] = [{'type': 'polygon', 'polygon': p} for p in obstacles]
+    scenario = mg.create_scenario(
+        {
+            "map_bounds": (config.MAP_WIDTH, config.MAP_HEIGHT),
+            "start": START,
+            "start_heading": 0.0,
+            "goal": GOAL,
+            "goal_heading": goal_heading,
+            "num_islands": 0,
+            "num_dynamic_obstacles": 0,
+            "seed": 1,
+        }
+    )
+    scenario["islands"] = list(obstacles)
+    scenario["obstacles"] = [{"type": "polygon", "polygon": p} for p in obstacles]
     return astar_v0.KinodynamicAstar(prep.prepare_scenario(scenario))
 
 
@@ -77,7 +97,8 @@ def _fan_legs(planner, state):
     """Successors whose (heading offset, distance) match a fan direction/rung."""
     successors = planner.get_next_states(state)
     offsets = [
-        -planner._alpha_build + 2 * planner._alpha_build * i / (config.RADIAL_FAN_DIRECTIONS - 1)
+        -planner._alpha_build
+        + 2 * planner._alpha_build * i / (config.RADIAL_FAN_DIRECTIONS - 1)
         for i in range(config.RADIAL_FAN_DIRECTIONS)
     ]
     legs = []
@@ -103,13 +124,15 @@ def test_premise_goal_is_clear_but_the_run_in_is_short():
     planner = _planner()
     state = _short_runin_state(planner)
     goal_wp = planner.goal_state.waypoint
-    assert planner._check_collision(state.waypoint, goal_wp), 'goal must be in the clear'
+    assert planner._check_collision(state.waypoint, goal_wp), (
+        "goal must be in the clear"
+    )
     assert planner._pivot_candidate(state, goal_wp, 0.0) is None
-    assert planner._last_reject == 'goal', 'must be the d_ss gate, not turn/los/arc'
+    assert planner._last_reject == "goal", "must be the d_ss gate, not turn/los/arc"
     with _skip(False):
         successors, legs = _fan_legs(planner, state)
-    assert len(successors) > len(legs), 'Strategy A must contribute a successor here'
-    assert legs, 'and the legacy fan must fire, or there is nothing to skip'
+    assert len(successors) > len(legs), "Strategy A must contribute a successor here"
+    assert legs, "and the legacy fan must fire, or there is nothing to skip"
 
 
 def test_fan_is_skipped_on_a_short_run_in():
@@ -117,25 +140,30 @@ def test_fan_is_skipped_on_a_short_run_in():
     with _skip(True):
         successors, legs = _fan_legs(planner, _short_runin_state(planner))
     assert successors
-    assert not legs, f'fan fired for a d_ss problem it cannot solve: {legs}'
+    assert not legs, f"fan fired for a d_ss problem it cannot solve: {legs}"
 
 
 def test_knob_off_restores_the_legacy_fan():
     planner = _planner()
     with _skip(False):
         _, legs = _fan_legs(planner, _short_runin_state(planner))
-    assert legs, 'FAN_SKIP_ON_SHORT_RUNIN=False must reproduce legacy firing'
+    assert legs, "FAN_SKIP_ON_SHORT_RUNIN=False must reproduce legacy firing"
 
 
 def test_fixed_goal_mode_is_untouched():
     """The same rejection means the terminal-heading problem there, and it pays."""
     planner = _planner(goal_heading=math.radians(90.0))
     assert not planner._free_goal
-    state = _state(planner, (planner.goal_state.waypoint[0] - 0.5 * planner._dss,
-                             planner.goal_state.waypoint[1]))
+    state = _state(
+        planner,
+        (
+            planner.goal_state.waypoint[0] - 0.5 * planner._dss,
+            planner.goal_state.waypoint[1],
+        ),
+    )
     with _skip(True):
         _, legs = _fan_legs(planner, state)
-    assert legs, 'fixed-goal mode must keep the fan: it carries 143 route waypoints'
+    assert legs, "fixed-goal mode must keep the fan: it carries 143 route waypoints"
 
 
 def test_fan_still_fires_when_the_goal_is_occluded():
@@ -144,7 +172,7 @@ def test_fan_still_fires_when_the_goal_is_occluded():
     assert not planner._check_collision(state.waypoint, planner.goal_state.waypoint)
     with _skip(True):
         _, legs = _fan_legs(planner, state)
-    assert legs, 'the occluded-reorientation valve must be untouched'
+    assert legs, "the occluded-reorientation valve must be untouched"
 
 
 def test_fan_still_fires_from_a_start_corner():
@@ -154,7 +182,7 @@ def test_fan_still_fires_from_a_start_corner():
     planner.g_scores[corner] = corner.g_cost
     with _skip(True):
         _, legs = _fan_legs(planner, corner)
-    assert legs, 'start corners are exempt: their fan is takeoff reorientation'
+    assert legs, "start corners are exempt: their fan is takeoff reorientation"
 
 
 def test_fan_still_fires_when_there_is_no_other_successor():
@@ -163,5 +191,7 @@ def test_fan_still_fires_when_there_is_no_other_successor():
     state = _state(planner, (200000.0, 250000.0), heading=math.pi)
     with _skip(True):
         successors, legs = _fan_legs(planner, state)
-    assert legs, 'the no-successor fallback must never be gated'
-    assert len(successors) == len(legs), 'this state should have no Strategy-A successor'
+    assert legs, "the no-successor fallback must never be gated"
+    assert len(successors) == len(legs), (
+        "this state should have no Strategy-A successor"
+    )

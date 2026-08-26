@@ -5,6 +5,7 @@ Defines operational parameters and parameters
 
 import math
 
+
 # ====== DYNAMIC CONSTRAINTS ======
 # Turn radius (m) - fixed for entire trajectory
 R = 8000.0
@@ -125,15 +126,18 @@ def resolve_time_budget_s(value: float | None = None) -> float:
     """
     budget = TIME_BUDGET_S if value is None else value
     if not isinstance(budget, (int, float)) or math.isnan(budget):
-        raise ValueError(f"time budget must be a finite number of seconds, got {budget!r}")
+        raise ValueError(
+            f"time budget must be a finite number of seconds, got {budget!r}"
+        )
     budget = float(budget)
     if budget <= 0.0 or math.isinf(budget):
         raise ValueError(f"time budget must be finite and > 0 seconds, got {budget!r}")
     return budget
 
+
 # State-lattice quantisation for A* de-duplication
-STATE_POS_QUANTUM = 1000.0          # meters
-STATE_HEADING_QUANTUM_DEG = 3.0     # degrees
+STATE_POS_QUANTUM = 1000.0  # meters
+STATE_HEADING_QUANTUM_DEG = 3.0  # degrees
 
 # Heuristic weight (1.0 = Dijkstra, > 1.0 = more greedy)
 HEURISTIC_WEIGHT = 1.0
@@ -546,13 +550,16 @@ SPAWN_CLEARANCE_M = 5000.0
 
 # ====== UTILS ======
 
+
 def deg_to_rad(degrees: float) -> float:
     """Convert degrees to radians"""
     return math.radians(degrees)
 
+
 def rad_to_deg(radians: float) -> float:
     """Convert radians to degrees"""
     return math.degrees(radians)
+
 
 # Pre-compute often-used values
 ALPHA_MAX_RAD = deg_to_rad(ALPHA_MAX)

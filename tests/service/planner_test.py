@@ -14,6 +14,7 @@ from service.vtx_service.messages import (
     VehicleLimits,
 )
 
+
 LIMITS = VehicleLimits(8000.0, 8000.0, 15000.0, 500.0, 90.0)
 
 
@@ -108,7 +109,9 @@ def test_unbuildable_geometry_is_refused_not_crashed() -> None:
 
 def test_a_goal_buried_in_an_obstacle_fails_honestly() -> None:
     reply = plan(
-        _request(dynamic_obstacles=(Circle(center=(300000.0, 250000.0), radius_m=40000.0),))
+        _request(
+            dynamic_obstacles=(Circle(center=(300000.0, 250000.0), radius_m=40000.0),)
+        )
     )
     assert reply.status is not PlanStatus.OK
     assert reply.detail != ""

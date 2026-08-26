@@ -14,13 +14,17 @@ The gate belongs at the true limit here because nothing in the DP is
 constructed from an angle: it measures corners between existing waypoints with
 the oracle's own formula, bit for bit.
 """
+
 import math
 
 from path_planning import config
-from path_planning.core import map_generator as mg
-from path_planning.core import preprocessing as prep
-from path_planning.core import kinodynamic_astar as astar
-from path_planning.core import kinodynamic_astar_v0 as astar_v0
+from path_planning.core import (
+    kinodynamic_astar as astar,
+    kinodynamic_astar_v0 as astar_v0,
+    map_generator as mg,
+    preprocessing as prep,
+)
+
 
 PLANNERS = (astar.KinodynamicAstar, astar_v0.KinodynamicAstar)
 
@@ -32,32 +36,50 @@ PASS_THROUGH = [(20000.0, 40000.0), (20000.0, 80000.0), (20000.0, 120000.0)]
 
 
 def _planner(cls):
-    scenario = mg.create_scenario({
-        'map_bounds': (config.MAP_WIDTH, config.MAP_HEIGHT),
-        'start': (0.0, 0.0), 'start_heading': 0.0,
-        'goal': GOAL, 'goal_heading': None,
-        'num_islands': 0, 'num_dynamic_obstacles': 0, 'seed': 1,
-    })
+    scenario = mg.create_scenario(
+        {
+            "map_bounds": (config.MAP_WIDTH, config.MAP_HEIGHT),
+            "start": (0.0, 0.0),
+            "start_heading": 0.0,
+            "goal": GOAL,
+            "goal_heading": None,
+            "num_islands": 0,
+            "num_dynamic_obstacles": 0,
+            "seed": 1,
+        }
+    )
     return cls(prep.prepare_scenario(scenario))
 
 
 def _path():
-    return [(CORNER, math.pi / 2)] + [(w, math.pi / 2) for w in PASS_THROUGH] \
+    return (
+        [(CORNER, math.pi / 2)]
+        + [(w, math.pi / 2) for w in PASS_THROUGH]
         + [(GOAL, math.pi / 2)]
+    )
 
 
 def test_a_corner_at_exactly_alpha_max_does_not_disable_smoothing():
     for cls in PLANNERS:
         planner = _planner(cls)
-        turn = abs(astar_v0._angle_diff(
-            math.atan2(PASS_THROUGH[0][1] - CORNER[1], PASS_THROUGH[0][0] - CORNER[0]),
-            math.atan2(CORNER[1], CORNER[0])))
-        assert turn == planner.alpha_max_rad, 'test geometry no longer sits ON the limit'
-        assert turn > planner._alpha_build, 'test no longer exercises the build reserve'
+        turn = abs(
+            astar_v0._angle_diff(
+                math.atan2(
+                    PASS_THROUGH[0][1] - CORNER[1], PASS_THROUGH[0][0] - CORNER[0]
+                ),
+                math.atan2(CORNER[1], CORNER[0]),
+            )
+        )
+        assert turn == planner.alpha_max_rad, (
+            "test geometry no longer sits ON the limit"
+        )
+        assert turn > planner._alpha_build, "test no longer exercises the build reserve"
 
         path = _path()
         out = planner.smooth_path(path)
-        assert out is not path, f'{cls.__module__}: DP fell back to the unsmoothed input'
+        assert out is not path, (
+            f"{cls.__module__}: DP fell back to the unsmoothed input"
+        )
 
 
 def test_waypoints_flown_straight_through_are_dropped():
@@ -68,5 +90,5 @@ def test_waypoints_flown_straight_through_are_dropped():
         out = planner.smooth_path(_path())
         kept = [w for w, _ in out]
         for w in PASS_THROUGH:
-            assert w not in kept, f'{cls.__module__}: kept pass-through waypoint {w}'
-        assert CORNER in kept, f'{cls.__module__}: dropped the real corner'
+            assert w not in kept, f"{cls.__module__}: kept pass-through waypoint {w}"
+        assert CORNER in kept, f"{cls.__module__}: dropped the real corner"

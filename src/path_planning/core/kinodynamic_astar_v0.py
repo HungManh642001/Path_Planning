@@ -19,16 +19,18 @@ import time
 from collections import defaultdict
 from typing import TYPE_CHECKING, NamedTuple, TypedDict
 
-from shapely.geometry import LineString, Polygon
-from shapely.geometry import Point as ShapelyPoint
+from shapely.geometry import LineString, Point as ShapelyPoint, Polygon
 from shapely.ops import unary_union
 from shapely.prepared import prep as shp_prep
 
 from path_planning import config
-from path_planning.core import goal_shot as gshot
-from path_planning.core import mission as mission
-from path_planning.core import path_validation as pv
-from path_planning.core import spatial_utils as su
+from path_planning.core import (
+    goal_shot as gshot,
+    mission as mission,
+    path_validation as pv,
+    spatial_utils as su,
+)
+
 
 if TYPE_CHECKING:
     from path_planning.core.types import (
@@ -173,7 +175,9 @@ class State:
 
     def __repr__(self) -> str:
         """Return a compact debug representation with the heading in degrees."""
-        heading = "none" if self.heading is None else f"{math.degrees(self.heading):.1f}°"
+        heading = (
+            "none" if self.heading is None else f"{math.degrees(self.heading):.1f}°"
+        )
         return f"State(wp={self.waypoint}, h={heading})"
 
 
@@ -222,7 +226,9 @@ class KinodynamicAstar:
             )
         self._origin: Point = origin
         self._target: Point = target
-        self._l0 = preprocessed_scenario["start_state"].get("straight_length", config.L0)
+        self._l0 = preprocessed_scenario["start_state"].get(
+            "straight_length", config.L0
+        )
         # Lift applied when CONSTRUCTING geometry, so a tangent chord is
         # strictly clear of the exact-checked boundary instead of landing on it.
         # Two separate reasons, added not merged: CONSTRUCTION_CLEARANCE_M is an
@@ -231,7 +237,9 @@ class KinodynamicAstar:
         # and are rejected by their own collision test.
         self._construct_delta = config.CONSTRUCTION_CLEARANCE_M + config.GEOM_EPS_M
 
-        self._polygons = [Polygon(coords) for coords in preprocessed_scenario["polygon_obstacles"]]
+        self._polygons = [
+            Polygon(coords) for coords in preprocessed_scenario["polygon_obstacles"]
+        ]
         # Plain-float bboxes so a chord/arc can be rejected against an obstacle
         # without building any geometry. Measured over 40 scenarios: 82% of the
         # circle tests in _check_collision and 97.6% of those in
@@ -253,11 +261,17 @@ class KinodynamicAstar:
         self._poly_vertices: list[Point] = []
         for poly in self._polygons:
             hull = poly.convex_hull.buffer(self._construct_delta, join_style="mitre")
-            self._poly_vertices.extend((float(x), float(y)) for x, y in hull.exterior.coords[:-1])
+            self._poly_vertices.extend(
+                (float(x), float(y)) for x, y in hull.exterior.coords[:-1]
+            )
 
         safezones = preprocessed_scenario.get("safezones")
-        self._safezone = unary_union([Polygon(sz) for sz in safezones]) if safezones else None
-        self._safezone_prep = shp_prep(self._safezone) if self._safezone is not None else None
+        self._safezone = (
+            unary_union([Polygon(sz) for sz in safezones]) if safezones else None
+        )
+        self._safezone_prep = (
+            shp_prep(self._safezone) if self._safezone is not None else None
+        )
         map_bounds = preprocessed_scenario.get("map_bounds")
         self._has_explicit_bounds = map_bounds is not None
         self._bounds_w, self._bounds_h = (
@@ -277,7 +291,9 @@ class KinodynamicAstar:
         )
 
         self._free_goal = preprocessed_scenario.get("goal_heading") is None
-        self._dss = preprocessed_scenario["goal_state"].get("engagement_distance", config.DSS)
+        self._dss = preprocessed_scenario["goal_state"].get(
+            "engagement_distance", config.DSS
+        )
 
         # Search variables.
         self.open_set: list[tuple[float, int, State]] = []
@@ -346,7 +362,9 @@ class KinodynamicAstar:
             if goal_heading is not None:
                 travel = su.angle_to_heading(self._origin, self._target)
                 reversal = abs(_angle_diff(goal_heading, travel))
-                self._shot_armed = reversal >= config.deg_to_rad(config.GOAL_SHOT_MIN_REVERSAL_DEG)
+                self._shot_armed = reversal >= config.deg_to_rad(
+                    config.GOAL_SHOT_MIN_REVERSAL_DEG
+                )
 
     def _seed_start_corners(self) -> list[State]:
         """Seed the takeoff corners the search is rooted at.
@@ -481,7 +499,9 @@ class KinodynamicAstar:
         candidates: list[Point] = []
         for center, radius in self.scenario["circle_obstacles"]:
             candidates.extend(
-                su.circle_tangent_points(position, center, radius + self._construct_delta)
+                su.circle_tangent_points(
+                    position, center, radius + self._construct_delta
+                )
             )
         candidates.extend(self._poly_vertices)
         candidates.append(goal_wp)
@@ -497,7 +517,11 @@ class KinodynamicAstar:
             if dx * dx + dy * dy < _CAND_MIN_D2:
                 continue
             result = self._pivot_candidate(current_state, node, 0.0)
-            if result is None and config.NUM_PIVOT_SLIDES > 0 and self._last_reject == "arc":
+            if (
+                result is None
+                and config.NUM_PIVOT_SLIDES > 0
+                and self._last_reject == "arc"
+            ):
                 # Only an ARC rejection is worth retrying: sliding forward can
                 # only INCREASE the turn (so a candidate already over alpha_max
                 # is hopeless), and a blocked chord is almost never unblocked
@@ -543,7 +567,9 @@ class KinodynamicAstar:
         # --- Strategy B: radial fan, an escape valve against long detours ---
         num_directions = config.RADIAL_FAN_DIRECTIONS
         for i in range(num_directions):
-            heading_offset = -self._alpha_build + 2 * self._alpha_build * i / (num_directions - 1)
+            heading_offset = -self._alpha_build + 2 * self._alpha_build * i / (
+                num_directions - 1
+            )
             next_heading = heading + heading_offset
             near_reserve = math.tan(abs(heading_offset) / 2.0) * self.R
             turn = abs(_angle_diff(next_heading, heading))
@@ -575,7 +601,9 @@ class KinodynamicAstar:
                     continue
                 successor = State(next_waypoint, next_heading)
                 successor.straight_budget = budget
-                successors.append((successor, distance_next + config.TURN_PENALTY_WEIGHT * turn))
+                successors.append(
+                    (successor, distance_next + config.TURN_PENALTY_WEIGHT * turn)
+                )
         return successors
 
     def _pivot_candidate(
@@ -607,7 +635,9 @@ class KinodynamicAstar:
             raise TypeError("cannot expand a headingless goal target")
 
         pivot = (
-            (position[0] + advance * ux, position[1] + advance * uy) if advance > 0.0 else position
+            (position[0] + advance * ux, position[1] + advance * uy)
+            if advance > 0.0
+            else position
         )
         dx = node[0] - pivot[0]
         dy = node[1] - pivot[1]
@@ -661,7 +691,9 @@ class KinodynamicAstar:
         if not self._check_collision(pivot, node):
             self._last_reject = "los"
             return None
-        if config.ARC_CLEARANCE_CHECK and not self._corner_arc_clear(heading, pivot, node):
+        if config.ARC_CLEARANCE_CHECK and not self._corner_arc_clear(
+            heading, pivot, node
+        ):
             self._last_reject = "arc"
             return None
 
@@ -768,7 +800,12 @@ class KinodynamicAstar:
         # every arc paid ARC_CHECK_SAMPLES-1 distances against EVERY circle;
         # 97.6% of those pairs cannot touch (measured over 40 scenarios).
         for cx, cy, radius in self._circles:
-            if cx + radius < ax0 or cx - radius > ax1 or cy + radius < ay0 or cy - radius > ay1:
+            if (
+                cx + radius < ax0
+                or cx - radius > ax1
+                or cy + radius < ay0
+                or cy - radius > ay1
+            ):
                 continue
             center = (cx, cy)
             for j in range(len(pts) - 1):
@@ -809,7 +846,12 @@ class KinodynamicAstar:
         # chord's. A centre further than `radius` outside the chord's bounding
         # box is further than `radius` from the chord itself.
         for cx, cy, radius in self._circles:
-            if cx + radius < x0 or cx - radius > x1 or cy + radius < y0 or cy - radius > y1:
+            if (
+                cx + radius < x0
+                or cx - radius > x1
+                or cy + radius < y0
+                or cy - radius > y1
+            ):
                 continue
             if su.point_to_line_distance((cx, cy), p1, p2) < radius:
                 return False
@@ -1000,7 +1042,9 @@ class KinodynamicAstar:
             corner_state.parent = current
             turn_1 = abs(_angle_diff(leg1_heading, heading))
             corner_state.g_cost = (
-                base_g + math.dist(current.waypoint, corner) + config.TURN_PENALTY_WEIGHT * turn_1
+                base_g
+                + math.dist(current.waypoint, corner)
+                + config.TURN_PENALTY_WEIGHT * turn_1
             )
             corner_state.straight_budget = candidate.budget_corner
 
@@ -1081,7 +1125,9 @@ class KinodynamicAstar:
                 and (self.iteration_count % config.GOAL_SHOT_EVERY_N) == 0
             ):
                 shot = self._try_goal_shot(current)
-                if shot is not None and shot.g_cost < self.g_scores.get(shot, float("inf")):
+                if shot is not None and shot.g_cost < self.g_scores.get(
+                    shot, float("inf")
+                ):
                     self.g_scores[shot] = shot.g_cost
                     shot.h_cost = 0.0
                     heapq.heappush(
@@ -1116,7 +1162,8 @@ class KinodynamicAstar:
                     heapq.heappush(
                         self.open_set,
                         (
-                            next_state.g_cost + config.HEURISTIC_WEIGHT * next_state.h_cost,
+                            next_state.g_cost
+                            + config.HEURISTIC_WEIGHT * next_state.h_cost,
                             self.iteration_count,
                             next_state,
                         ),
@@ -1256,7 +1303,9 @@ class KinodynamicAstar:
         node_cost = config.SMOOTH_NODE_PENALTY_M
         start_h = self.scenario["start_state"]["heading"]
         # Only meaningful when T really is the terminal node we appended.
-        goal_h = None if (self._free_goal or not tail) else self.scenario.get("goal_heading")
+        goal_h = (
+            None if (self._free_goal or not tail) else self.scenario.get("goal_heading")
+        )
 
         # Chord geometry, computed once. `clear` uses the planner's own collision
         # test so the smoothed path obeys the safezone too, not just obstacles.
@@ -1307,7 +1356,8 @@ class KinodynamicAstar:
                         # arrives on the wrong heading.
                         if (
                             goal_h is not None
-                            and abs(_angle_diff(brg[u][v], goal_h)) > config.APPROACH_RAY_TOL_RAD
+                            and abs(_angle_diff(brg[u][v], goal_h))
+                            > config.APPROACH_RAY_TOL_RAD
                         ):
                             continue
                         if budget >= dss and (best is None or cost < best[1]):
@@ -1337,7 +1387,10 @@ class KinodynamicAstar:
                         bucket[:] = [
                             e
                             for e in bucket
-                            if not (new_budget >= e.budget - 1e-9 and new_cost <= e.cost + 1e-9)
+                            if not (
+                                new_budget >= e.budget - 1e-9
+                                and new_cost <= e.cost + 1e-9
+                            )
                         ]
                         bucket.append(_DpEntry(new_budget, new_cost, (u, v), entry))
 

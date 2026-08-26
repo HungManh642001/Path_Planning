@@ -20,17 +20,19 @@ import time
 from collections import defaultdict
 from typing import TYPE_CHECKING, NamedTuple, TypedDict
 
-from shapely.geometry import LineString, Polygon
-from shapely.geometry import Point as ShapelyPoint
+from shapely.geometry import LineString, Point as ShapelyPoint, Polygon
 from shapely.ops import unary_union
 from shapely.prepared import prep as shp_prep
 
 from path_planning import config
-from path_planning.core import arc_geometry as ag
-from path_planning.core import goal_shot as gshot
-from path_planning.core import mission as mission
-from path_planning.core import path_validation as pv
-from path_planning.core import spatial_utils as su
+from path_planning.core import (
+    arc_geometry as ag,
+    goal_shot as gshot,
+    mission as mission,
+    path_validation as pv,
+    spatial_utils as su,
+)
+
 
 if TYPE_CHECKING:
     from path_planning.core.types import (
@@ -226,7 +228,9 @@ class State:
 
     def __repr__(self) -> str:
         """Return a compact debug representation with the heading in degrees."""
-        heading = "none" if self.heading is None else f"{math.degrees(self.heading):.1f}°"
+        heading = (
+            "none" if self.heading is None else f"{math.degrees(self.heading):.1f}°"
+        )
         return f"State(wp={self.waypoint}, h={heading})"
 
 
@@ -274,11 +278,15 @@ class KinodynamicAstar:
             )
         self._origin: Point = origin
         self._target: Point = target
-        self._l0 = preprocessed_scenario["start_state"].get("straight_length", config.L0)
+        self._l0 = preprocessed_scenario["start_state"].get(
+            "straight_length", config.L0
+        )
         # Operational stand-off + rounding guard, added never merged. Every
         # piece of geometry this planner CONSTRUCTS is lifted by it.
         self._construct_delta = config.CONSTRUCTION_CLEARANCE_M + config.GEOM_EPS_M
-        self._polygons = [Polygon(coords) for coords in preprocessed_scenario["polygon_obstacles"]]
+        self._polygons = [
+            Polygon(coords) for coords in preprocessed_scenario["polygon_obstacles"]
+        ]
         # Plain-float bboxes for the manual prefilter in _check_collision /
         # _sector_clear. At N <= ~20 polygons a scalar bbox loop beats the
         # STRtree python dispatch, and — the real win — the query geometry
@@ -306,7 +314,9 @@ class KinodynamicAstar:
         # Shrunk copies for the deep-hit short-circuit in _check_collision (see
         # config.POLYGON_DEEP_HIT_INSET_M). buffer() can return empty or a
         # MultiPolygon; an empty one simply never short-circuits.
-        self._polygons_deep = [p.buffer(-config.POLYGON_DEEP_HIT_INSET_M) for p in self._polygons]
+        self._polygons_deep = [
+            p.buffer(-config.POLYGON_DEEP_HIT_INSET_M) for p in self._polygons
+        ]
         # Vertex candidates are LIFTED off the hull by the same
         # _construct_delta that circle tangent points are built on. Without it
         # polygons were the one obstacle type whose navigation targets sat
@@ -317,7 +327,9 @@ class KinodynamicAstar:
         self._poly_vertices: list[Point] = []
         for poly in self._polygons:
             hull = poly.convex_hull.buffer(self._construct_delta, join_style="mitre")
-            self._poly_vertices.extend((float(x), float(y)) for x, y in hull.exterior.coords[:-1])
+            self._poly_vertices.extend(
+                (float(x), float(y)) for x, y in hull.exterior.coords[:-1]
+            )
 
         # NOTE for _corner_arc_clear: the search-time turn-arc check uses the
         # INFLATED sets above — the same ones the straight-leg check uses. It
@@ -339,8 +351,12 @@ class KinodynamicAstar:
         # cheap. When absent, fall back to the rectangle from the scenario's
         # map_bounds, else the global config.MAP_WIDTH/HEIGHT.
         safezones = preprocessed_scenario.get("safezones")
-        self._safezone = unary_union([Polygon(sz) for sz in safezones]) if safezones else None
-        self._safezone_prep = shp_prep(self._safezone) if self._safezone is not None else None
+        self._safezone = (
+            unary_union([Polygon(sz) for sz in safezones]) if safezones else None
+        )
+        self._safezone_prep = (
+            shp_prep(self._safezone) if self._safezone is not None else None
+        )
         map_bounds = preprocessed_scenario.get("map_bounds")
         # Only enforce a rectangular bound when one is EXPLICITLY supplied. The
         # global config.MAP_WIDTH/HEIGHT is a legacy 500 km default that is
@@ -373,7 +389,9 @@ class KinodynamicAstar:
         # into T must be a straight run-in of length >= DSS in a search-chosen
         # direction (no fixed approach heading, no terminal turn).
         self._free_goal = preprocessed_scenario.get("goal_heading") is None
-        self._dss = preprocessed_scenario["goal_state"].get("engagement_distance", config.DSS)
+        self._dss = preprocessed_scenario["goal_state"].get(
+            "engagement_distance", config.DSS
+        )
 
         # Search variables. NOTE: there is deliberately NO came_from dict —
         # State hashing quantises to a coarse lattice (1000 m / 3 deg), so a
@@ -608,7 +626,9 @@ class KinodynamicAstar:
         goal_wp = self.goal_state.waypoint
         candidates: list[Point] = []
         for center, radius in self.scenario["circle_obstacles"]:
-            candidates.extend(su.circle_tangent_points(position, center, radius + delta))
+            candidates.extend(
+                su.circle_tangent_points(position, center, radius + delta)
+            )
         candidates.extend(self._poly_vertices)
         candidates.append(goal_wp)
 
@@ -618,7 +638,11 @@ class KinodynamicAstar:
             if dx * dx + dy * dy < _CAND_MIN_D2:
                 continue
             result = self._pivot_candidate(current_state, node, 0.0)
-            if result is None and config.NUM_PIVOT_SLIDES > 0 and self._last_reject == "arc":
+            if (
+                result is None
+                and config.NUM_PIVOT_SLIDES > 0
+                and self._last_reject == "arc"
+            ):
                 # Only an ARC rejection is worth retrying. Sliding forward can
                 # only INCREASE the turn, so a candidate already over alpha_max
                 # is hopeless; and a blocked chord is almost never unblocked by
@@ -676,7 +700,9 @@ class KinodynamicAstar:
         # departure points. ---
         num_directions = config.RADIAL_FAN_DIRECTIONS
         for i in range(num_directions):
-            heading_offset = -self._alpha_build + 2 * self._alpha_build * i / (num_directions - 1)
+            heading_offset = -self._alpha_build + 2 * self._alpha_build * i / (
+                num_directions - 1
+            )
             next_heading = heading + heading_offset
             # Near reserve of this direction — the bite the turn AT P takes out
             # of the new leg. Depends only on the direction, so it is hoisted
@@ -717,7 +743,9 @@ class KinodynamicAstar:
                 # extend the consecutive-B chain (other successor types leave
                 # consec_b at its 0 default, resetting the chain).
                 successor.consec_b = current_state.consec_b + 1
-                successors.append((successor, distance_m + config.TURN_PENALTY_WEIGHT * turn))
+                successors.append(
+                    (successor, distance_m + config.TURN_PENALTY_WEIGHT * turn)
+                )
 
         return successors
 
@@ -754,7 +782,9 @@ class KinodynamicAstar:
             raise TypeError("cannot expand a headingless goal target")
 
         pivot = (
-            (position[0] + advance * ux, position[1] + advance * uy) if advance > 0.0 else position
+            (position[0] + advance * ux, position[1] + advance * uy)
+            if advance > 0.0
+            else position
         )
         dx = node[0] - pivot[0]
         dy = node[1] - pivot[1]
@@ -819,7 +849,9 @@ class KinodynamicAstar:
         if not self._check_collision(pivot, node):
             self._last_reject = "los"
             return None
-        if config.ARC_CLEARANCE_CHECK and not self._corner_arc_clear(heading, pivot, node):
+        if config.ARC_CLEARANCE_CHECK and not self._corner_arc_clear(
+            heading, pivot, node
+        ):
             self._last_reject = "arc"
             return None
 
@@ -959,7 +991,9 @@ class KinodynamicAstar:
             if max_wrap <= 1e-6:
                 continue
 
-            deps = self._departure_points(idx, center, radius, r_ride, sense, goal_wp, delta)
+            deps = self._departure_points(
+                idx, center, radius, r_ride, sense, goal_wp, delta
+            )
             for dep in deps:
                 dphi = ag.arc_angle(position, dep, center, sense)
                 if dphi < 1e-3 or dphi > max_wrap:
@@ -1027,7 +1061,10 @@ class KinodynamicAstar:
             # Both circles lifted: the bitangent segment keeps delta clearance
             # from BOTH inflated boundaries.
             deps.extend(
-                dep for dep, _arr in ag.bitangent_departures(center, r_ride, c2, r2 + delta, sense)
+                dep
+                for dep, _arr in ag.bitangent_departures(
+                    center, r_ride, c2, r2 + delta, sense
+                )
             )
         for vertex in self._poly_vertices:
             dep = ag.departure_point(vertex, center, r_ride, sense)
@@ -1039,7 +1076,9 @@ class KinodynamicAstar:
         self._dep_cache[cache_key] = deps
         return deps
 
-    def _max_clear_wrap(self, center: Point, r_ride: float, phi0: float, sense: WrapSense) -> float:
+    def _max_clear_wrap(
+        self, center: Point, r_ride: float, phi0: float, sense: WrapSense
+    ) -> float:
         """Find how far the vehicle may ride a boundary before the corridor is blocked.
 
         Per ``ARC_SAMPLE_STEP_DEG`` slice the checked region is the TRUE annular
@@ -1159,7 +1198,12 @@ class KinodynamicAstar:
         gy0, gy1 = (p1y, p2[1]) if p1y <= p2[1] else (p2[1], p1y)
         if dd == 0.0:  # degenerate segment
             for cx, cy, radius in self._circles:
-                if cx + radius < gx0 or cx - radius > gx1 or cy + radius < gy0 or cy - radius > gy1:
+                if (
+                    cx + radius < gx0
+                    or cx - radius > gx1
+                    or cy + radius < gy0
+                    or cy - radius > gy1
+                ):
                     continue
                 relx = cx - p1x
                 rely = cy - p1y
@@ -1167,7 +1211,12 @@ class KinodynamicAstar:
                     return False
         else:
             for cx, cy, radius in self._circles:
-                if cx + radius < gx0 or cx - radius > gx1 or cy + radius < gy0 or cy - radius > gy1:
+                if (
+                    cx + radius < gx0
+                    or cx - radius > gx1
+                    or cy + radius < gy0
+                    or cy - radius > gy1
+                ):
                     continue
                 relx = cx - p1x
                 rely = cy - p1y
@@ -1217,7 +1266,9 @@ class KinodynamicAstar:
                 return False
         return True
 
-    def _corner_arc_clear(self, h_in: float, w: Point, w_next: Point, exact: bool = False) -> bool:
+    def _corner_arc_clear(
+        self, h_in: float, w: Point, w_next: Point, exact: bool = False
+    ) -> bool:
         """Test whether the radius-R fillet arc rounding corner ``w`` is clear.
 
         The arc clears the INFLATED obstacles (raw + SAFE_MARGIN, the same set
@@ -1269,7 +1320,10 @@ class KinodynamicAstar:
 
         turn_radius = self.R
         tangent = turn_radius * math.tan(alpha / 2.0)
-        entry = (w[0] - ux * tangent, w[1] - uy * tangent)  # tangent point, incoming leg
+        entry = (
+            w[0] - ux * tangent,
+            w[1] - uy * tangent,
+        )  # tangent point, incoming leg
         s = 1.0 if cross > 0 else -1.0
         n_in = (-uy * s, ux * s)
         cx0 = entry[0] + turn_radius * n_in[0]  # arc centre
@@ -1296,7 +1350,12 @@ class KinodynamicAstar:
         # Circles: inline point-to-segment, only for a circle whose bbox meets
         # the arc bbox (grown by its radius).
         for cx, cy, radius in self._circles:
-            if cx + radius < ax0 or cx - radius > ax1 or cy + radius < ay0 or cy - radius > ay1:
+            if (
+                cx + radius < ax0
+                or cx - radius > ax1
+                or cy + radius < ay0
+                or cy - radius > ay1
+            ):
                 continue
             r2 = radius * radius
             for j in range(n):
@@ -1441,7 +1500,9 @@ class KinodynamicAstar:
                 and (self.iteration_count % config.GOAL_SHOT_EVERY_N) == 0
             ):
                 shot = self._try_goal_shot(current)
-                if shot is not None and shot.g_cost < self.g_scores.get(shot, float("inf")):
+                if shot is not None and shot.g_cost < self.g_scores.get(
+                    shot, float("inf")
+                ):
                     self.g_scores[shot] = shot.g_cost
                     shot.h_cost = 0.0
                     heapq.heappush(
@@ -1478,7 +1539,8 @@ class KinodynamicAstar:
                     heapq.heappush(
                         self.open_set,
                         (
-                            next_state.g_cost + config.HEURISTIC_WEIGHT * next_state.h_cost,
+                            next_state.g_cost
+                            + config.HEURISTIC_WEIGHT * next_state.h_cost,
                             self.iteration_count,
                             next_state,
                         ),
@@ -1594,7 +1656,9 @@ class KinodynamicAstar:
             corner_state.parent = current
             turn_1 = abs(_angle_diff(leg1_heading, heading))
             corner_state.g_cost = (
-                base_g + math.dist(current.waypoint, corner) + config.TURN_PENALTY_WEIGHT * turn_1
+                base_g
+                + math.dist(current.waypoint, corner)
+                + config.TURN_PENALTY_WEIGHT * turn_1
             )
             corner_state.straight_budget = candidate.budget_corner
             # Leg 2: C -> goal (stored heading = arrival bearing).
@@ -1657,7 +1721,9 @@ class KinodynamicAstar:
             if st.arc_from is not None and prev_wp is not None:
                 center, radius, arc_start, sense = st.arc_from
                 dphi = ag.arc_angle(arc_start, st.waypoint, center, sense)
-                path.extend(ag.arc_waypoints(center, radius, arc_start, dphi, sense, theta_out))
+                path.extend(
+                    ag.arc_waypoints(center, radius, arc_start, dphi, sense, theta_out)
+                )
             if st.via is not None:
                 path.append(st.via)
             heading = st.heading
@@ -1771,7 +1837,9 @@ class KinodynamicAstar:
         start_h = self.scenario["start_state"]["heading"]
         # Fixed-goal approach ray; only meaningful when T really is the terminal
         # node appended above (see the terminal branch of the DP below).
-        goal_h = None if (self._free_goal or not tail) else self.scenario.get("goal_heading")
+        goal_h = (
+            None if (self._free_goal or not tail) else self.scenario.get("goal_heading")
+        )
 
         # Chord geometry, computed once. `clear` uses the planner's own collision
         # test so the smoothed path obeys the safezone too, not just obstacles.
@@ -1795,7 +1863,9 @@ class KinodynamicAstar:
             key = (u, v, w)
             hit = arc_memo.get(key)
             if hit is None:
-                hit = self._corner_arc_clear(brg[u][v], waypoints[v], waypoints[w], exact=True)
+                hit = self._corner_arc_clear(
+                    brg[u][v], waypoints[v], waypoints[w], exact=True
+                )
                 arc_memo[key] = hit
             return hit
 
@@ -1832,7 +1902,8 @@ class KinodynamicAstar:
                         # bearing against goal_heading.
                         if (
                             goal_h is not None
-                            and abs(_angle_diff(brg[u][v], goal_h)) > config.APPROACH_RAY_TOL_RAD
+                            and abs(_angle_diff(brg[u][v], goal_h))
+                            > config.APPROACH_RAY_TOL_RAD
                         ):
                             continue
                         if budget >= dss and (best is None or cost < best[1]):
@@ -1862,7 +1933,10 @@ class KinodynamicAstar:
                         bucket[:] = [
                             e
                             for e in bucket
-                            if not (new_budget >= e.budget - 1e-9 and new_cost <= e.cost + 1e-9)
+                            if not (
+                                new_budget >= e.budget - 1e-9
+                                and new_cost <= e.cost + 1e-9
+                            )
                         ]
                         bucket.append(_DpEntry(new_budget, new_cost, (u, v), entry))
 

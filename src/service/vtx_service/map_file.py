@@ -20,6 +20,7 @@ from xml.etree import ElementTree
 
 from service.vtx_service.messages import Circle, PlanRequest, Point
 
+
 MAP_VERSION = "1"
 _CLOSING_TOL_M = 1e-9
 
@@ -78,7 +79,9 @@ class PreloadedMap:
         )
 
 
-def _polygons(section: ElementTree.Element | None, path: Path) -> list[tuple[Point, ...]]:
+def _polygons(
+    section: ElementTree.Element | None, path: Path
+) -> list[tuple[Point, ...]]:
     if section is None:
         return []
     return [_ring(node, path) for node in section.findall("polygon")]
@@ -86,7 +89,8 @@ def _polygons(section: ElementTree.Element | None, path: Path) -> list[tuple[Poi
 
 def _ring(node: ElementTree.Element, path: Path) -> tuple[Point, ...]:
     points: list[Point] = [
-        (_float_attr(p, "x", path), _float_attr(p, "y", path)) for p in node.findall("point")
+        (_float_attr(p, "x", path), _float_attr(p, "y", path))
+        for p in node.findall("point")
     ]
     # Vành MỞ: `core/` giả định không có đỉnh đóng lặp lại, và một đỉnh trùng
     # lặp tạo ra cạnh dài 0 mà oracle sẽ từ chối.

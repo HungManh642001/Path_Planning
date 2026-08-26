@@ -19,7 +19,15 @@ import sys
 import time
 from dataclasses import dataclass
 
-from cyclonedds.core import Policy, Qos, ReadCondition, InstanceState, SampleState, ViewState, WaitSet
+from cyclonedds.core import (
+    InstanceState,
+    Policy,
+    Qos,
+    ReadCondition,
+    SampleState,
+    ViewState,
+    WaitSet,
+)
 from cyclonedds.domain import DomainParticipant
 from cyclonedds.idl import IdlStruct
 from cyclonedds.idl.annotations import key
@@ -28,6 +36,7 @@ from cyclonedds.pub import DataWriter, Publisher
 from cyclonedds.sub import DataReader, Subscriber
 from cyclonedds.topic import Topic
 from cyclonedds.util import duration
+
 
 DOMAIN = 91
 
@@ -74,7 +83,9 @@ def send() -> None:
         request_id=list(range(16)),
         idl_version=1,
         detail="first W1..W2 l=7421.3 < L0=8000",
-        islands=[Polygon(vertices=[Point2D(0.0, 0.0), Point2D(1e5, 0.0), Point2D(5e4, 1e5)])],
+        islands=[
+            Polygon(vertices=[Point2D(0.0, 0.0), Point2D(1e5, 0.0), Point2D(5e4, 1e5)])
+        ],
         length_m=123456.78901234567,
     )
     writer.write(sample)

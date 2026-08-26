@@ -19,6 +19,7 @@ from service.vtx_service.messages import (
     VehicleLimits,
 )
 
+
 MAP_XML = """<vtx-map version="1">
   <safezones>
     <polygon>
@@ -70,8 +71,12 @@ def test_load_reads_all_three_kinds(tmp_path: Path) -> None:
     loaded = PreloadedMap.load(_write(tmp_path))
     assert len(loaded.safezones) == 1
     assert len(loaded.safezones[0]) == 4
-    assert loaded.islands == (((150000.0, 120000.0), (200000.0, 120000.0), (175000.0, 200000.0)),)
-    assert loaded.dynamic_obstacles == (Circle(center=(220000.0, 180000.0), radius_m=15000.0),)
+    assert loaded.islands == (
+        ((150000.0, 120000.0), (200000.0, 120000.0), (175000.0, 200000.0)),
+    )
+    assert loaded.dynamic_obstacles == (
+        Circle(center=(220000.0, 180000.0), radius_m=15000.0),
+    )
 
 
 def test_a_repeated_closing_vertex_is_trimmed(tmp_path: Path) -> None:
@@ -106,7 +111,9 @@ def test_flag_off_returns_the_very_same_object(tmp_path: Path) -> None:
 
 def test_a_wrong_version_is_an_error_not_a_warning(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="version"):
-        PreloadedMap.load(_write(tmp_path, MAP_XML.replace('version="1"', 'version="9"')))
+        PreloadedMap.load(
+            _write(tmp_path, MAP_XML.replace('version="1"', 'version="9"'))
+        )
 
 
 def test_a_wrong_root_tag_is_rejected(tmp_path: Path) -> None:
@@ -157,10 +164,20 @@ def test_empty_sections_are_allowed(tmp_path: Path) -> None:
     loaded = PreloadedMap.load(
         _write(tmp_path, '<vtx-map version="1"><safezones/><obstacles/></vtx-map>')
     )
-    assert loaded.safezones == () and loaded.islands == () and loaded.dynamic_obstacles == ()
+    assert (
+        loaded.safezones == ()
+        and loaded.islands == ()
+        and loaded.dynamic_obstacles == ()
+    )
 
 
 def test_the_shipped_example_file_parses() -> None:
-    example = Path(__file__).resolve().parents[2] / "src" / "service" / "deploy" / "basemap.example.xml"
+    example = (
+        Path(__file__).resolve().parents[2]
+        / "src"
+        / "service"
+        / "deploy"
+        / "basemap.example.xml"
+    )
     loaded = PreloadedMap.load(example)
     assert loaded.safezones or loaded.islands or loaded.dynamic_obstacles

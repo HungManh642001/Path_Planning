@@ -18,12 +18,11 @@ from typing import TYPE_CHECKING, Literal
 
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
-from matplotlib.patches import Circle as MplCircle
-from matplotlib.patches import Polygon as MplPolygon
-from matplotlib.patches import Rectangle
+from matplotlib.patches import Circle as MplCircle, Polygon as MplPolygon, Rectangle
 
 from path_planning import config
 from path_planning.render import trajectory as tr
+
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -141,10 +140,13 @@ def _content_extents(
     gymin, gymax = cymin - gate, cymax + gate
 
     # --- Pass 2a: obstacles whose bbox intersects the gate ---
-    obstacles: list[Obstacle] = list(preprocessed.get("obstacles", [])) if preprocessed else []
+    obstacles: list[Obstacle] = (
+        list(preprocessed.get("obstacles", [])) if preprocessed else []
+    )
     if scenario:
         obstacles.extend(
-            {"type": "polygon", "polygon": island} for island in scenario.get("islands", [])
+            {"type": "polygon", "polygon": island}
+            for island in scenario.get("islands", [])
         )
         obstacles.extend(
             {"type": "circle", "center": center, "radius": radius}
@@ -223,7 +225,9 @@ def _draw_operating_area(ax: Axes, scenario: Scenario) -> None:
         )
 
 
-def _draw_obstacles(ax: Axes, scenario: Scenario, preprocessed: PreprocessedScenario) -> None:
+def _draw_obstacles(
+    ax: Axes, scenario: Scenario, preprocessed: PreprocessedScenario
+) -> None:
     """Draw the raw obstacles, and the inflated buffer zones as dashed outlines."""
     for island in scenario.get("islands", []):
         ax.add_patch(
@@ -277,7 +281,9 @@ def _draw_endpoints(ax: Axes, preprocessed: PreprocessedScenario) -> None:
     if takeoff is None or target is None:
         return
 
-    ax.plot(takeoff[0], takeoff[1], "go", markersize=12, label="Takeoff Point O", zorder=5)
+    ax.plot(
+        takeoff[0], takeoff[1], "go", markersize=12, label="Takeoff Point O", zorder=5
+    )
 
     first_wp = preprocessed["start_state"]["waypoint"]
     ax.arrow(
@@ -392,7 +398,13 @@ def _draw_trajectory(
     l0 = preprocessed["start_state"].get("straight_length", config.L0)
     dss = preprocessed["goal_state"].get("engagement_distance", config.DSS)
     flown_len = sum(math.dist(a, b) for a, b in pairwise(samples))
-    ax.plot(*_point_at_arclength(samples, l0), "g^", markersize=10, zorder=5, label="L₀ point")
+    ax.plot(
+        *_point_at_arclength(samples, l0),
+        "g^",
+        markersize=10,
+        zorder=5,
+        label="L₀ point",
+    )
     ax.plot(
         *_point_at_arclength(samples, flown_len - dss),
         "rs",
@@ -403,7 +415,9 @@ def _draw_trajectory(
 
 
 def _info_footer(
-    scenario: Scenario, preprocessed: PreprocessedScenario, result: PlanResultView | None
+    scenario: Scenario,
+    preprocessed: PreprocessedScenario,
+    result: PlanResultView | None,
 ) -> str:
     """Build the parameter/outcome summary drawn below the map.
 
@@ -434,7 +448,11 @@ def _info_footer(
     stats = result.get("stats")
     iterations = stats.get("iterations", 0) if stats else 0
     status = "✓ SUCCESS" if result.get("success", False) else "✗ FAILED"
-    budget_s = stats.get("time_budget_s", config.TIME_BUDGET_S) if stats else config.TIME_BUDGET_S
+    budget_s = (
+        stats.get("time_budget_s", config.TIME_BUDGET_S)
+        if stats
+        else config.TIME_BUDGET_S
+    )
     cut = " (budget)" if stats and stats.get("budget_bound") else ""
     text += f"\n{status} | Iter: {iterations} in <= {budget_s:g}s{cut}"
 
@@ -521,7 +539,9 @@ def plot_scenario(
     # per-turn markers would otherwise contribute one entry each.
     handles, labels = ax.get_legend_handles_labels()
     by_label = dict(zip(labels, handles, strict=True))
-    ax.legend(by_label.values(), by_label.keys(), loc="upper left", fontsize=9, framealpha=0.9)
+    ax.legend(
+        by_label.values(), by_label.keys(), loc="upper left", fontsize=9, framealpha=0.9
+    )
 
     fig.text(
         0.5,

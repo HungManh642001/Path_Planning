@@ -14,10 +14,16 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from shapely.geometry import LineString, Polygon
 
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from path_planning.core.types import CircleGeometry, PlannerState, Point, PolygonCoords
+    from path_planning.core.types import (
+        CircleGeometry,
+        PlannerState,
+        Point,
+        PolygonCoords,
+    )
 
 
 class ValidationResult(NamedTuple):
@@ -219,7 +225,9 @@ def turn_angles(path: Sequence[PlannerState]) -> list[float]:
     return angles
 
 
-def turn_angles_ok(path: Sequence[PlannerState], alpha_max_rad: float) -> ValidationResult:
+def turn_angles_ok(
+    path: Sequence[PlannerState], alpha_max_rad: float
+) -> ValidationResult:
     """Check that no turn exceeds the vehicle's maximum turn angle.
 
     Args:
@@ -301,7 +309,9 @@ def straight_segments_ok(
                 return ValidationResult(False, f"first {span} l={usable:.3f} < L0={l0}")
         elif j == n_seg:  # last đoản trình: ln = l - dss >= 0
             if usable - dss < 0.0:
-                return ValidationResult(False, f"last {span} usable l={usable - dss:.3f} < 0")
+                return ValidationResult(
+                    False, f"last {span} usable l={usable - dss:.3f} < 0"
+                )
         elif usable <= 0.0:  # middle: l > 0
             return ValidationResult(False, f"middle {span} l={usable:.3f} <= 0")
     return _OK
@@ -343,7 +353,10 @@ def arc_points(
     if alpha < 1e-9:
         return []
     tangent = turn_radius * math.tan(alpha / 2)  # tangent length along each leg
-    entry = (w[0] - u[0] * tangent, w[1] - u[1] * tangent)  # tangent point, incoming leg
+    entry = (
+        w[0] - u[0] * tangent,
+        w[1] - u[1] * tangent,
+    )  # tangent point, incoming leg
     s = 1.0 if (u[0] * v[1] - u[1] * v[0]) > 0 else -1.0  # left(+)/right(-) turn
     n_in = (-u[1] * s, u[0] * s)  # inward normal of incoming leg
     cx = entry[0] + turn_radius * n_in[0]
@@ -378,7 +391,9 @@ def arcs_clear(
     for i in range(1, len(path) - 1):
         points = arc_points(path[i - 1][0], path[i][0], path[i + 1][0], turn_radius)
         for j in range(len(points) - 1):
-            if not _segment_clear(points[j], points[j + 1], circle_obstacles, polygon_obstacles):
+            if not _segment_clear(
+                points[j], points[j + 1], circle_obstacles, polygon_obstacles
+            ):
                 return ValidationResult(
                     False,
                     f"turn arc at wp[{i}] {path[i][0]} blocked ({points[j]} -> {points[j + 1]})",
@@ -437,8 +452,12 @@ def path_is_valid(
     if not ok:
         return ValidationResult(False, f"turn angles invalid: {reason}")
 
-    arc_circles = circle_obstacles if raw_circle_obstacles is None else raw_circle_obstacles
-    arc_polys = polygon_obstacles if raw_polygon_obstacles is None else raw_polygon_obstacles
+    arc_circles = (
+        circle_obstacles if raw_circle_obstacles is None else raw_circle_obstacles
+    )
+    arc_polys = (
+        polygon_obstacles if raw_polygon_obstacles is None else raw_polygon_obstacles
+    )
     ok, reason = arcs_clear(path, turn_radius, arc_circles, arc_polys)
     if not ok:
         return ValidationResult(False, f"turn arcs blocked: {reason}")

@@ -1,4 +1,6 @@
 import pytest
+
+
 """Escape-valve budget and fan-reach regressions (results_fail vs results_v2).
 
 The K seeded start corners are all expanded while the goal is still occluded,
@@ -10,21 +12,20 @@ points too short to bridge constrained goal-approach slots (seed 4: +88 km).
 import math
 
 import pytest
+from batch_random_test import generate_random_scenario
 
 from path_planning import config
-from path_planning.core import preprocessing as prep
-from path_planning.core import kinodynamic_astar as astar
-from batch_random_test import generate_random_scenario
+from path_planning.core import kinodynamic_astar as astar, preprocessing as prep
 
 
 @pytest.fixture
 def no_time_budget(monkeypatch):
     """A budget far above what these seeds need, so the clock never decides."""
-    monkeypatch.setattr(config, 'TIME_BUDGET_S', 600.0)
+    monkeypatch.setattr(config, "TIME_BUDGET_S", 600.0)
 
 
 def _mission_km(pre, res):
-    pts = [pre['start_pos']] + [p for p, _h in res['path']] + [pre['goal_pos']]
+    pts = [pre["start_pos"]] + [p for p, _h in res["path"]] + [pre["goal_pos"]]
     return sum(math.dist(a, b) for a, b in zip(pts, pts[1:])) / 1000.0
 
 
@@ -43,7 +44,8 @@ def test_corner_expansions_do_not_consume_valve_budget():
         succ = planner.get_next_states(corner)
         assert succ, "corner expansion should produce successors"
     assert planner.num_strategy_b == config.NUM_STRATEGY_B, (
-        "start-corner expansions drained the Strategy-B valve budget")
+        "start-corner expansions drained the Strategy-B valve budget"
+    )
 
 
 @pytest.mark.xfail(reason="Logic changed on branch")
@@ -73,8 +75,9 @@ def test_fan_reach_covers_worst_case_far_reserve():
     offset = planner.alpha_max_rad
     near = planner.R * math.tan(offset / 2.0)
     far = planner.R * math.tan(planner.alpha_max_rad / 2.0)
-    assert (near + planner._fan_rungs[-1]
-            == pytest.approx(near + far + config.RADIAL_FAN_STEP_M))
+    assert near + planner._fan_rungs[-1] == pytest.approx(
+        near + far + config.RADIAL_FAN_STEP_M
+    )
 
 
 def test_seed4_goal_slot_no_long_detour(no_time_budget):
@@ -82,7 +85,7 @@ def test_seed4_goal_slot_no_long_detour(no_time_budget):
     # with the fan restored the planner finds ~446.9 km. Bound is loose.
     planner, pre = _planner_for_seed(4)
     res = astar.plan_trajectory(pre, verbose=False)
-    assert res['success']
+    assert res["success"]
     assert _mission_km(pre, res) < 480.0
 
 
@@ -91,5 +94,5 @@ def test_seed964_valve_starvation_no_long_detour(no_time_budget):
     # with corners exempt the planner finds ~481.2 km. Bound is loose.
     planner, pre = _planner_for_seed(964)
     res = astar.plan_trajectory(pre, verbose=False)
-    assert res['success']
+    assert res["success"]
     assert _mission_km(pre, res) < 510.0

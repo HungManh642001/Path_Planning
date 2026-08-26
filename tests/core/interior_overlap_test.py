@@ -10,20 +10,27 @@ order to drop a waypoint sitting on the edge (batch_random_test seeds 194, 257:
 `interior_overlap_length` subtracts the boundary part, and both planners share
 it with the oracle so there is one answer to "how far inside is this chord".
 """
+
+from shapely.geometry import LineString, Polygon
+
 from path_planning.core import path_validation as pv
-from shapely.geometry import Polygon, LineString
+
 
 SQUARE = Polygon([(0.0, 0.0), (1000.0, 0.0), (1000.0, 1000.0), (0.0, 1000.0)])
 
 
 def test_chord_along_an_edge_has_no_interior_overlap():
-    along = LineString([(-500.0, 0.0), (1500.0, 0.0)])       # runs down the bottom edge
-    assert SQUARE.intersection(along).length == 1000.0, 'closed overlap is the whole edge'
+    along = LineString([(-500.0, 0.0), (1500.0, 0.0)])  # runs down the bottom edge
+    assert SQUARE.intersection(along).length == 1000.0, (
+        "closed overlap is the whole edge"
+    )
     assert pv.interior_overlap_length(SQUARE, along) == 0.0
 
 
 def test_a_real_crossing_is_measured_in_full():
-    across = LineString([(-500.0, 500.0), (1500.0, 500.0)])  # straight through the middle
+    across = LineString(
+        [(-500.0, 500.0), (1500.0, 500.0)]
+    )  # straight through the middle
     assert pv.interior_overlap_length(SQUARE, across) == 1000.0
 
 

@@ -61,10 +61,12 @@ To run/debug a single scenario instead of all 18, call the pieces directly (this
 ```python
 import core.map_generator as mg, core.preprocessing as prep
 import core.kinodynamic_astar as astar, render.visualizer as viz
-scenario = mg.scenario4_complex_maze()        # any function in mg.get_all_scenarios()
+
+scenario = mg.scenario4_complex_maze()  # any function in mg.get_all_scenarios()
 pre = prep.prepare_scenario(scenario)
 result = astar.plan_trajectory(pre, verbose=True)
-if result['success']: viz.plot_scenario(scenario, pre, result, save_path="out.png")
+if result["success"]:
+    viz.plot_scenario(scenario, pre, result, save_path="out.png")
 ```
 
 `main.py` forces the matplotlib `Agg` backend for headless rendering; the GUI uses the interactive Tk backend.

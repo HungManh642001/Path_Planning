@@ -40,6 +40,7 @@ from service.vtx_service.messages import (
     SearchStats,
 )
 
+
 _PRELOAD = [
     "config",
     "core.types",
@@ -97,8 +98,13 @@ def _ensure_pythonpath_for_forkserver() -> None:
     os.environ["PYTHONPATH"] = os.pathsep.join(entries)
 
 
-def _child(pipe: Connection, request: PlanRequest, preloaded: PreloadedMap | None,
-           hang: bool, raise_: bool) -> None:
+def _child(
+    pipe: Connection,
+    request: PlanRequest,
+    preloaded: PreloadedMap | None,
+    hang: bool,
+    raise_: bool,
+) -> None:
     """Thân tiến trình con: lập kế hoạch, gửi reply, thoát."""
     try:
         if hang:
@@ -182,8 +188,12 @@ class PlanRunner:
             process.join(timeout=10)
             parent.close()
             elapsed_s = time.perf_counter() - started
-            return self._failed(request, PlanStatus.TIMEOUT,
-                                f"vượt thời hạn cứng {deadline_s:.1f} s", elapsed_s)
+            return self._failed(
+                request,
+                PlanStatus.TIMEOUT,
+                f"vượt thời hạn cứng {deadline_s:.1f} s",
+                elapsed_s,
+            )
 
         try:
             tag, payload = parent.recv()
@@ -195,7 +205,9 @@ class PlanRunner:
 
         if tag != "ok":
             elapsed_s = time.perf_counter() - started
-            return self._failed(request, PlanStatus.INTERNAL_ERROR, str(payload), elapsed_s)
+            return self._failed(
+                request, PlanStatus.INTERNAL_ERROR, str(payload), elapsed_s
+            )
         return payload
 
     def stop(self) -> None:

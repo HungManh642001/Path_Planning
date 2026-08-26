@@ -7,16 +7,20 @@ agreement on real random maps so a prefilter slip (wrong bbox order, strict
 vs non-strict overlap, stale cache) can never change planner behaviour
 silently.
 """
+
 import math
 import random
 
-from path_planning import config
-from path_planning.core import arc_geometry as ag
-from path_planning.core import preprocessing as prep
-from path_planning.core import kinodynamic_astar as astar
-from path_planning.core import spatial_utils as su
 from batch_random_test import generate_random_scenario
 from shapely.geometry import LineString, Polygon
+
+from path_planning.core import (
+    arc_geometry as ag,
+    kinodynamic_astar as astar,
+    preprocessing as prep,
+    spatial_utils as su,
+)
+
 
 # Seeds chosen for polygon variety: 964 has 15 islands, 86/155 mixed.
 MAP_SEEDS = [964, 86, 155]
@@ -27,7 +31,7 @@ def _reference_check_collision(planner, p1, p2):
     p1x, p1y = p1
     sx, sy = p2[0] - p1x, p2[1] - p1y
     dd = sx * sx + sy * sy
-    for (cx, cy), radius in planner.scenario['circle_obstacles']:
+    for (cx, cy), radius in planner.scenario["circle_obstacles"]:
         relx, rely = cx - p1x, cy - p1y
         if dd == 0.0:
             if relx * relx + rely * rely < radius * radius:
@@ -39,7 +43,7 @@ def _reference_check_collision(planner, p1, p2):
             return False
     line = LineString([p1, p2])
     for poly in planner._polygons:
-        if poly.relate_pattern(line, 'T********'):
+        if poly.relate_pattern(line, "T********"):
             return False
     if planner._safezone is not None and not planner._safezone.covers(line):
         return False
@@ -48,7 +52,7 @@ def _reference_check_collision(planner, p1, p2):
 
 def _reference_sector_clear(planner, center, r_in, r_out, phi_a, phi_b):
     lo, hi = (phi_a, phi_b) if phi_a <= phi_b else (phi_b, phi_a)
-    for c2, r2 in planner.scenario['circle_obstacles']:
+    for c2, r2 in planner.scenario["circle_obstacles"]:
         dx, dy = c2[0] - center[0], c2[1] - center[1]
         d = math.hypot(dx, dy)
         if d - r2 >= r_out or d + r2 <= r_in:
@@ -61,7 +65,7 @@ def _reference_sector_clear(planner, center, r_in, r_out, phi_a, phi_b):
             return False
     quad = Polygon(ag.sector_polygon(center, r_in, r_out, lo, hi))
     for poly in planner._polygons:
-        if poly.relate_pattern(quad, 'T********'):
+        if poly.relate_pattern(quad, "T********"):
             return False
     return True
 
@@ -70,33 +74,41 @@ def test_check_collision_agrees_with_unfiltered_reference():
     rng = random.Random(3)
     for seed in MAP_SEEDS:
         planner = astar.KinodynamicAstar(
-            prep.prepare_scenario(generate_random_scenario(seed=seed)))
+            prep.prepare_scenario(generate_random_scenario(seed=seed))
+        )
         for _ in range(400):
             p1 = (rng.uniform(0, 500000), rng.uniform(0, 500000))
             # mix of long chords and short local segments
             if rng.random() < 0.5:
                 p2 = (rng.uniform(0, 500000), rng.uniform(0, 500000))
             else:
-                p2 = (p1[0] + rng.uniform(-20000, 20000),
-                      p1[1] + rng.uniform(-20000, 20000))
-            assert (planner._check_collision(p1, p2)
-                    == _reference_check_collision(planner, p1, p2)), (seed, p1, p2)
+                p2 = (
+                    p1[0] + rng.uniform(-20000, 20000),
+                    p1[1] + rng.uniform(-20000, 20000),
+                )
+            assert planner._check_collision(p1, p2) == _reference_check_collision(
+                planner, p1, p2
+            ), (seed, p1, p2)
 
 
 def test_sector_clear_agrees_with_unfiltered_reference():
     rng = random.Random(5)
     for seed in MAP_SEEDS:
         planner = astar.KinodynamicAstar(
-            prep.prepare_scenario(generate_random_scenario(seed=seed)))
+            prep.prepare_scenario(generate_random_scenario(seed=seed))
+        )
         for _ in range(200):
             center = (rng.uniform(0, 500000), rng.uniform(0, 500000))
             r_in = rng.uniform(5000, 60000)
             r_out = r_in * (1.0 / math.cos(math.pi / 8.0))
             phi_a = rng.uniform(-math.pi, math.pi)
             phi_b = phi_a + rng.uniform(0.01, 0.5)
-            assert (planner._sector_clear(center, r_in, r_out, phi_a, phi_b)
-                    == _reference_sector_clear(planner, center, r_in, r_out,
-                                               phi_a, phi_b)), (seed, center)
+            assert planner._sector_clear(
+                center, r_in, r_out, phi_a, phi_b
+            ) == _reference_sector_clear(planner, center, r_in, r_out, phi_a, phi_b), (
+                seed,
+                center,
+            )
 
 
 def test_state_dedup_key_matches_lattice_semantics():
@@ -107,7 +119,9 @@ def test_state_dedup_key_matches_lattice_semantics():
         a = astar.State(wp, h)
         # same lattice cell via a sub-quantum nudge
         b = astar.State((wp[0] + 1e-9, wp[1] - 1e-9), h + 1e-12)
-        assert (su.state_to_tuple(a.waypoint, a.heading)
-                == su.state_to_tuple(b.waypoint, b.heading)) == (a == b)
+        assert (
+            su.state_to_tuple(a.waypoint, a.heading)
+            == su.state_to_tuple(b.waypoint, b.heading)
+        ) == (a == b)
         if a == b:
             assert hash(a) == hash(b)

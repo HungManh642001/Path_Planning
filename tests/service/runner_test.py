@@ -11,9 +11,9 @@ import os
 import time
 from pathlib import Path
 
-from path_planning import config
 import pytest
 
+from path_planning import config
 from service.vtx_service.messages import (
     IDL_VERSION,
     PlanRequest,
@@ -22,6 +22,7 @@ from service.vtx_service.messages import (
     VehicleLimits,
 )
 from service.vtx_service.runner import PlanRunner
+
 
 LIMITS = VehicleLimits(8000.0, 8000.0, 15000.0, 500.0, 90.0)
 
@@ -128,7 +129,9 @@ def test_a_hung_child_becomes_timeout_and_the_runner_keeps_working() -> None:
         assert hung.waypoints == ()
         # Thời hạn bám ngân sách của REQUEST, không phải mặc định của config:
         # 0,5 + 0,5 s ân hạn, chứ không phải 15,5 s.
-        assert elapsed < 5.0, f"thời hạn cứng không bám ngân sách request: {elapsed:.1f}s"
+        assert elapsed < 5.0, (
+            f"thời hạn cứng không bám ngân sách request: {elapsed:.1f}s"
+        )
         # Elapsed time is essentially the deadline it burned - 0.0 would be
         # the first field an operator would question on a TIMEOUT reply.
         assert hung.plan_wall_time_s > 0.0
@@ -156,7 +159,9 @@ def test_a_child_that_raises_becomes_internal_error_not_a_dead_runner() -> None:
         instance.stop()
 
 
-def test_config_mutation_in_a_child_cannot_leak_into_the_parent(runner: PlanRunner) -> None:
+def test_config_mutation_in_a_child_cannot_leak_into_the_parent(
+    runner: PlanRunner,
+) -> None:
     """Cách ly 35 hằng số global là một trong hai lý do có tiến trình con."""
     from path_planning import config
 

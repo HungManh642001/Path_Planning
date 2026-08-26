@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import IntEnum
 
+
 Point = tuple[float, float]
 """Vị trí phẳng ``(x, y)`` mét. ``+y`` là bắc, ``+x`` là đông."""
 
@@ -119,7 +120,9 @@ class PlanRequest:
 
     def __post_init__(self) -> None:
         if len(self.request_id) != 16:
-            raise ValueError(f"request_id phải đúng 16 byte, nhận {len(self.request_id)}")
+            raise ValueError(
+                f"request_id phải đúng 16 byte, nhận {len(self.request_id)}"
+            )
 
 
 @dataclass(frozen=True)
