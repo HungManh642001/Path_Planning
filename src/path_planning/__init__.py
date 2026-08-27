@@ -1,7 +1,7 @@
-"""Kinodynamic A* path planning library for autonomous aerial vehicles.
+"""Thư viện lập kế hoạch quỹ đạo Kinodynamic A* cho phương tiện bay không người lái.
 
-Provides kinodynamically feasible path generation under minimum turning radius,
-acceleration, and approach geometry constraints across obstacle environments.
+Cung cấp thuật toán tìm kiếm đường bay tối ưu thỏa mãn bán kính quay vòng tối thiểu,
+ràng buộc đoản trình và tiếp cận mục tiêu trong môi trường chướng ngại vật phức tạp.
 """
 
 from __future__ import annotations

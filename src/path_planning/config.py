@@ -1,6 +1,7 @@
-"""Configuration Module for Autonomous Aircraft Path Planning System.
+"""Module cấu hình tham số hệ thống lập kế hoạch đường bay tự hành.
 
-Defines operational parameters and parameters
+Định nghĩa các tham số động học, giới hạn an toàn, thông số thuật toán A*
+và các hằng số hình học dùng chung trên toàn bộ hệ thống.
 """
 
 import math
@@ -105,7 +106,7 @@ TIME_BUDGET_S: float = 15.0
 
 
 def resolve_time_budget_s(value: float | None = None) -> float:
-    """Resolve a caller-supplied search budget against the configured default.
+    """Xác thực và chuyển đổi hạn mức thời gian tìm kiếm từ tham số đầu vào.
 
     One definition of "is this a usable budget", shared by both planners and by
     the DDS service, so a value that is refused in one place is refused in all
@@ -552,7 +553,7 @@ SPAWN_CLEARANCE_M = 5000.0
 
 
 def deg_to_rad(degrees: float) -> float:
-    """Convert angle in degrees to radians.
+    """Chuyển đổi góc từ độ sang radian.
 
     Args:
         degrees: Angle value in degrees.
@@ -564,7 +565,7 @@ def deg_to_rad(degrees: float) -> float:
 
 
 def rad_to_deg(radians: float) -> float:
-    """Convert angle in radians to degrees.
+    """Chuyển đổi góc từ radian sang độ.
 
     Args:
         radians: Angle value in radians.

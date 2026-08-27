@@ -1,8 +1,8 @@
-"""Preprocessing and boundary calculation.
+"""Tiền xử lý kịch bản nhiệm vụ và tính toán biên an toàn.
 
-Inflates obstacles by the operator stand-off margin and derives the offset
-start/goal waypoint states the search actually targets. Distances are metres,
-angles radians.
+Giãn nở chướng ngại vật theo khoảng cách an toàn (safe margin) và xác định
+các trạng thái xuất phát/kết thúc (start/goal state) cho thuật toán A*.
+Đơn vị tính: khoảng cách bằng mét (m), góc bằng radian (rad).
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from path_planning.types import (
 
 
 def inflation_ring(*, safe_margin: float = config.SAFE_MARGIN) -> float:
-    """Return the obstacle boundary offset used for display.
+    """Trả về khoảng cách đệm giãn nở chướng ngại vật dùng để hiển thị.
 
     There is a SINGLE ring, ``safe_margin`` -- exactly what
     :func:`inflate_obstacles` applies. This used to return a PAIR because a
@@ -46,7 +46,7 @@ def inflation_ring(*, safe_margin: float = config.SAFE_MARGIN) -> float:
 def inflate_obstacles(
     obstacles: list[Obstacle], *, safe_margin: float = config.SAFE_MARGIN
 ) -> list[Obstacle]:
-    """Inflate obstacle boundaries by the stand-off margin.
+    """Giãn nở biên chướng ngại vật ra ngoài một khoảng an toàn safe_margin.
 
     Obstacles stay independent -- no early convex hull, so a corridor between
     two of them survives.
@@ -89,7 +89,7 @@ def calculate_start_state(
     turn_radius: float = config.R,
     alpha_max_rad: float = config.ALPHA_MAX_RAD,
 ) -> StartState:
-    """Compute the first waypoint ``W_1`` and its heading after takeoff.
+    """Tính toán waypoint đầu tiên W_1 và hướng bay sau khi cất cánh.
 
     From the dynamics ``d_1 = l_1 + R * tan(alpha_1 / 2)`` under the constraint
     ``l_1 >= L_0``. ``W_1`` is placed at distance ``d_1`` along ``init_heading``.
@@ -129,7 +129,7 @@ def calculate_end_state(
     turn_radius: float = config.R,
     alpha_max_rad: float = config.ALPHA_MAX_RAD,
 ) -> GoalState:
-    """Compute the final waypoint ``W_{n-1}`` before terminal sensor lock.
+    """Tính toán waypoint cuối cùng W_{n-1} trước khi tiếp cận mục tiêu.
 
     From the dynamics ``d_n = l_n + d_ss + R * tan(alpha_{n-1} / 2)`` with
     ``l_n = 0``, so ``d_n = d_ss + R * tan(alpha_{n-1} / 2)``.
@@ -161,7 +161,7 @@ def calculate_end_state(
 def compute_inflated_obstacles(
     obstacles: list[Obstacle], *, safe_margin: float = config.SAFE_MARGIN
 ) -> InflatedObstacleSets:
-    """Inflate all obstacles and split them into the per-type sets the search uses.
+    """Giãn nở tất cả chướng ngại vật và phân loại theo kiểu tròn/đa giác.
 
     Args:
         obstacles: Raw obstacle records.
@@ -194,7 +194,7 @@ def prepare_scenario(
     safe_margin: float = config.SAFE_MARGIN,
     alpha_max_rad: float = config.ALPHA_MAX_RAD,
 ) -> PreprocessedScenario:
-    """Prepare a scenario for the search: inflate obstacles and offset endpoints.
+    """Tiền xử lý kịch bản: giãn nở vật cản và tính điểm W_1, W_{n-1}.
 
     Args:
         scenario: A scenario dict from :mod:`core.map_generator`.

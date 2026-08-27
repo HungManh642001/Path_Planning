@@ -1,9 +1,7 @@
-"""Procedural scenario and obstacle generation.
+"""Bộ sinh kịch bản ngẫu nhiên theo thuật toán (Procedural Generator).
 
-Builds synthetic mission scenarios -- islands and dynamic obstacles -- for
-testing the path planner. Every scenario, including the 16 named presets, draws
-its obstacles from these seeded generators; only the endpoints and counts are
-hand-set.
+Xây dựng kịch bản bay giả lập gồm đảo đa giác và chướng ngại vật tròn.
+Đảm bảo tính tái lập qua seed và khoảng cách cách ly giữa các vật cản.
 """
 
 from __future__ import annotations
@@ -34,7 +32,7 @@ _MAX_PLACEMENT_ATTEMPTS = 1000
 
 @dataclass(frozen=True)
 class _StartGoalGeometry:
-    """The start-goal line, precomputed once per generator call.
+    """Hình học đoạn thẳng nối điểm xuất phát và đích.
 
     Attributes:
         mx: Midpoint x between start and goal.
@@ -52,7 +50,7 @@ class _StartGoalGeometry:
 
 
 def _start_goal_geometry(start: Point, goal: Point) -> _StartGoalGeometry:
-    """Derive the start-goal line the topology samplers place obstacles against."""
+    """Tính trước các thông số hình học của đường nối start-goal."""
     angle_start_goal = math.atan2(goal[1] - start[1], goal[0] - start[0])
     return _StartGoalGeometry(
         mx=(start[0] + goal[0]) / 2,
@@ -66,7 +64,7 @@ def _start_goal_geometry(start: Point, goal: Point) -> _StartGoalGeometry:
 def _sample_center(
     topology: Topology, map_bounds: MapBounds, geom: _StartGoalGeometry
 ) -> Point:
-    """Draw one candidate obstacle centre, clamped into the middle 80% of the map.
+    """Lấy mẫu tọa độ tâm chướng ngại vật trong phạm vi 80% diện tích giữa bản đồ.
 
     Shared by both generators -- they placed centres with the same 20 lines and
     the same three topologies, and a divergence between them would be silent.
@@ -123,7 +121,7 @@ def _sample_center(
 
 
 def _clears_endpoints(shape: ShapelyPolygon, start: Point, goal: Point) -> bool:
-    """Test that a candidate obstacle keeps the spawn clearance from both endpoints.
+    """Kiểm tra vật cản có cách ly an toàn khỏi điểm cất cánh và đích không.
 
     The buffer used to be ``config.EPS`` (1e-6 m), which let an obstacle touch
     the start point and left the mandatory takeoff or seeker leg born blocked.
@@ -151,7 +149,7 @@ def generate_random_islands(
     topology: Topology = "random",
     seed: int | None = None,
 ) -> list[PolygonCoords]:
-    """Generate non-overlapping island polygons with irregular shapes.
+    """Sinh danh sách các đảo đa giác ngẫu nhiên không giao nhau.
 
     Args:
         num_islands: Number of islands to place.
@@ -220,7 +218,7 @@ def generate_dynamic_obstacles(
     topology: Topology = "random",
     seed: int | None = None,
 ) -> list[CircleGeometry]:
-    """Generate non-overlapping circular dynamic obstacles.
+    """Sinh danh sách các chướng ngại vật hình tròn không giao nhau.
 
     Args:
         num_sites: Number of obstacles to place.
@@ -265,7 +263,7 @@ def generate_dynamic_obstacles(
 
 
 def create_scenario(scenario_config: ScenarioConfig) -> Scenario:
-    """Build a complete scenario: endpoints, obstacles and the unified obstacle list.
+    """Tạo kịch bản nhiệm vụ hoàn chỉnh gồm điểm đầu cuối và tập chướng ngại vật.
 
     Args:
         scenario_config: The recipe. ``start`` and ``goal`` are mandatory; the
@@ -336,7 +334,7 @@ def create_scenario(scenario_config: ScenarioConfig) -> Scenario:
 
 
 def generate_random_scenario(seed: int = 42) -> Scenario:
-    """Generate a random scenario with islands and dynamic obstacles.
+    """Sinh kịch bản ngẫu nhiên hoàn chỉnh với đảo và chướng ngại vật tròn.
 
     Args:
         seed: Random seed for reproducibility.

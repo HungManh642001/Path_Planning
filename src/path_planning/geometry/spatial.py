@@ -1,14 +1,8 @@
-"""Geometric helpers used by the planner.
+"""Các hàm tiện ích hình học không gian 2D cho bài toán lập kế hoạch đường bay.
 
-Distance, headings, point-to-segment distance, polygon inflation, state
-quantisation and circle tangent points. Distances are metres, angles radians.
-
-Note on typing: shapely 2.1.2 ships no ``py.typed``, so a strict checker infers
-its signatures from source and gets them narrower than the runtime contract --
-``Polygon.buffer`` is inferred to return ``Polygon`` when it can genuinely
-return a ``MultiPolygon``. The runtime branch below is therefore correct and the
-checker's "unnecessary" verdict is not; the suppression is scoped to this module
-and to the shapely-inference rules alone.
+Bao gồm tính khoảng cách Euclid, góc phương vị, khoảng cách điểm - đoạn thẳng,
+giãn nở đa giác, rời rạc hóa trạng thái ô lưới và tìm tiếp điểm đường tròn.
+Đơn vị tính: khoảng cách bằng mét (m), góc bằng radian (rad).
 """
 # pyright: reportUnnecessaryIsInstance=false, reportUnknownVariableType=false
 # pyright: reportUnknownArgumentType=false, reportUnknownMemberType=false
@@ -25,63 +19,54 @@ from path_planning.types import LatticeKey, Point, PolygonCoords
 
 
 def distance(p1: Point, p2: Point) -> float:
-    """Compute the Euclidean distance between two points.
+    """Tính khoảng cách Euclid giữa hai điểm 2D.
 
     Args:
-        p1: First point.
-        p2: Second point.
+        p1: Tọa độ điểm thứ nhất (x, y).
+        p2: Tọa độ điểm thứ hai (x, y).
 
     Returns:
-        The distance in metres.
+        Khoảng cách tính bằng mét.
     """
     return math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
 
 
 def angle_to_heading(p1: Point, p2: Point) -> float:
-    """Compute the heading from ``p1`` to ``p2``.
+    """Tính góc hướng bay (phương vị) từ điểm p1 đến điểm p2.
 
     Args:
-        p1: Origin point.
-        p2: Target point.
+        p1: Điểm xuất phát (gốc).
+        p2: Điểm đích đến.
 
     Returns:
-        The heading in radians, measured from the positive x-axis.
+        Góc phương vị tính bằng radian so với trục Ox dương.
     """
     return math.atan2(p2[1] - p1[1], p2[0] - p1[0])
 
 
 def angle_diff(a: float, b: float) -> float:
-    """Compute the smallest signed difference ``a - b``.
-
-    Both planners alias this at module level (``_angle_diff = su.angle_diff``)
-    because it is read on the hot path. Two other copies stay where they are on
-    purpose, and neither is an oversight: ``path_validation._norm`` keeps the
-    oracle independent of the code it validates, and ``goal_shot._angdiff``
-    keeps that module free of every import but ``math`` -- importing this one
-    would drag shapely and config into a file whose whole contract is pure
-    geometry.
+    """Tính độ lệch góc có dấu nhỏ nhất giữa hai góc a và b.
 
     Args:
-        a: Minuend angle in radians.
-        b: Subtrahend angle in radians.
+        a: Góc bị trừ (rad).
+        b: Góc trừ (rad).
 
     Returns:
-        The difference normalised to ``[-pi, pi]``.
+        Độ lệch góc chuẩn hóa trong khoảng [-pi, pi].
     """
     return math.atan2(math.sin(a - b), math.cos(a - b))
 
 
 def point_to_line_distance(point: Point, line_start: Point, line_end: Point) -> float:
-    """Compute the perpendicular distance from a point to a line segment.
+    """Tính khoảng cách vuông góc ngắn nhất từ một điểm đến đoạn thẳng.
 
     Args:
-        point: The query point.
-        line_start: First endpoint of the segment.
-        line_end: Second endpoint of the segment.
+        point: Tọa độ điểm cần tính (x, y).
+        line_start: Tọa độ đầu mút thứ nhất của đoạn thẳng.
+        line_end: Tọa độ đầu mút thứ hai của đoạn thẳng.
 
     Returns:
-        The distance in metres; the distance to the shared endpoint if the
-        segment is degenerate.
+        Khoảng cách ngắn nhất tính bằng mét.
     """
     px, py = point
     x1, y1 = line_start
@@ -95,27 +80,22 @@ def point_to_line_distance(point: Point, line_start: Point, line_end: Point) -> 
 
 
 def _exterior_coords(polygon: Polygon) -> PolygonCoords:
-    """Extract a polygon's exterior ring without its repeated closing point."""
+    """Trích xuất các đỉnh của vòng đa giác ngoài (loại bỏ đỉnh trùng cuối)."""
     return [(float(x), float(y)) for x, y in polygon.exterior.coords[:-1]]
 
 
 def inflate_polygon(polygon_coords: PolygonCoords, inflation: float) -> PolygonCoords:
-    """Inflate a polygon outward by ``inflation`` metres.
+    """Giãn nở đa giác ra ngoài một khoảng inflation mét.
 
-    Mitre join keeps sharp corners (few real vertices for navigation) and the
-    result contains the round Minkowski buffer, so arc clearance is preserved.
+    Sử dụng kiểu nối mitre để giữ góc sắc nhọn, tạo ít đỉnh dẫn đường hơn.
 
     Args:
-        polygon_coords: The polygon ring to inflate.
-        inflation: Outward offset in metres; non-positive returns a copy.
+        polygon_coords: Danh sách các đỉnh của đa giác ban đầu.
+        inflation: Khoảng cách giãn nở tính bằng mét (<= 0 sẽ giữ nguyên).
 
     Returns:
-        The inflated ring, or the input unchanged if the buffer degenerates.
+        Danh sách các đỉnh của đa giác mới sau khi giãn nở.
     """
-    # buffer(0) is a CLEANING operation in shapely, not a no-op: a self-touching
-    # ring splits into a MultiPolygon and the branch below would silently keep
-    # only the largest piece, shrinking the obstacle. Reachable now that
-    # inflation is just SAFE_MARGIN, which may legitimately be 0.
     if inflation <= 0.0:
         return list(polygon_coords)
     expanded = Polygon(polygon_coords).buffer(
@@ -130,14 +110,14 @@ def inflate_polygon(polygon_coords: PolygonCoords, inflation: float) -> PolygonC
 
 
 def state_to_tuple(waypoint: Point, heading: float) -> LatticeKey:
-    """Quantise a state onto the search lattice for hashing and dedup.
+    """Rời rạc hóa trạng thái (tọa_độ, hướng_bay) thành khóa ô lưới.
 
     Args:
-        waypoint: The state position.
-        heading: The state heading in radians.
+        waypoint: Tọa độ điểm (x, y) tính bằng mét.
+        heading: Góc hướng bay tính bằng radian.
 
     Returns:
-        The lattice cell as ``(x_index, y_index, heading_index)``.
+        Khóa ô lưới dạng (x_index, y_index, heading_index).
     """
     q = config.STATE_POS_QUANTUM
     hq = math.radians(config.STATE_HEADING_QUANTUM_DEG)
@@ -148,16 +128,15 @@ def state_to_tuple(waypoint: Point, heading: float) -> LatticeKey:
 
 
 def circle_tangent_points(point: Point, center: Point, radius: float) -> list[Point]:
-    """Find the tangent points on a circle from an external point.
+    """Tìm 2 tiếp điểm trên đường tròn kẻ từ một điểm bên ngoài.
 
     Args:
-        point: The external point the tangent lines emanate from.
-        center: Circle centre.
-        radius: Circle radius in metres.
+        point: Tọa độ điểm bên ngoài (x, y).
+        center: Tọa độ tâm đường tròn (cx, cy).
+        radius: Bán kính đường tròn tính bằng mét.
 
     Returns:
-        The two tangency points, or an empty list if ``point`` lies inside or
-        on the circle, where no real tangent exists.
+        Danh sách 2 tiếp điểm (x, y), hoặc rỗng nếu điểm nằm bên trong đường tròn.
     """
     px, py = point
     cx, cy = center
@@ -166,8 +145,8 @@ def circle_tangent_points(point: Point, center: Point, radius: float) -> list[Po
     if d2 <= radius * radius + 1e-9:
         return []
     d = math.sqrt(d2)
-    theta = math.atan2(dy, dx)  # center -> point direction
-    alpha = math.acos(radius / d)  # half-angle of the tangent cone
+    theta = math.atan2(dy, dx)
+    alpha = math.acos(radius / d)
     return [
         (cx + radius * math.cos(theta + alpha), cy + radius * math.sin(theta + alpha)),
         (cx + radius * math.cos(theta - alpha), cy + radius * math.sin(theta - alpha)),

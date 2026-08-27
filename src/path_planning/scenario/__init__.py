@@ -1,4 +1,4 @@
-"""Scenario generation, preset benchmarks and preprocessing."""
+"""Quản lý kịch bản, tiền xử lý và sinh chướng ngại vật ngẫu nhiên."""
 
 from path_planning.scenario.generator import (
     create_scenario,

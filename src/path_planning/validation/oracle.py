@@ -1,10 +1,8 @@
-"""Validators for produced planner paths (spec: Điều kiện ràng buộc đường bay).
+"""Bộ kiểm định tính hợp lệ và an toàn của đường bay (Path Validation Oracle).
 
-A path is a list of ``(waypoint, heading)`` tuples with ``waypoint = (x, y)``.
-These functions are deliberately independent of the planner internals so tests
-can assert validity without trusting the code under review -- which is why the
-only runtime imports here are ``math`` and ``shapely``, and the shared type
-vocabulary is imported under ``TYPE_CHECKING`` alone.
+Đường bay là danh sách các bộ ``(waypoint, heading)`` với ``waypoint = (x, y)``.
+Các hàm kiểm định trong module này hoàn toàn độc lập với thuật toán tìm kiếm A*,
+nhằm đảm bảo tính khách quan khi nghiệm thu đường bay.
 """
 
 from __future__ import annotations
@@ -29,7 +27,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class ValidationResult:
-    """The verdict of one validity check.
+    """Kết quả kiểm định một tiêu chí hợp lệ của đường bay.
 
     Attributes:
         is_ok: Whether the check passed.
@@ -41,7 +39,7 @@ class ValidationResult:
     detail: str
 
     def __bool__(self) -> bool:
-        """Return True if the validation passed."""
+        """Trả về True nếu kiểm tra hợp lệ thành công."""
         return self.is_ok
 
 
@@ -92,7 +90,7 @@ _ARC_SAMPLES = 24
 # than importing it, so this validator stays independent of the planner code it
 # validates.
 def _point_to_segment_distance(p: Point, a: Point, b: Point) -> float:
-    """Return the distance from point ``p`` to segment ``a``-``b`` (m)."""
+    """Tính khoảng cách từ điểm p đến đoạn thẳng a-b (m)."""
     px, py = p
     ax, ay = a
     bx, by = b
@@ -106,7 +104,7 @@ def _point_to_segment_distance(p: Point, a: Point, b: Point) -> float:
 
 
 def interior_overlap_length(poly: Polygon, line: LineString) -> float:
-    """Measure the length of ``line`` lying strictly INSIDE ``poly``.
+    """Đo chiều dài đoạn thẳng line nằm thực sự BÊN TRONG phần ruột của đa giác poly.
 
     ``poly.intersection(line).length`` is the wrong quantity for this: it
     measures the overlap with the CLOSED polygon (interior UNION boundary), so a
@@ -138,7 +136,7 @@ def _segment_clear(
     circle_obstacles: Sequence[CircleGeometry],
     polygon_obstacles: Sequence[PolygonCoords],
 ) -> bool:
-    """Test one straight segment against every obstacle."""
+    """Kiểm tra đoạn thẳng đơn lẻ a->b có an toàn trước mọi chướng ngại vật không."""
     for center, radius in circle_obstacles:
         # EXACT: a circle is hit iff the segment comes closer than its radius.
         # No leniency — a check never forgives a real intrusion, otherwise a
@@ -186,7 +184,7 @@ def segments_clear(
     circle_obstacles: Sequence[CircleGeometry],
     polygon_obstacles: Sequence[PolygonCoords],
 ) -> ValidationResult:
-    """Check that every straight segment between consecutive waypoints is clear.
+    """Kiểm tra các đoạn thẳng nối giữa các waypoint liên tiếp có an toàn không.
 
     Args:
         path: The waypoints to check.
@@ -205,17 +203,17 @@ def segments_clear(
 
 
 def _seg_heading(a: Point, b: Point) -> float:
-    """Return the bearing from ``a`` to ``b`` (rad)."""
+    """Tính góc hướng bay từ điểm a đến b (rad)."""
     return math.atan2(b[1] - a[1], b[0] - a[0])
 
 
 def _norm(delta: float) -> float:
-    """Normalise an angle to ``[-pi, pi]``."""
+    """Chuẩn hóa góc về khoảng [-pi, pi]."""
     return math.atan2(math.sin(delta), math.cos(delta))
 
 
 def turn_angles(path: Sequence[PlannerState]) -> list[float]:
-    """Derive the turn angle at each interior waypoint from segment geometry.
+    """Tính góc chuyển hướng tại từng waypoint bên trong dựa vào hình học đoạn thẳng.
 
     Args:
         path: The waypoints to measure.
@@ -234,7 +232,7 @@ def turn_angles(path: Sequence[PlannerState]) -> list[float]:
 def turn_angles_ok(
     path: Sequence[PlannerState], alpha_max_rad: float
 ) -> ValidationResult:
-    """Check that no turn exceeds the vehicle's maximum turn angle.
+    """Kiểm tra không có góc rẽ nào vượt quá giới hạn alpha_max của phương tiện.
 
     Args:
         path: The waypoints to check.
@@ -255,14 +253,14 @@ def turn_angles_ok(
 
 
 def _seg_len(a: Point, b: Point) -> float:
-    """Return the length of segment ``a``-``b`` (m)."""
+    """Tính chiều dài đoạn thẳng nối a và b (m)."""
     return math.hypot(b[0] - a[0], b[1] - a[1])
 
 
 def straight_segments_ok(
     path: Sequence[PlannerState], turn_radius: float, l0: float, dss: float
 ) -> ValidationResult:
-    """Check the đoản-trình straight-portion constraints from the spec.
+    """Kiểm tra các ràng buộc đoản trình đoạn thẳng l1 >= L0, ln >= 0 và l_giua > 0.
 
     The constraint is about the straight FLOWN BETWEEN TWO TURNS, which is not
     the same as a segment between two waypoints: a waypoint whose turn is zero
@@ -324,7 +322,7 @@ def straight_segments_ok(
 
 
 def _unit(a: Point, b: Point) -> Point:
-    """Return the unit vector from ``a`` to ``b``, or ``(0, 0)`` if they coincide."""
+    """Tính vector đơn vị từ a đến b, hoặc (0, 0) nếu hai điểm trùng nhau."""
     dx, dy = b[0] - a[0], b[1] - a[1]
     d = math.hypot(dx, dy)
     return (dx / d, dy / d) if d > 0 else (0.0, 0.0)
@@ -338,7 +336,7 @@ def arc_points(
     turn_radius: float,
     n: int = _ARC_SAMPLES,
 ) -> list[Point]:
-    """Sample the radius-R turn arc that replaces corner ``w``.
+    """Lấy mẫu chuỗi điểm rời rạc dọc theo cung lượn bán kính R bo góc rẽ w.
 
     Public because the planners check the SAME arc the oracle will check; a
     private copy there would be a second definition of the flown geometry.
@@ -384,7 +382,7 @@ def arcs_clear(
     circle_obstacles: Sequence[CircleGeometry],
     polygon_obstacles: Sequence[PolygonCoords],
 ) -> ValidationResult:
-    """Check that every turn arc clears all obstacles.
+    """Kiểm tra toàn bộ các cung lượn góc rẽ trên đường bay không va chạm vật cản.
 
     Args:
         path: The waypoints to check.
@@ -423,7 +421,7 @@ def path_is_valid(
     raw_circle_obstacles: Sequence[CircleGeometry] | None = None,
     raw_polygon_obstacles: Sequence[PolygonCoords] | None = None,
 ) -> ValidationResult:
-    """Run the full validity gate over a path.
+    """Kiểm định tổng thể toàn bộ các điều kiện an toàn và động học của đường bay.
 
     Straight segments AND turn arcs must both clear the INFLATED obstacles,
     which are now simply raw + SAFE_MARGIN: the whole flown path honours the

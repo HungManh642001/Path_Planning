@@ -1,4 +1,4 @@
-"""Exact subsequence DP path smoothing."""
+"""Làm mượt đường bay bằng quy hoạch động (DP) chính xác trên chuỗi waypoint."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class _DpEntry:
-    """One candidate prefix kept for a state (u, v) under dominance."""
+    """Cấu hình tiền tố ứng viên được giữ lại cho cặp cạnh (u, v) theo Pareto."""
 
     budget: float
     cost: float
@@ -40,7 +40,7 @@ def smooth_path(
     goal_heading: float | None = None,
     is_goal_heading_free: bool = False,
 ) -> list[PlannerState]:
-    """Return the shortest FEASIBLE subsequence of the path, by exact DP over O..T.
+    """Tìm chuỗi con waypoint ngắn nhất KHẢ THI bằng quy hoạch động từ O tới T.
 
     Evaluates candidate edge transitions with near and far fillet clearances
     under dominance pruning to produce the optimal smoothed path.

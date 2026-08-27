@@ -1,4 +1,4 @@
-"""Search lattice node representation and state hashing."""
+"""Biểu diễn nút trạng thái ô lưới tìm kiếm và băm trạng thái."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 class State:
-    """One search node representing a 2D position and vehicle heading.
+    """Một nút trạng thái tìm kiếm đại diện cho vị trí 2D và hướng bay.
 
     Attributes:
         waypoint: Planar 2D coordinate (x, y) in metres.
@@ -31,7 +31,7 @@ class State:
     """
 
     def __init__(self, waypoint: Point, heading: float | None) -> None:
-        """Initialize a search lattice state node.
+        """Khởi tạo một nút trạng thái trên lưới tìm kiếm.
 
         Args:
             waypoint: 2D planar coordinates (x, y) in metres.
@@ -51,7 +51,7 @@ class State:
         self._key: LatticeKey | None = None
 
     def _compute_key(self) -> LatticeKey:
-        """Quantize continuous state coordinates onto discrete lattice bins.
+        """Lượng tử hóa tọa độ liên tục thành các ô lưới rời rạc.
 
         Returns:
             Tuple (x_bin, y_bin, heading_bin).
@@ -64,7 +64,7 @@ class State:
         return su.state_to_tuple(self.waypoint, self.heading)
 
     def __hash__(self) -> int:
-        """Hash on the quantised search lattice cell, caching computed key.
+        """Băm nút trạng thái theo ô lưới lượng tử hóa.
 
         Returns:
             Integer hash value.
@@ -75,7 +75,7 @@ class State:
         return hash(key)
 
     def __eq__(self, other: object) -> bool:
-        """Test equality based on quantized lattice cell keys.
+        """So sánh bằng nhau dựa trên khóa ô lưới lượng tử hóa.
 
         Args:
             other: Comparison target object.
@@ -94,7 +94,7 @@ class State:
         return key == other_key
 
     def __lt__(self, other: State) -> bool:
-        """Order states by total estimated cost f = g + w*h for priority queue.
+        """So sánh thứ tự ưu tiên theo tổng chi phí ước lượng f = g + w*h.
 
         Args:
             other: Another State to compare with.
@@ -107,7 +107,7 @@ class State:
         )
 
     def __repr__(self) -> str:
-        """Return human-readable debug representation of state."""
+        """Chuỗi biểu diễn trạng thái phục vụ gỡ lỗi."""
         heading = (
             "none" if self.heading is None else f"{math.degrees(self.heading):.1f}°"
         )

@@ -1,9 +1,8 @@
 # pyright: reportMissingTypeArgument=false, reportUnknownMemberType=false, reportUnknownVariableType=false
-"""Spatial collision detector for straight chords, turn arcs and boundaries.
+"""Động cơ kiểm tra va chạm không gian cho đoạn thẳng, cung lượn và biên an toàn.
 
-Provides the :class:`CollisionDetector` class, which handles all 2D collision
-queries between straight flight paths, fillet turn arcs, annular sweep sectors,
-obstacle bounding boxes, and operational safezone polygons.
+Cung cấp lớp :class:`CollisionDetector` xử lý toàn bộ truy vấn va chạm 2D
+giữa đoạn bay thẳng, cung lượn fillet arc, hình quạt vành khuyên và vùng an toàn.
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ if TYPE_CHECKING:
 
 
 class CollisionDetector:
-    """Collision engine checking straight line-of-sight and corner clearance.
+    """Động cơ kiểm tra va chạm tầm nhìn đoạn thẳng và không gian cung lượn bo góc.
 
     Attributes:
         scenario: Preprocessed scenario containing obstacles and boundaries.
@@ -47,7 +46,7 @@ class CollisionDetector:
         *,
         turn_radius: float = config.R,
     ) -> None:
-        """Initialize obstacle geometry, bounding boxes and safezones.
+        """Khởi tạo hình học chướng ngại vật, hộp bao và vùng an toàn.
 
         Args:
             preprocessed_scenario: Preprocessed scenario dictionary.
@@ -84,7 +83,7 @@ class CollisionDetector:
         )
 
     def is_collision_free(self, p1: Point, p2: Point) -> bool:
-        """Test whether the straight segment p1 -> p2 is flyable and collision-free.
+        """Kiểm tra đoạn thẳng nối p1 -> p2 có an toàn và không va chạm vật cản không.
 
         Applies axis-aligned bounding box filtering before computing exact
         point-to-segment distances for circular obstacles and Shapely relate_pattern
@@ -129,7 +128,7 @@ class CollisionDetector:
         return True
 
     def is_corner_arc_clear(self, h_in: float, w: Point, w_next: Point) -> bool:
-        """Test whether the radius-R fillet arc rounding corner w is clear of obstacles.
+        """Kiểm tra cung lượn fillet arc bán kính R bo góc rẽ w có an toàn không.
 
         Args:
             h_in: Inbound heading angle into corner w in radians.
@@ -183,7 +182,7 @@ class CollisionDetector:
     def is_sector_clear(
         self, center: Point, r_in: float, r_out: float, phi_a: float, phi_b: float
     ) -> bool:
-        """Test whether an annular sector around circle center is free of obstacles.
+        """Kiểm tra hình quạt vành khuyên quanh tâm đường tròn có bị cản không.
 
         Args:
             center: Circle centre coordinate (x, y).
@@ -225,7 +224,7 @@ class CollisionDetector:
         return True
 
     def on_circle_boundary(self, point: Point, tol: float | None = None) -> bool:
-        """Test whether a point rides the inflated boundary of any circular obstacle.
+        """Kiểm tra điểm có nằm trên biên chướng ngại vật tròn nào không.
 
         Args:
             point: Query point coordinate (x, y).
@@ -242,7 +241,7 @@ class CollisionDetector:
         )
 
     def is_in_bounds(self, point: Point) -> bool:
-        """Test whether a point lies inside the valid operational area.
+        """Kiểm tra điểm có nằm trong phạm vi bản đồ hoặc vùng an toàn safezone không.
 
         Args:
             point: Query coordinate (x, y) in metres.
@@ -258,7 +257,7 @@ class CollisionDetector:
         return 0 < x < self.bounds_w and 0 < y < self.bounds_h
 
     def check_fixed_legs(self, goal_wp: Point, target: Point) -> bool:
-        """Test whether mandatory terminal seeker run-in W_{n-1} -> T is clear.
+        """Kiểm tra đoạn thẳng tiếp cận mục tiêu W_{n-1} -> T có thông suốt không.
 
         Args:
             goal_wp: Penultimate waypoint position W_{n-1}.
@@ -277,7 +276,7 @@ class CollisionDetector:
         p1: Point,
         p2: Point,
     ) -> bool:
-        """Collision-test a chord along a ray, memoizing known clear/blocked spans.
+        """Kiểm tra va chạm đoạn thẳng dọc theo tia kèm ghi nhớ đoạn thông suốt/bị chặn.
 
         Args:
             memo: Ray clearance map from ray angle to [min_clear, max_blocked].

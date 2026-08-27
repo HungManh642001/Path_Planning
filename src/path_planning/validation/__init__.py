@@ -1,4 +1,4 @@
-"""Independent safety and kinematic validation oracle."""
+"""Bộ kiểm định độc lập tính hợp lệ và an toàn của quỹ đạo đường bay."""
 
 from path_planning.validation.oracle import (
     ValidationResult,

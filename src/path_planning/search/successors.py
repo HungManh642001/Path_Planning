@@ -1,4 +1,4 @@
-"""Successor generator for kinematic A* lattice expansions."""
+"""Bộ sinh trạng thái kế tiếp cho các bước mở rộng ô lưới A* động học."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ _CAND_MIN_D2 = config.CANDIDATE_MIN_DIST_M * config.CANDIDATE_MIN_DIST_M
 
 
 class SuccessorGenerator:
-    """Generates next candidate states and seeded start corners.
+    """Sinh các trạng thái ứng viên kế tiếp và các điểm rẽ xuất phát ban đầu.
 
     Attributes:
         scenario: Preprocessed mission scenario parameters.
@@ -56,7 +56,7 @@ class SuccessorGenerator:
         goal_state: State,
         is_goal_heading_free: bool = False,
     ) -> None:
-        """Initialize successor generator with scenario limits and obstacle vertices.
+        """Khởi tạo bộ sinh trạng thái kế tiếp với các giới hạn và đỉnh vật cản.
 
         Args:
             scenario: Prepared scenario dictionary.
@@ -108,7 +108,7 @@ class SuccessorGenerator:
         self.num_strategy_b = config.NUM_STRATEGY_B
 
     def seed_start_corners(self) -> list[State]:
-        """Seed the search with initial corner states along the takeoff ray.
+        """Gieo trạng thái góc rẽ xuất phát dọc theo tia cất cánh (chiều dài >= L0).
 
         Returns:
             List of valid collision-free start corner states satisfying l1 >= L0.
@@ -148,7 +148,7 @@ class SuccessorGenerator:
         far_reserve: float = 0.0,
         advance: float = 0.0,
     ) -> float | None:
-        """Validate and update the straight budget for a candidate step.
+        """Kiểm tra và cập nhật ngân sách đoạn bay thẳng cho một bước chuyển tiếp.
 
         Args:
             current: Preceding state.
@@ -169,7 +169,7 @@ class SuccessorGenerator:
         return budget
 
     def get_next_states(self, current_state: State) -> list[tuple[State, float]]:
-        """Generate feasible successor states from current_state.
+        """Sinh các trạng thái kế tiếp khả thi từ trạng thái current_state.
 
         Args:
             current_state: State currently being expanded.
@@ -290,7 +290,7 @@ class SuccessorGenerator:
     def pivot_candidate(
         self, current: State, node: Point, advance: float
     ) -> tuple[State, float] | None:
-        """Validate and score a candidate step from current to node.
+        """Xác thực tính khả thi của bước chuyển tiếp từ trạng thái tới điểm node.
 
         Args:
             current: Origin state.
@@ -376,7 +376,7 @@ class SuccessorGenerator:
         return successor, advance + seg_len + config.TURN_PENALTY_WEIGHT * turn
 
     def slide_pivot(self, current: State, node: Point) -> tuple[State, float] | None:
-        """Retry an arc-rejected candidate from pivots slid forward along heading ray.
+        """Thử cứu ứng viên bị cản cung lượn bằng cách trượt điểm rẽ dọc tia hướng.
 
         Args:
             current: Current state.
@@ -427,7 +427,7 @@ class SuccessorGenerator:
         leg1_memo: dict[float, list[float]],
         leg2_memo: dict[float, list[float]],
     ) -> State | None:
-        """Build an analytic 2-corner manoeuvre from current state to the goal.
+        """Xây dựng phương án cơ động giải tích 2 góc rẽ bắn thẳng về mục tiêu đích.
 
         Args:
             current: Current search state.

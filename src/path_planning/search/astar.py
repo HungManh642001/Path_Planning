@@ -1,4 +1,4 @@
-"""Kinodynamic A* priority queue graph search engine."""
+"""Động cơ tìm kiếm đồ thị A* động học với hàng đợi ưu tiên và hạn mức thời gian."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 
 class AstarSearchEngine:
-    """Core A* priority queue loop with deadline budgeting.
+    """Vòng lặp tìm kiếm A* chính trên hàng đợi ưu tiên kèm kiểm soát deadline.
 
     Attributes:
         start_corners: Seeded initial search corner states.
@@ -65,7 +65,7 @@ class AstarSearchEngine:
         alpha_build: float,
         heuristic_fn: Callable[[State, State], float] = euclidean_heuristic,
     ) -> None:
-        """Initialize A* search engine with start corners and budget.
+        """Khởi tạo động cơ tìm kiếm A* với các điểm rẽ xuất phát và hạn mức thời gian.
 
         Args:
             start_corners: List of seeded initial corner states.
@@ -128,7 +128,7 @@ class AstarSearchEngine:
                 self.g_scores[corner] = corner.g_cost
 
     def is_goal_reached(self, current: State) -> bool:
-        """Test whether a state within the goal threshold may terminate.
+        """Kiểm tra trạng thái hiện tại đã đạt điều kiện tới đích hay chưa.
 
         Args:
             current: State to evaluate.
@@ -151,7 +151,7 @@ class AstarSearchEngine:
         return abs(su.angle_diff(goal_heading, current.heading)) <= self.alpha_build
 
     def reconstruct_path(self, state: State) -> list[PlannerState]:
-        """Walk parent pointers back to the start, expanding pivot slides.
+        """Truy vết ngược các con trỏ parent về xuất phát để tạo chuỗi waypoint.
 
         Args:
             state: Reached terminal goal state.
@@ -180,7 +180,7 @@ class AstarSearchEngine:
         return path
 
     def get_search_stats(self) -> SearchStats:
-        """Return diagnostic counters for the search run.
+        """Trả về thống kê chẩn đoán hiệu năng của quá trình tìm kiếm.
 
         Returns:
             Dictionary containing iteration count, closed/open set sizes, time budget,
@@ -196,7 +196,7 @@ class AstarSearchEngine:
         }
 
     def search(self) -> list[PlannerState] | None:
-        """Run the A* search loop until goal reached or deadline expires.
+        """Thực thi vòng lặp tìm kiếm A* cho đến khi tới đích hoặc hết thời gian.
 
         Returns:
             Reconstructed path of (waypoint, heading) tuples, or None on failure.

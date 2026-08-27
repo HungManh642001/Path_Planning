@@ -1,4 +1,4 @@
-"""Kinodynamic A* graph search engine."""
+"""Không gian trạng thái và thuật toán tìm kiếm đồ thị Kinodynamic A*."""
 
 from path_planning.search.astar import AstarSearchEngine
 from path_planning.search.heuristic import euclidean_heuristic

@@ -1,4 +1,4 @@
-"""Predefined benchmark scenarios."""
+"""Tập hợp 16 kịch bản nhiệm vụ chuẩn (benchmark presets)."""
 
 from __future__ import annotations
 

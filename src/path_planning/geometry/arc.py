@@ -1,12 +1,8 @@
-"""Pure geometry for arc-hop successors.
+"""Hình học thuần túy cho các trạng thái bám cung tròn và cơ động quanh đường tròn.
 
-Riding detection, tangent headings, bitangents between circles, departure
-points, and output-time arc expansion.
-
-Wrap sense convention: ``+1`` rides a circle counter-clockwise, ``-1``
-clockwise, computed as ``sign(cross(point - center, heading_vector))``.
-
-No planner or config imports: every tolerance and step is a parameter.
+Bao gồm nhận diện trạng thái bám biên, tính góc tiếp tuyến, tiếp tuyến chung bitangent,
+điểm rời tiếp tuyến, mở rộng cung tròn thành đa giác ngoại tiếp và hình học hình quạt.
+Quy ước chiều quay: +1 là ngược chiều (CCW), -1 là thuận chiều (CW).
 """
 
 from __future__ import annotations
@@ -32,21 +28,18 @@ def riding_sense(
     pos_tol: float = 1.0,
     ang_tol: float = 8.72e-3,
 ) -> RidingSense:
-    """Detect whether a state rides a circle's boundary, and in which direction.
-
-    Riding means ``point`` lies on the boundary (within ``pos_tol``) and
-    ``heading`` is tangent to the circle there (within ``ang_tol``).
+    """Xác định trạng thái có bay bám theo biên đường tròn hay không và chiều bám.
 
     Args:
-        point: The state position.
-        heading: The state heading (rad).
-        center: Circle centre.
-        radius: Circle radius (m).
-        pos_tol: Tolerance on the boundary distance (m).
-        ang_tol: Tolerance on the radial/heading dot product (~sin 0.5 deg).
+        point: Tọa độ vị trí trạng thái (x, y).
+        heading: Hướng bay của trạng thái (rad).
+        center: Tọa độ tâm đường tròn (cx, cy).
+        radius: Bán kính đường tròn (m).
+        pos_tol: Dung sai khoảng cách tới biên đường tròn (m).
+        ang_tol: Dung sai góc tiếp tuyến với phương pháp tuyến.
 
     Returns:
-        The wrap sense ``+1`` or ``-1``, or ``0`` if the state is not riding.
+        Chiều bám +1 (CCW) hoặc -1 (CW), hoặc 0 nếu không bám biên.
     """
     dx, dy = point[0] - center[0], point[1] - center[1]
     dist = math.hypot(dx, dy)
@@ -60,30 +53,30 @@ def riding_sense(
 
 
 def tangent_heading(point: Point, center: Point, sense: WrapSense) -> float:
-    """Compute the heading of tangent travel at a boundary point.
+    """Tính góc hướng bay tiếp tuyến tại một điểm trên biên đường tròn.
 
     Args:
-        point: A point on the circle boundary.
-        center: Circle centre.
-        sense: Wrap sense of travel.
+        point: Tọa độ điểm trên biên đường tròn (x, y).
+        center: Tọa độ tâm đường tròn (cx, cy).
+        sense: Chiều di chuyển quanh đường tròn (+1 hoặc -1).
 
     Returns:
-        The tangent travel heading (rad).
+        Góc hướng bay tiếp tuyến tính bằng radian.
     """
     return math.atan2(sense * (point[0] - center[0]), -sense * (point[1] - center[1]))
 
 
 def arc_angle(start: Point, end: Point, center: Point, sense: WrapSense) -> float:
-    """Compute the angle swept from one boundary point to another.
+    """Tính góc quét trên cung tròn từ điểm bắt đầu tới kết thúc.
 
     Args:
-        start: Arc start point on the boundary.
-        end: Arc end point on the boundary.
-        center: Circle centre.
-        sense: Wrap sense of travel.
+        start: Điểm bắt đầu trên biên đường tròn.
+        end: Điểm kết thúc trên biên đường tròn.
+        center: Tọa độ tâm đường tròn.
+        sense: Chiều di chuyển trên cung tròn.
 
     Returns:
-        The swept angle in ``[0, 2*pi)`` radians.
+        Góc quét tính bằng radian trong khoảng [0, 2*pi).
     """
     a0 = math.atan2(start[1] - center[1], start[0] - center[0])
     a1 = math.atan2(end[1] - center[1], end[0] - center[0])
@@ -93,22 +86,20 @@ def arc_angle(start: Point, end: Point, center: Point, sense: WrapSense) -> floa
 def departure_point(
     target: Point, center: Point, radius: float, sense: WrapSense
 ) -> Point | None:
-    """Find the boundary point from which leaving toward a target is tangent-continuous.
+    """Tìm điểm rời trên biên đường tròn để bay thẳng tới target tiếp tuyến mượt mà.
 
     Args:
-        target: The external point being departed toward.
-        center: Circle centre.
-        radius: Circle radius (m).
-        sense: Wrap sense of travel along the boundary.
+        target: Tọa độ mục tiêu đích đến bên ngoài (x, y).
+        center: Tọa độ tâm đường tròn (cx, cy).
+        radius: Bán kính đường tròn (m).
+        sense: Chiều bám cung tròn (+1 hoặc -1).
 
     Returns:
-        The tangency point, or ``None`` if ``target`` lies inside or on the
-        circle, where no tangent departure exists.
+        Tọa độ điểm rời (x, y), hoặc None nếu target nằm bên trong đường tròn.
     """
     for dep in su.circle_tangent_points(target, center, radius):
         nx = (dep[0] - center[0]) / radius
         ny = (dep[1] - center[1]) / radius
-        # Velocity at dep for this sense is sense * perp_ccw(n) = (-s*ny, s*nx).
         if (-sense * ny) * (target[0] - dep[0]) + (sense * nx) * (
             target[1] - dep[1]
         ) > 0:
@@ -119,23 +110,17 @@ def departure_point(
 def bitangent_departures(
     c1: Point, r1: float, c2: Point, r2: float, sense: WrapSense
 ) -> list[tuple[Point, Point]]:
-    """Enumerate bitangent lines between two circles, filtered by wrap sense.
-
-    Construction: a bitangent touches circle 1 at ``c1 + r1*n`` and circle 2 at
-    ``c2 + sigma*r2*n`` for a unit normal ``n`` with ``n.D_hat = (r1 -
-    sigma*r2)/d``, where ``sigma=+1`` gives the outer pair and ``sigma=-1`` the
-    inner (crossing) pair.
+    """Tìm các đoạn thẳng tiếp tuyến chung giữa hai đường tròn theo chiều bám.
 
     Args:
-        c1: Centre of the circle being departed.
-        r1: Radius of the circle being departed (m).
-        c2: Centre of the circle being approached.
-        r2: Radius of the circle being approached (m).
-        sense: Wrap sense on circle 1; only consistent departures are kept.
+        c1: Tâm đường tròn thứ nhất.
+        r1: Bán kính đường tròn thứ nhất (m).
+        c2: Tâm đường tròn thứ hai.
+        r2: Bán kính đường tròn thứ hai (m).
+        sense: Chiều bám trên đường tròn 1.
 
     Returns:
-        Up to two ``(departure_on_c1, arrival_on_c2)`` pairs; empty if the
-        circles are concentric or no bitangent matches the sense.
+        Danh sách các cặp (điểm_rời_c1, điểm_đến_c2).
     """
     dx, dy = c2[0] - c1[0], c2[1] - c1[1]
     d = math.hypot(dx, dy)
@@ -155,8 +140,8 @@ def bitangent_departures(
             arr = (c2[0] + sigma * r2 * nx, c2[1] + sigma * r2 * ny)
             tx, ty = arr[0] - dep[0], arr[1] - dep[1]
             if math.hypot(tx, ty) < 1e-6:
-                continue  # circles touch: degenerate tangent
-            if (-sense * ny) * tx + (sense * nx) * ty > 0:  # sense-consistent at dep
+                continue
+            if (-sense * ny) * tx + (sense * nx) * ty > 0:
                 out.append((dep, arr))
     return out
 
@@ -169,26 +154,18 @@ def arc_waypoints(
     sense: WrapSense,
     theta_max_rad: float,
 ) -> list[PlannerState]:
-    """Expand a boundary arc into circumscribed-polygon vertices.
-
-    The arc is replaced by ``n = ceil(dphi / theta_max_rad)`` equal turns of
-    ``theta = dphi/n``; vertex ``k`` is the intersection of consecutive tangent
-    lines, at radius ``radius / cos(theta/2)`` on the bisector. Headings are the
-    outgoing tangent directions, so the turn at every vertex is exactly
-    ``theta <= theta_max_rad`` and every chord of the chain is tangent to the
-    circle, never inside it.
+    """Mở rộng cung tròn biên thành các đỉnh đa giác ngoại tiếp.
 
     Args:
-        center: Circle centre.
-        radius: Circle radius (m).
-        start_pt: Arc start point on the boundary.
-        dphi: Swept angle (rad).
-        sense: Wrap sense of travel.
-        theta_max_rad: Maximum turn per emitted vertex (rad).
+        center: Tọa độ tâm đường tròn.
+        radius: Bán kính đường tròn (m).
+        start_pt: Điểm bắt đầu trên biên.
+        dphi: Góc quét (rad).
+        sense: Chiều di chuyển (+1 CCW, -1 CW).
+        theta_max_rad: Góc chuyển hướng tối đa tại mỗi đỉnh (rad).
 
     Returns:
-        ``(vertex, outgoing_heading)`` pairs, excluding the arc endpoints; empty
-        for a degenerate sweep.
+        Danh sách các trạng thái (đỉnh, hướng_bay) ngoại tiếp cung tròn.
     """
     if dphi <= 1e-9:
         return []
@@ -210,19 +187,16 @@ def arc_waypoints(
 
 
 def has_angular_overlap(a0: float, a1: float, b0: float, b1: float) -> bool:
-    """Test whether two angular intervals overlap on the circle.
-
-    Wrap-aware: intervals are compared modulo ``2*pi``.
+    """Kiểm tra hai khoảng góc có chồng lấn nhau trên đường tròn không (modulo 2*pi).
 
     Args:
-        a0: Low end of the first interval (rad).
-        a1: High end of the first interval (rad), ``>= a0``.
-        b0: Low end of the second interval (rad).
-        b1: High end of the second interval (rad), ``>= b0``.
+        a0: Cận dưới khoảng thứ nhất (rad).
+        a1: Cận trên khoảng thứ nhất (rad), >= a0.
+        b0: Cận dưới khoảng thứ hai (rad).
+        b1: Cận trên khoảng thứ hai (rad), >= b0.
 
     Returns:
-        ``True`` if the intervals overlap. An interval at least ``2*pi`` wide
-        overlaps everything.
+        True nếu hai khoảng góc có phần giao nhau; ngược lại False.
     """
     two_pi = 2.0 * math.pi
     wa = a1 - a0
@@ -237,24 +211,17 @@ def has_angular_overlap(a0: float, a1: float, b0: float, b1: float) -> bool:
 def sector_polygon(
     center: Point, r_in: float, r_out: float, phi_a: float, phi_b: float
 ) -> PolygonCoords:
-    """Build a quadrilateral covering an annular sector.
-
-    Intended for narrow slices (a few degrees). The outer radius is padded by
-    ``1/cos(width/2)`` so the quad's outer edge (a chord) fully covers the true
-    outer ARC -- without the pad the chord's sagitta would leave an uncovered
-    sliver of tens of metres at these radii. The inner edge is the chord at
-    ``r_in``, which over-covers slightly INWARD: conservative, so it may flag
-    obstacles hugging just inside ``r_in`` but never misses one in the sector.
+    """Tạo đa giác tứ giác bao phủ một hình quạt vành khuyên hẹp.
 
     Args:
-        center: Circle centre.
-        r_in: Inner radius of the sector (m).
-        r_out: Outer radius of the sector (m).
-        phi_a: One angular edge of the sector (rad).
-        phi_b: The other angular edge of the sector (rad).
+        center: Tọa độ tâm đường tròn.
+        r_in: Bán kính trong của hình quạt (m).
+        r_out: Bán kính ngoài của hình quạt (m).
+        phi_a: Cạnh góc thứ nhất của hình quạt (rad).
+        phi_b: Cạnh góc thứ hai của hình quạt (rad).
 
     Returns:
-        A 4-point ring, with no repeated closing point.
+        Danh sách 4 đỉnh tứ giác không lặp lại đỉnh đóng.
     """
     width = abs(phi_b - phi_a)
     r_out_pad = r_out / math.cos(min(width, math.pi / 2) / 2.0)

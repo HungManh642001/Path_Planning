@@ -1,10 +1,10 @@
 # pyright: reportMissingTypeArgument=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownParameterType=false
-"""Kinodynamic A* path planning engine and high-level facade.
+"""Động cơ lập kế hoạch quỹ đạo Kinodynamic A* và giao diện cấp cao.
 
-This module provides the primary planning facade, :class:`KinodynamicAstar`, and
-the top-level entry point function :func:`plan_trajectory`. The planner computes
-kinodynamically feasible, collision-free flight paths for fixed-wing aerial vehicles
-under strict turn rate limits, stabilization lengths, and sensor approach geometries.
+Module cung cấp lớp :class:`KinodynamicAstar` và hàm giao diện :func:`plan_trajectory`.
+Thuật toán tính toán đường bay tối ưu, không va chạm và thỏa mãn các ràng buộc
+động học: bán kính quay tối thiểu R, góc chuyển hướng tối đa alpha_max,
+chiều dài ổn định L0 và khoảng cách tiếp cận thẳng DSS.
 """
 
 from __future__ import annotations
@@ -40,12 +40,11 @@ logger = logging.getLogger(__name__)
 
 
 class KinodynamicAstar:
-    """Kinodynamic A* path planner over continuous (waypoint, heading) states.
+    """Bộ lập kế hoạch Kinodynamic A* trên không gian trạng thái (waypoint, heading).
 
-    This planner searches for minimum-cost paths connecting a takeoff position
-    to a terminal goal while strictly respecting vehicle kinematic limits (minimum
-    turn radius R, maximum turn angle alpha_max), level-flight stabilization length
-    L0, and terminal sensor alignment distance DSS.
+    Tìm kiếm đường bay có tổng chiều dài ngắn nhất từ điểm cất cánh đến mục tiêu,
+    đáp ứng các ràng buộc: bán kính quay tối thiểu R, góc chuyển hướng tối đa
+    alpha_max, chiều dài ổn định sau cất cánh L0 và khoảng cách tiếp cận thẳng DSS.
 
     Attributes:
         scenario: Preprocessed scenario containing inflated obstacles and limits.
@@ -65,7 +64,7 @@ class KinodynamicAstar:
         preprocessed_scenario: PreprocessedScenario,
         time_budget_s: float | None = None,
     ) -> None:
-        """Initialize Kinodynamic A* planner from a preprocessed scenario.
+        """Khởi tạo bộ lập kế hoạch Kinodynamic A* từ kịch bản đã tiền xử lý.
 
         Args:
             preprocessed_scenario: Output dictionary from
@@ -421,7 +420,7 @@ class KinodynamicAstar:
         )
 
     def plan(self, *, verbose: bool = False) -> PlanResult:
-        """Run complete planning: feasibility check, search, smoothing, and validation.
+        """Thực thi toàn bộ quy trình: kiểm tra, tìm kiếm, làm mượt và kiểm định.
 
         Args:
             verbose: If True, log detailed search progress to standard logger.
@@ -485,7 +484,7 @@ def plan_trajectory(
     verbose: bool = False,
     time_budget_s: float | None = None,
 ) -> PlanResult:
-    """Plan an autonomous flight path end-to-end for a preprocessed scenario.
+    """Lập kế hoạch đường bay tự hành hoàn chỉnh từ kịch bản tiền xử lý.
 
     Args:
         preprocessed_scenario: Prepared mission dictionary containing endpoints,

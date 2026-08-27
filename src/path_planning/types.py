@@ -1,15 +1,9 @@
-"""Shared type vocabulary for the planning pipeline.
+"""Hệ thống định nghĩa kiểu dữ liệu (Types) dùng chung trong toàn bộ pipeline.
 
-Two dict shapes flow through every module here: the ``scenario`` produced by
-:mod:`core.map_generator` and the ``preprocessed`` dict produced by
-:func:`core.preprocessing.prepare_scenario`. They were previously untyped, so
-every consumer re-guessed the key set and a typo produced a ``KeyError`` at
-runtime rather than a diagnostic. Declaring them once as ``TypedDict`` keeps the
-existing dict representation bit-for-bit (no construction or access path
-changes) while making the contract checkable.
-
-Units follow the pipeline convention throughout: distances in metres, angles in
-radians.
+Bao gồm các cấu trúc hình học cơ bản (Point, PolygonCoords, CircleGeometry),
+các cấu trúc dữ liệu TypedDict cho kịch bản (Scenario, PreprocessedScenario)
+và kết quả lập kế hoạch đường bay (PlanResult, SearchStats).
+Quy ước đơn vị đo: Khoảng cách tính bằng mét (m), góc tính bằng radian (rad).
 """
 
 from __future__ import annotations
@@ -23,46 +17,46 @@ if sys.version_info >= (3, 11):
 else:
     from typing_extensions import NotRequired
 
-# --- Primitive geometry -------------------------------------------------------
+# --- Kiểu hình học nguyên thủy ------------------------------------------------
 
 Point = tuple[float, float]
-"""A planar position ``(x, y)`` in metres."""
+"""Tọa độ 2D phẳng (x, y) tính bằng mét."""
 
 PolygonCoords = list[Point]
-"""An open polygon ring: vertices without the repeated closing point."""
+"""Danh sách các đỉnh (x, y) liên tiếp tạo thành đa giác."""
 
 CircleGeometry = tuple[Point, float]
-"""A circle as ``(center, radius)``."""
+"""Hình học đường tròn dạng ((cx, cy), r) tính bằng mét."""
 
 MapBounds = tuple[float, float]
-"""The legacy operating rectangle ``(width, height)`` anchored at the origin."""
+"""Kích thước khung hình chữ nhật bản đồ (chiều_rộng, chiều_cao)."""
 
 PlannerState = tuple[Point, float]
-"""A search state: ``(waypoint, heading)``. Paths are lists of these."""
+"""Trạng thái tìm kiếm: ``(tọa_độ, hướng_bay)``. Đường bay là danh sách trạng thái."""
 
 LatticeKey = tuple[int, int, int]
-"""A quantised state key used for search dedup; see ``state_to_tuple``."""
+"""Khóa rời rạc hóa trạng thái (x_grid, y_grid, heading_grid) để băm và loại trùng."""
 
 Topology = Literal["random", "center_cluster", "wall_block"]
-"""Obstacle placement strategies understood by the generators."""
+"""Chiến lược phân bố chướng ngại vật: ngẫu nhiên, cụm trung tâm hoặc chắn ngang."""
 
 WrapSense = Literal[-1, 1]
-"""Direction of travel along a circle boundary: +1 counter-clockwise, -1 clockwise."""
+"""Chiều di chuyển bám cung tròn: +1 là ngược chiều (CCW), -1 là thuận chiều (CW)."""
 
 RidingSense = Literal[-1, 0, 1]
-"""A :data:`WrapSense`, or 0 when the state does not ride the circle at all."""
+"""Chiều bám cung tròn: +1 (CCW), -1 (CW), hoặc 0 nếu không bám đường tròn."""
 
 
-# --- Obstacles ----------------------------------------------------------------
+# --- Chướng ngại vật ----------------------------------------------------------
 
 
 class CircleObstacle(TypedDict):
-    """A circular (dynamic) obstacle.
+    """Bản ghi dữ liệu chướng ngại vật hình tròn.
 
     Attributes:
-        type: The obstacle type.
-        center: Center point.
-        radius: Radius.
+        type: Định danh kiểu chướng ngại vật, luôn là 'circle'.
+        center: Tọa độ tâm hình tròn (x, y) tính bằng mét.
+        radius: Bán kính hình tròn tính bằng mét.
     """
 
     type: Literal["circle"]
@@ -71,11 +65,11 @@ class CircleObstacle(TypedDict):
 
 
 class PolygonObstacle(TypedDict):
-    """A polygonal (island) obstacle.
+    """Bản ghi dữ liệu chướng ngại vật hình đa giác (đảo).
 
     Attributes:
-        type: The obstacle type.
-        polygon: Polygon coordinates.
+        type: Định danh kiểu chướng ngại vật, luôn là 'polygon'.
+        polygon: Danh sách tọa độ các đỉnh (x, y) của đa giác.
     """
 
     type: Literal["polygon"]
@@ -83,31 +77,26 @@ class PolygonObstacle(TypedDict):
 
 
 Obstacle = CircleObstacle | PolygonObstacle
-"""Tagged union of obstacle records, discriminated on ``type``."""
+"""Kiểu dữ liệu hợp nhất (Union) của các loại chướng ngại vật."""
 
 
-# --- Scenario -----------------------------------------------------------------
+# --- Kịch bản nhiệm vụ --------------------------------------------------------
 
 
 class ScenarioConfig(TypedDict, total=False):
-    """Caller-supplied recipe for :func:`core.map_generator.create_scenario`.
-
-    Every key is optional at the type level because callers routinely omit the
-    generator knobs, but ``start`` and ``goal`` are validated at runtime: the
-    obstacle samplers place obstacles relative to the start-goal line and cannot
-    run without them.
+    """Cấu hình đầu vào để sinh kịch bản ngẫu nhiên.
 
     Attributes:
-        start: Start point.
-        start_heading: Start heading.
-        goal: Goal point.
-        goal_heading: Goal heading.
-        num_islands: Number of islands.
-        num_dynamic_obstacles: Number of dynamic obstacles.
-        map_bounds: Map bounds.
-        safezones: Safe zones.
-        topology: Topology.
-        seed: Seed.
+        start: Tọa độ điểm cất cánh (x, y) tính bằng mét.
+        start_heading: Hướng cất cánh ban đầu (rad).
+        goal: Tọa độ điểm mục tiêu đích (x, y) tính bằng mét.
+        goal_heading: Hướng tiếp cận mục tiêu yêu cầu (rad), hoặc None nếu tự do.
+        num_islands: Số lượng đảo đa giác cần tạo.
+        num_dynamic_obstacles: Số lượng chướng ngại vật tròn cần tạo.
+        map_bounds: Kích thước khung bản đồ (rộng, cao) tính bằng mét.
+        safezones: Danh sách các vùng bay an toàn (đa giác).
+        topology: Kiểu phân bố chướng ngại vật ('random', 'center_cluster', ...).
+        seed: Hạt giống ngẫu nhiên để tái lập kết quả.
     """
 
     start: Point
@@ -123,23 +112,18 @@ class ScenarioConfig(TypedDict, total=False):
 
 
 class Scenario(TypedDict):
-    """A generated mission: endpoints plus the obstacle field.
-
-    ``islands`` and ``dynamic_obstacles`` are the raw per-type views;
-    ``obstacles`` is the unified tagged-union list the rest of the pipeline
-    consumes. A ``goal_heading`` of ``None`` selects free-goal mode, in which
-    the planner chooses the terminal approach direction.
+    """Kịch bản nhiệm vụ hoàn chỉnh đầu vào cho bộ tiền xử lý.
 
     Attributes:
-        start: Start point.
-        start_heading: Start heading.
-        goal: Goal point.
-        goal_heading: Goal heading.
-        map_bounds: Map bounds.
-        safezones: Safe zones.
-        islands: Islands.
-        dynamic_obstacles: Dynamic obstacles.
-        obstacles: Obstacles.
+        start: Tọa độ điểm xuất phát (x, y) tính bằng mét.
+        start_heading: Hướng xuất phát ban đầu (rad).
+        goal: Tọa độ điểm mục tiêu đích (x, y) tính bằng mét.
+        goal_heading: Hướng tiếp cận mục tiêu yêu cầu (rad), hoặc None nếu tự do.
+        map_bounds: Kích thước khung bản đồ (chiều rộng, chiều cao).
+        safezones: Danh sách các vùng an toàn cho phép bay, hoặc None nếu toàn map.
+        islands: Danh sách tọa độ các đảo đa giác.
+        dynamic_obstacles: Danh sách các chướng ngại vật tròn dạng ((cx, cy), r).
+        obstacles: Danh sách hợp nhất tất cả các chướng ngại vật trong kịch bản.
     """
 
     start: Point
@@ -153,25 +137,19 @@ class Scenario(TypedDict):
     obstacles: list[Obstacle]
 
 
-# --- Search results -----------------------------------------------------------
+# --- Kết quả tìm kiếm ---------------------------------------------------------
 
 
 class SearchStats(TypedDict):
-    """Counters describing how a single search ran.
+    """Thống kê chi tiết về hiệu năng quá trình tìm kiếm A*.
 
     Attributes:
-        iterations: Nodes popped from the open set.
-        time_budget_s: The wall-clock budget the search actually ran under -
-            the caller's value, or ``config.TIME_BUDGET_S`` when none was
-            given. It is the search's only stop condition.
-        is_budget_bound: Whether the search was cut off by that budget. A
-            first-class field, not a detail: a budget-bound search is one whose
-            answer depends on the machine it ran on, and "no path" and "ran out
-            of clock" are different claims.
-        open_set_size: Nodes still queued when the search ended.
-        is_search_failed: Whether the search ended without reaching the goal.
-        closed_set_size: Distinct lattice cells expanded. Reported by the main
-            planner only; the v0 planner omits it.
+        iterations: Số bước lặp mở rộng nút trong vòng lặp tìm kiếm A*.
+        time_budget_s: Hạn mức thời gian đã áp dụng cho lần tìm kiếm này (giây).
+        is_budget_bound: True nếu thuật toán bị dừng do chạm hạn mức thời gian.
+        open_set_size: Số lượng nút trạng thái còn lại trong hàng đợi ưu tiên.
+        is_search_failed: True nếu thuật toán kết thúc mà không tìm thấy đường bay.
+        closed_set_size: Tổng số lượng nút trạng thái đã khám phá trong Closed set.
     """
 
     iterations: int
@@ -183,13 +161,13 @@ class SearchStats(TypedDict):
 
 
 class PlanResultView(TypedDict):
-    """The part of a planner result that consumers outside the planner read.
+    """Giao diện đọc kết quả tối giản cho các module trực quan hóa.
 
     Attributes:
-        path: The planned interior waypoints, or None if planning failed.
-        is_success: Whether the independent oracle accepted the full mission path.
-        failure_reason: None on success, otherwise why planning failed.
-        stats: Search counters.
+        path: Danh sách các waypoint (tọa_độ, hướng_bay), hoặc None nếu thất bại.
+        is_success: True nếu tìm thấy đường bay hợp lệ thỏa mãn mọi ràng buộc.
+        failure_reason: Mô tả nguyên nhân thất bại nếu is_success là False.
+        stats: Thống kê hiệu năng quá trình tìm kiếm.
     """
 
     path: list[PlannerState] | None
@@ -199,14 +177,14 @@ class PlanResultView(TypedDict):
 
 
 class PlanResult(TypedDict):
-    """The result returned by KinodynamicAstar.plan / plan_trajectory.
+    """Kết quả hoàn chỉnh trả về từ thuật toán lập kế hoạch đường bay.
 
     Attributes:
-        path: The planned interior waypoints, or None if planning failed.
-        is_success: Whether the independent oracle accepted the full mission path.
-        failure_reason: None on success, otherwise why planning failed.
-        stats: Search counters.
-        planner: The planner instance.
+        path: Danh sách các waypoint (tọa_độ, hướng_bay), hoặc None nếu thất bại.
+        is_success: True nếu tìm thấy đường bay hợp lệ thỏa mãn mọi ràng buộc.
+        failure_reason: Mô tả nguyên nhân thất bại nếu is_success là False.
+        stats: Thống kê hiệu năng quá trình tìm kiếm.
+        planner: Thể hiện đối tượng planner thực thi.
     """
 
     path: list[PlannerState] | None
@@ -216,17 +194,17 @@ class PlanResult(TypedDict):
     planner: object
 
 
-# --- Preprocessed scenario ----------------------------------------------------
+# --- Kịch bản tiền xử lý ------------------------------------------------------
 
 
 class StartState(TypedDict):
-    """The first searched waypoint ``W_1``, offset from takeoff point ``O``.
+    """Trạng thái xuất phát đầu tiên W_1 sau khi bay thẳng ổn định sau cất cánh.
 
     Attributes:
-        waypoint: Waypoint.
-        heading: Heading.
-        straight_length: Straight length.
-        distance_from_origin: Distance from origin.
+        waypoint: Tọa độ điểm W_1 (x, y) tính bằng mét.
+        heading: Hướng cất cánh ban đầu (rad).
+        straight_length: Chiều dài đoạn bay thẳng cất cánh l_1 (m, >= L0).
+        distance_from_origin: Khoảng cách từ điểm cất cánh O tới W_1 (m).
     """
 
     waypoint: Point
@@ -236,17 +214,13 @@ class StartState(TypedDict):
 
 
 class GoalState(TypedDict):
-    """The last searched waypoint ``W_{n-1}``, offset back from target ``T``.
-
-    In free-goal mode ``heading`` is ``None`` and ``waypoint`` is ``T`` itself:
-    there is no fixed approach direction to offset along, so the final searched
-    edge becomes the seeker run-in.
+    """Trạng thái trước đích W_{n-1} phục vụ tiếp cận khoá mục tiêu.
 
     Attributes:
-        waypoint: Waypoint.
-        heading: Heading.
-        engagement_distance: Engagement distance.
-        distance_to_target: Distance to target.
+        waypoint: Tọa độ điểm W_{n-1} (x, y) tính bằng mét.
+        heading: Hướng tiếp cận mục tiêu (rad), hoặc None nếu không ràng buộc.
+        engagement_distance: Chiều dài đoạn thẳng khoá mục tiêu (m, >= DSS).
+        distance_to_target: Khoảng cách từ W_{n-1} tới điểm mục tiêu đích T (m).
     """
 
     waypoint: Point
@@ -256,12 +230,12 @@ class GoalState(TypedDict):
 
 
 class InflatedObstacleSets(TypedDict):
-    """Obstacles inflated by the stand-off margin, split by type for the search.
+    """Tập hợp các chướng ngại vật đã được giãn nở theo khoảng an toàn safe_margin.
 
     Attributes:
-        inflated_obstacles: Inflated obstacles.
-        circle_obstacles: Circle obstacles.
-        polygon_obstacles: Polygon obstacles.
+        inflated_obstacles: Danh sách bản ghi chướng ngại vật đã giãn nở.
+        circle_obstacles: Danh sách chướng ngại vật tròn đã giãn nở.
+        polygon_obstacles: Danh sách đa giác chướng ngại vật đã giãn nở.
     """
 
     inflated_obstacles: list[Obstacle]
@@ -270,38 +244,27 @@ class InflatedObstacleSets(TypedDict):
 
 
 class PreprocessedScenario(TypedDict):
-    """A scenario prepared for the search: inflated obstacles and offset endpoints.
-
-    ``circle_obstacles`` / ``polygon_obstacles`` carry the stand-off margin and
-    are what the planner collides against. The ``raw_*`` counterparts are the
-    true obstacles, threaded through for measurement and drawing only.
-
-    Only the keys the search reads unconditionally are required. The rest are
-    ``NotRequired`` because callers legitimately hand-build a partial dict --
-    unit tests bypass :func:`core.preprocessing.prepare_scenario` to work with
-    small hand-chosen geometry -- and the consumers already read them through
-    ``.get``. Marking them required would make the type checker bless code that
-    raises ``KeyError`` on those inputs.
+    """Kịch bản đã được tiền xử lý hoàn chỉnh cho thuật toán tìm kiếm A*.
 
     Attributes:
-        start_state: Start state.
-        goal_state: Goal state.
-        turn_radius: Turn radius.
-        alpha_max_rad: Alpha max rad.
-        circle_obstacles: Circle obstacles.
-        polygon_obstacles: Polygon obstacles.
-        safezones: Safe zones.
-        map_bounds: Map bounds.
-        start_pos: Start pos.
-        goal_pos: Goal pos.
-        start_heading: Start heading.
-        goal_heading: Goal heading.
-        safe_margin: Safe margin.
-        obstacles: Obstacles.
-        raw_circle_obstacles: Raw circle obstacles.
-        raw_polygon_obstacles: Raw polygon obstacles.
-        islands: Islands.
-        dynamic_obstacles: Dynamic obstacles.
+        start_state: Trạng thái xuất phát tính toán W_1.
+        goal_state: Trạng thái trước đích tính toán W_{n-1}.
+        turn_radius: Bán kính quay vòng tối thiểu R (m).
+        alpha_max_rad: Góc ngoặt tối đa cho phép tại mỗi góc rẽ (rad).
+        circle_obstacles: Danh sách chướng ngại vật tròn đã giãn nở.
+        polygon_obstacles: Danh sách đa giác chướng ngại vật đã giãn nở.
+        safezones: Danh sách vùng an toàn cho phép bay (nếu có).
+        map_bounds: Kích thước giới hạn bản đồ (nếu có).
+        start_pos: Tọa độ điểm cất cánh gốc O.
+        goal_pos: Tọa độ điểm mục tiêu đích gốc T.
+        start_heading: Hướng cất cánh ban đầu (rad).
+        goal_heading: Hướng tiếp cận mục tiêu (rad), hoặc None nếu tự do.
+        safe_margin: Khoảng đệm an toàn mở rộng chướng ngại vật (m).
+        obstacles: Danh sách toàn bộ chướng ngại vật đã giãn nở.
+        raw_circle_obstacles: Danh sách chướng ngại vật tròn gốc chưa giãn nở.
+        raw_polygon_obstacles: Danh sách đa giác chướng ngại vật gốc chưa giãn nở.
+        islands: Danh sách các đảo đa giác gốc.
+        dynamic_obstacles: Danh sách các chướng ngại vật tròn gốc.
     """
 
     start_state: StartState

@@ -1,4 +1,4 @@
-"""Visualisation of mission scenarios, obstacles and planned trajectories.
+"""Trực quan hóa kịch bản nhiệm vụ, chướng ngại vật và quỹ đạo bay.
 
 Consumes the planner's output; nothing here feeds back into the search, so the
 dependency runs render -> core and never the reverse.
@@ -50,7 +50,7 @@ Fit = Literal["map", "content"]
 
 
 def _plot_extents(scenario: Scenario | None, pad: float = 2000.0) -> Extents:
-    """Compute axis limits for a scenario in the legacy 'map' view.
+    """Tính toán giới hạn trục tọa độ cho kịch bản theo góc nhìn toàn bản đồ.
 
     Args:
         scenario: The scenario being drawn, or ``None``.
@@ -86,7 +86,7 @@ def _content_extents(
     min_pad: float = 1000.0,
     obstacle_gate_frac: float = 1.0,
 ) -> Extents:
-    """Compute axis limits framed to the mission (the auto-fit 'content' view).
+    """Tính toán giới hạn trục tọa độ tự động khớp theo nội dung đường bay.
 
     Two passes: first the mission CORE (start/goal, interior waypoints and the
     flown path ONLY), then everything else NEAR the core -- obstacles whose bbox
@@ -423,7 +423,7 @@ def _info_footer(
     preprocessed: PreprocessedScenario,
     result: PlanResultView | None,
 ) -> str:
-    """Build the parameter/outcome summary drawn below the map.
+    """Xây dựng chuỗi văn bản tóm tắt thông số và kết quả hiển thị dưới chân bản đồ.
 
     Parameters come from the preprocessed scenario -- the values the planner
     actually used -- not from ``config``.
@@ -486,7 +486,7 @@ def plot_scenario(
     trajectory_mode: RenderMode = "dubins",
     fit: Fit = "map",
 ) -> Figure:
-    """Draw a mission scenario and its planned trajectory.
+    """Vẽ đồ thị kịch bản nhiệm vụ và quỹ đạo đường bay đã lập kế hoạch.
 
     Args:
         scenario: The original scenario from :mod:`core.map_generator`.

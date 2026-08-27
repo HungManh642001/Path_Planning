@@ -1,4 +1,4 @@
-"""Pure math and geometry primitives."""
+"""Các hàm toán học và hình học không gian 2D cho bài toán lập kế hoạch đường bay."""
 
 from path_planning.geometry.arc import (
     arc_angle,

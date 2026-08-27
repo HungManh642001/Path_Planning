@@ -1,27 +1,9 @@
-"""Trajectory rendering facade.
+"""Bộ kết xuất quỹ đạo bay dạng chuỗi điểm tọa độ 2D.
 
-Turns the planner's ``[(waypoint, heading), ...]`` output into a flat list of
-``(x, y)`` points for drawing. Two modes:
-
-- ``'straight'``: the waypoint positions joined by straight lines.
-- ``'dubins'``: the real flight path -- straight legs joined by radius-R turn
-  arcs. At each interior WAYPOINT the arc is tangent to both legs (the fillet
-  model): symmetric about the waypoint, radius R, and subtending the heading
-  change. Because the arc is tangent, entry and exit headings are preserved
-  exactly, so the takeoff leaves ``O`` along the takeoff heading and the
-  approach reaches ``T`` along the required approach heading. (A circular arc of
-  radius R cannot both pass through the corner waypoint AND keep those headings,
-  so the arc rounds the corner rather than passing through it; this matches the
-  planner's validated kinodynamic model: straight trajectory plus
-  ``R*tan(alpha/2)`` tangents.)
-
-:func:`turn_markers` returns, per turn, the start-of-turn and end-of-turn points
-(the two tangent points) so the caller can mark where each arc begins and ends.
-
-:func:`build_full_path` prepends the takeoff point ``O`` and appends the goal
-``T`` (taken from the preprocessed scenario) so the drawn flight path spans
-``O..T`` -- the planner's path only covers the interior waypoints
-``W_1..W_{n-1}``.
+Chuyển đổi danh sách trạng thái ``[(waypoint, heading), ...]`` của planner
+thành danh sách phẳng các điểm ``(x, y)`` để vẽ đồ thị:
+- ``'straight'``: Nối các waypoint bằng đoạn thẳng.
+- ``'dubins'``: Mô phỏng đường bay thực tế với các cung lượn fillet arc bán kính R.
 """
 
 from __future__ import annotations
@@ -37,11 +19,11 @@ from path_planning.types import PlannerState, Point, PreprocessedScenario
 _ARC_SAMPLES = 24  # even -> a sample lands exactly on the waypoint (arc midpoint)
 
 RenderMode = Literal["straight", "dubins"]
-"""How :func:`sample_trajectory` joins consecutive waypoints."""
+"""Chế độ kết xuất quỹ đạo bay của hàm :func:`sample_trajectory`."""
 
 
 class TurnMarker(TypedDict):
-    """Where one fillet arc begins, pivots and ends.
+    """Thông tin vị trí tiếp điểm bắt đầu, đỉnh rẽ và kết thúc của cung lượn.
 
     Attributes:
         start: Entry tangent point, where the arc leaves the incoming leg.
@@ -62,7 +44,7 @@ def sample_trajectory(
     mode: RenderMode = "dubins",
     step: float | None = None,
 ) -> list[Point]:
-    """Sample the flown trajectory as a dense polyline.
+    """Lấy mẫu quỹ đạo bay thành chuỗi điểm dày đặc để vẽ đồ thị.
 
     Args:
         path: Waypoints as ``(waypoint, heading)`` pairs.
@@ -89,7 +71,7 @@ def sample_trajectory(
 
 
 def turn_markers(path: Sequence[PlannerState], turn_radius: float) -> list[TurnMarker]:
-    """Locate every fillet arc along the path.
+    """Xác định vị trí các điểm tiếp xúc của từng cung lượn dọc theo đường bay.
 
     Args:
         path: Waypoints as ``(waypoint, heading)`` pairs.
@@ -109,7 +91,7 @@ def turn_markers(path: Sequence[PlannerState], turn_radius: float) -> list[TurnM
 def build_full_path(
     result_path: Sequence[PlannerState], preprocessed: PreprocessedScenario | None
 ) -> list[PlannerState]:
-    """Prepend takeoff ``O`` and append goal ``T`` so the drawn path spans the mission.
+    """Thêm điểm cất cánh O và đích T để đường bay bao phủ toàn bộ hành trình.
 
     Thin alias for :func:`core.mission.full_mission_path`, kept because this is
     the name the render layer, the GUI and the tests already call. The planners
@@ -150,7 +132,7 @@ def _extend_straight(points: list[Point], target: Point, step: float) -> None:
 
 
 def _unit(a: Point, b: Point) -> Point:
-    """Return the unit vector from ``a`` to ``b``, or ``(0, 0)`` if they coincide."""
+    """Tính vector đơn vị từ a đến b, hoặc (0, 0) nếu hai điểm trùng nhau."""
     dx, dy = b[0] - a[0], b[1] - a[1]
     d = math.hypot(dx, dy)
     return (dx / d, dy / d) if d > 0 else (0.0, 0.0)
@@ -162,7 +144,7 @@ def _dubins_arc_path(
     step: float,
     arc_samples: int = _ARC_SAMPLES,
 ) -> tuple[list[Point], list[TurnMarker]]:
-    """Build straight legs joined by radius-R fillet arcs at each interior waypoint.
+    """Tạo các đoạn thẳng và cung lượn tròn bo góc.
 
     Each arc is tangent to both legs and symmetric about the waypoint, so entry
     and exit headings are preserved exactly.

@@ -1,4 +1,4 @@
-"""Heuristic distance estimator for A* graph search."""
+"""Hàm ước lượng khoảng cách Heuristic cho thuật toán A*."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 def euclidean_heuristic(state: State, goal_state: State) -> float:
-    """Estimate remaining Euclidean distance from state to goal_state.
+    """Ước lượng khoảng cách Euclid còn lại từ state tới goal_state.
 
     Args:
         state: Current search state node.
