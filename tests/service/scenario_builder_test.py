@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from typing import get_type_hints
 
-from path_planning.core.types import Scenario
+from path_planning.types import Scenario
 from service.vtx_service.angles import bearing_deg_to_math_rad
 from service.vtx_service.messages import (
     IDL_VERSION,
@@ -95,7 +95,7 @@ def test_obstacles_is_the_tagged_union_the_pipeline_consumes() -> None:
 
 
 def test_the_built_scenario_actually_runs_through_the_pipeline() -> None:
-    from path_planning.core import kinodynamic_astar_v0 as astar, preprocessing as prep
+    from path_planning import planner as astar, preprocessing as prep
 
     preprocessed = prep.prepare_scenario(
         build_scenario(_request()),

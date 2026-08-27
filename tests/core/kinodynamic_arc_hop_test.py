@@ -4,16 +4,12 @@ import pytest
 """Planner-level tests for arc-hop successor generation (synthetic maps)."""
 import math
 
-from path_planning import config
-from path_planning.core import (
-    arc_geometry as ag,
-    kinodynamic_astar as astar,
-    map_generator as mg,
-    path_validation as pv,
-    preprocessing as prep,
-)
-from path_planning.core.map_generator import generate_random_scenario
+from path_planning import config, planner as astar
+from path_planning.geometry import arc as ag
 from path_planning.render import trajectory as tr
+from path_planning.scenario import preprocessing as prep
+from path_planning.scenario.generator import generate_random_scenario
+from path_planning.validation import oracle as pv
 
 
 CENTER = (250000.0, 250000.0)
@@ -285,7 +281,7 @@ def test_check_fixed_legs_detects_blocked_start_and_goal():
     Ocirc = (pre["start_pos"][0] + 50000.0, 0.0)
     planner.scenario["circle_obstacles"] = [(Ocirc, 20000.0)]
     planner._circles = [(Ocirc[0], Ocirc[1], 20000.0)]
-    
+
     is_ok = _call(planner, body)
     # The new _check_fixed_legs only checks the goal leg, so start leg obstacle is ignored here.
     assert is_ok is True
@@ -294,7 +290,7 @@ def test_check_fixed_legs_detects_blocked_start_and_goal():
     Tcirc = (pre["goal_pos"][0] - 50000.0, 0.0)
     planner.scenario["circle_obstacles"] = [(Tcirc, 20000.0)]
     planner._circles = [(Tcirc[0], Tcirc[1], 20000.0)]
-    
+
     is_ok = _call(planner, body)
     assert is_ok is False
 
@@ -316,7 +312,7 @@ def test_plan_maps_blocked_leg_to_failure_reason():
         "obstacles": [],
     }
     pre = prep.prepare_scenario(scn)
-    from path_planning.core import kinodynamic_astar as k
+    from path_planning import planner as k
 
     orig = k.KinodynamicAstar._check_fixed_legs
     k.KinodynamicAstar._check_fixed_legs = lambda self, path: (
@@ -361,7 +357,7 @@ def test_plan_no_path_reason():
         "obstacles": [],
     }
     pre = prep.prepare_scenario(scn)
-    from path_planning.core import kinodynamic_astar as k
+    from path_planning import planner as k
 
     orig = k.KinodynamicAstar.search
     k.KinodynamicAstar.search = lambda self: None

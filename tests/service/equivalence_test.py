@@ -19,13 +19,9 @@ import math
 
 import pytest
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar_v0 as astar,
-    map_generator as mg,
-    mission as mission,
-    preprocessing as prep,
-)
+from path_planning import config, planner as astar
+from path_planning.scenario import preprocessing as prep, presets as mg
+from path_planning.trajectory import mission as mission
 from service.vtx_service import plan
 from service.vtx_service.angles import math_rad_to_bearing_deg
 from service.vtx_service.messages import (

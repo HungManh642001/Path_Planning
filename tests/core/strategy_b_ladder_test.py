@@ -17,8 +17,8 @@ import math
 
 import pytest
 
-from path_planning import config
-from path_planning.core import kinodynamic_astar as astar, preprocessing as prep
+from path_planning import config, planner as astar
+from path_planning.scenario import preprocessing as prep
 
 
 def open_water_scenario():

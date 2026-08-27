@@ -8,8 +8,9 @@ and giant enclosing safezones are excluded from the frame (still drawn, clipped)
 
 import math
 
-from path_planning.core import kinodynamic_astar as astar, preprocessing as prep
+from path_planning import planner as astar
 from path_planning.render.visualizer import _content_extents, _plot_extents
+from path_planning.scenario import preprocessing as prep
 
 
 def _twin_safezone_scenario():

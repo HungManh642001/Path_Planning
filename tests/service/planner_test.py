@@ -162,7 +162,7 @@ def test_the_shipped_planner_is_v0_not_main() -> None:
     guard against a planner swap. This one-line identity check is: it fails
     on ANY swap, regardless of which presets happen to agree.
     """
-    from path_planning.core import kinodynamic_astar_v0 as v0
+    from path_planning import planner as v0
     from service.vtx_service import planner as planner_module
 
     assert planner_module.astar is v0

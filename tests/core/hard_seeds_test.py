@@ -12,15 +12,11 @@ asserted separately against the 5 s budget.
 import math
 import time
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar as astar,
-    map_generator as mg,
-    path_validation as pv,
-    preprocessing as prep,
-)
-from path_planning.core.map_generator import generate_random_scenario
+from path_planning import config, planner as astar
 from path_planning.render import trajectory as tr
+from path_planning.scenario import preprocessing as prep
+from path_planning.scenario.generator import generate_random_scenario
+from path_planning.validation import oracle as pv
 
 
 # Far above anything these seeds need (they are asserted at < 5 s), so the

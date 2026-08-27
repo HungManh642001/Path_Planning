@@ -30,8 +30,8 @@ import math
 from collections.abc import Sequence
 from typing import Literal, TypedDict
 
-from path_planning.core import mission as mission
-from path_planning.core.types import PlannerState, Point, PreprocessedScenario
+from path_planning.trajectory import mission as mission
+from path_planning.types import PlannerState, Point, PreprocessedScenario
 
 
 _ARC_SAMPLES = 24  # even -> a sample lands exactly on the waypoint (arc midpoint)

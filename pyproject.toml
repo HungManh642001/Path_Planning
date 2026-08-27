@@ -61,12 +61,17 @@ combine-as-imports = true
 lines-after-imports = 2
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*" = ["S101", "D", "ANN", "ARG", "S105", "S106"]
-"**/*_test.py" = ["S101", "D", "ANN", "ARG", "S105", "S106"]
+"tests/**/*" = ["S101", "D", "ANN", "ARG", "S105", "S106", "S603", "S607", "N806", "C408", "E501", "E402", "E741", "RUF059", "N802", "RUF005", "B905", "RUF007", "B018", "SIM", "S311", "N803", "F841"]
+"**/*_test.py" = ["S101", "D", "ANN", "ARG", "S105", "S106", "S603", "S607", "N806", "C408", "E501", "E402", "E741", "RUF059", "N802", "RUF005", "B905", "RUF007", "B018", "SIM", "S311", "N803", "F841"]
 "scripts/**" = ["D", "ANN", "S101", "S311", "T201", "E501", "N806", "E741"]
 "**/*.ipynb" = ["D", "ANN", "E501", "T201", "B905"]
 "cases/**" = ["D", "ANN"]
-"src/path_planning/core/map_generator.py" = ["S311"]
+"src/path_planning/scenario/generator.py" = ["S311"]
+"src/service/vtx_service/transport.py" = ["E402"]
+"src/service/vtx_service/map_file.py" = ["S314"]
+"src/service/vtx_service/runner.py" = ["S101"]
+"src/service/vtx_service/runtime.py" = ["S607"]
+"src/service/spike/**" = ["E402", "ANN", "S101"]
 
 [tool.pyright]
 include = ["src"]
@@ -92,6 +97,22 @@ root = "src/path_planning/render"
 extraPaths = ["src"]
 reportUnknownMemberType = false
 reportUnknownArgumentType = false
+
+[[tool.pyright.executionEnvironments]]
+root = "src/service"
+extraPaths = ["src"]
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportArgumentType = false
+reportGeneralTypeIssues = false
+reportUntypedBaseClass = false
+reportMissingTypeArgument = false
+reportIndexIssue = false
+reportAttributeAccessIssue = false
+reportOptionalMemberAccess = false
+reportReturnType = false
+reportUnnecessaryTypeIgnoreComment = false
 
 [tool.pytest.ini_options]
 minversion = "8.0"

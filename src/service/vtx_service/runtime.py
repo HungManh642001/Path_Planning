@@ -15,8 +15,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from path_planning import config
-from path_planning.core import kinodynamic_astar_v0 as astar
+from path_planning import config, planner as astar
 
 
 _log = logging.getLogger("vtx-planner")
@@ -34,7 +33,17 @@ def planner_config_snapshot() -> dict[str, object]:
     Returns:
         Ánh xạ tên hằng số sang giá trị hiện tại, sắp theo tên.
     """
-    names = sorted(set(_CONFIG_REF.findall(inspect.getsource(astar))))
+    import path_planning.collision.detector as _cd
+    import path_planning.search.astar as _sa
+    import path_planning.search.heuristic as _sh
+    import path_planning.search.state as _ss
+    import path_planning.search.successors as _sg
+    import path_planning.trajectory.mission as _tm
+    import path_planning.trajectory.smoothing as _ts
+
+    modules = [astar, _cd, _sa, _sh, _ss, _sg, _tm, _ts]
+    all_source = "\n".join(inspect.getsource(m) for m in modules)
+    names = sorted(set(_CONFIG_REF.findall(all_source)))
     return {name: getattr(config, name) for name in names if hasattr(config, name)}
 
 

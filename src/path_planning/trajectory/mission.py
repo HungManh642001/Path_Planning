@@ -21,7 +21,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
-from path_planning.core.types import PlannerState, PreprocessedScenario
+from path_planning.types import PlannerState, PreprocessedScenario
 
 
 def full_mission_path(

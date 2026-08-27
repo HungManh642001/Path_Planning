@@ -15,14 +15,10 @@ import math
 
 from shapely.geometry import Point, Polygon
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar as astar,
-    map_generator as mg,
-    path_validation as pv,
-    preprocessing as prep,
-)
+from path_planning import config, planner as astar
 from path_planning.render import trajectory as tr
+from path_planning.scenario import preprocessing as prep, presets as mg
+from path_planning.validation import oracle as pv
 
 
 def _plan(scenario, k, monkeypatch):

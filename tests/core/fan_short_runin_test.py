@@ -23,12 +23,9 @@ and a bad one: it costs seed 51 +73.5%.
 import contextlib
 import math
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar_v0 as astar_v0,
-    map_generator as mg,
-    preprocessing as prep,
-)
+from path_planning import config, planner as astar_v0
+from path_planning.scenario import preprocessing as prep, presets as mg
+from path_planning.search.state import State
 
 
 START = (0.0, 250000.0)
@@ -81,7 +78,7 @@ def _skip(enabled):
 
 
 def _state(planner, waypoint, heading=0.0):
-    state = astar_v0.State(waypoint, heading)
+    state = State(waypoint, heading)
     state.g_cost = 0.0
     planner.g_scores[state] = 0.0
     return state

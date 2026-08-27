@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from path_planning.core.types import Point
+from path_planning.types import Point
 
 
 @dataclass(frozen=True)
@@ -58,7 +58,8 @@ def two_corner_candidates(
     min_straight: float,
     straight_budget_in: float,
     min_straight_in: float,
-    *, num_dir: int = 9,
+    *,
+    num_dir: int = 9,
     num_cone: int = 9,
 ) -> list[TwoCornerCandidate]:
     """Enumerate feasible 2-corner manoeuvres to the goal, shortest first.

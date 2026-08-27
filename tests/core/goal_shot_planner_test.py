@@ -2,13 +2,10 @@
 
 import math
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar as astar,
-    path_validation as pv,
-    preprocessing as prep,
-)
+from path_planning import config, planner as astar
 from path_planning.render import trajectory as tr
+from path_planning.scenario import preprocessing as prep
+from path_planning.validation import oracle as pv
 
 
 def _adverse_scenario(start_heading_deg, goal_heading_deg):

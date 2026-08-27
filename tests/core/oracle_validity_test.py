@@ -4,15 +4,11 @@ tolerance) over the FULL O..T path, including the fixed legs."""
 
 import pytest
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar as astar,
-    map_generator as mg,
-    path_validation as pv,
-    preprocessing as prep,
-)
-from path_planning.core.map_generator import generate_random_scenario
+from path_planning import config, planner as astar
 from path_planning.render import trajectory as tr
+from path_planning.scenario import preprocessing as prep
+from path_planning.scenario.generator import generate_random_scenario
+from path_planning.validation import oracle as pv
 
 
 SEEDS = list(range(60))  # fast subset; the full 1000-seed sweep is Step 4

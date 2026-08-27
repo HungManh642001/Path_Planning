@@ -2,7 +2,7 @@
 
 import math
 
-from path_planning.core import goal_shot as gs
+from path_planning.geometry import goal_shot as gs
 
 
 # Non-degenerate 2-corner geometry: at the origin heading EAST, goal to the
@@ -27,7 +27,14 @@ def test_two_corner_candidates_are_feasible():
     )
     assert cands, "adverse-launch open geometry must yield 2-corner candidates"
     for cand in cands:
-        total_len, C, d1, phi, budget_C, budget_W = cand.total_length, cand.corner, cand.leg1_heading, cand.arrival_heading, cand.budget_corner, cand.budget_goal
+        total_len, C, d1, phi, budget_C, budget_W = (
+            cand.total_length,
+            cand.corner,
+            cand.leg1_heading,
+            cand.arrival_heading,
+            cand.budget_corner,
+            cand.budget_goal,
+        )
         a1 = abs(gs._angdiff(d1, H))  # turn at P
         a2 = abs(gs._angdiff(phi, d1))  # turn at C
         at = abs(gs._angdiff(GH, phi))  # terminal turn at the goal

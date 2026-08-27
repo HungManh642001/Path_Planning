@@ -11,13 +11,10 @@ bearing against goal_heading — so they are asserted here directly.
 
 import math
 
-from path_planning.core import (
-    kinodynamic_astar as astar,
-    map_generator as mg,
-    mission as mission,
-    path_validation as pv,
-    preprocessing as prep,
-)
+from path_planning import planner as astar
+from path_planning.scenario import preprocessing as prep, presets as mg
+from path_planning.trajectory import mission as mission
+from path_planning.validation import oracle as pv
 
 
 def _plan(scenario, smooth):

@@ -13,14 +13,10 @@ import random
 
 from shapely.geometry import LineString, Polygon
 
-from path_planning.core import (
-    arc_geometry as ag,
-    kinodynamic_astar as astar,
-    map_generator as mg,
-    preprocessing as prep,
-    spatial_utils as su,
-)
-from path_planning.core.map_generator import generate_random_scenario
+from path_planning import planner as astar
+from path_planning.geometry import arc as ag, spatial as su
+from path_planning.scenario import preprocessing as prep
+from path_planning.scenario.generator import generate_random_scenario
 
 
 # Seeds chosen for polygon variety: 964 has 15 islands, 86/155 mixed.

@@ -21,7 +21,7 @@ import math
 from shapely.geometry import MultiPolygon, Polygon
 
 from path_planning import config
-from path_planning.core.types import LatticeKey, Point, PolygonCoords
+from path_planning.types import LatticeKey, Point, PolygonCoords
 
 
 def distance(p1: Point, p2: Point) -> float:

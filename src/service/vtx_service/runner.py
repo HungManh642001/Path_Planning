@@ -122,7 +122,7 @@ def _child(
         from service.vtx_service.planner import plan  # lazy import
 
         pipe.send(("ok", plan(request, preloaded=preloaded)))
-    except BaseException:  # noqa: BLE001 - báo lỗi về cha thay vì chết câm
+    except BaseException:
         pipe.send(("loi", traceback.format_exc(limit=5)))
     finally:
         pipe.close()

@@ -12,13 +12,9 @@ import random
 
 from shapely.geometry import LineString
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar_v0 as astar,
-    map_generator as mg,
-    preprocessing as prep,
-    spatial_utils as su,
-)
+from path_planning import config, planner as astar
+from path_planning.geometry import spatial as su
+from path_planning.scenario import preprocessing as prep, presets as mg
 
 
 def _brute_force_clear(planner, p1, p2):

@@ -13,7 +13,7 @@ it with the oracle so there is one answer to "how far inside is this chord".
 
 from shapely.geometry import LineString, Polygon
 
-from path_planning.core import path_validation as pv
+from path_planning.validation import oracle as pv
 
 
 SQUARE = Polygon([(0.0, 0.0), (1000.0, 0.0), (1000.0, 1000.0), (0.0, 1000.0)])

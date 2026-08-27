@@ -33,14 +33,14 @@ if TYPE_CHECKING:
 
     from matplotlib.figure import Figure
 
-    from path_planning.core.types import (
+    from path_planning.render.trajectory import RenderMode
+    from path_planning.types import (
         Obstacle,
         PlanResultView,
         Point,
         PreprocessedScenario,
         Scenario,
     )
-    from path_planning.render.trajectory import RenderMode
 
 Extents = tuple[tuple[float, float], tuple[float, float]]
 """Axis limits as ``((xmin, xmax), (ymin, ymax))``."""

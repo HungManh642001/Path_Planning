@@ -19,7 +19,7 @@ from shapely.geometry import LineString, Polygon
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from path_planning.core.types import (
+    from path_planning.types import (
         CircleGeometry,
         PlannerState,
         Point,

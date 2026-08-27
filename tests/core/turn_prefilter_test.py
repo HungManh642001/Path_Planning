@@ -11,16 +11,11 @@ a borderline case. These tests hold it to exactly that.
 
 import math
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar as astar,
-    kinodynamic_astar_v0 as astar_v0,
-    map_generator as mg,
-    preprocessing as prep,
-)
+from path_planning import config, planner as astar
+from path_planning.scenario import preprocessing as prep, presets as mg
 
 
-PLANNERS = (astar.KinodynamicAstar, astar_v0.KinodynamicAstar)
+PLANNERS = (astar.KinodynamicAstar,)
 
 
 def _planners():

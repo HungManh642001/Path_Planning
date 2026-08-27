@@ -26,14 +26,11 @@ Two invariants are asserted here.
 import math
 import random
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar_v0 as astar_v0,
-    map_generator as mg,
-    mission as mission,
-    path_validation as pv,
-    preprocessing as prep,
-)
+from path_planning import config, planner as astar_v0
+from path_planning.scenario import preprocessing as prep, presets as mg
+from path_planning.search.state import State
+from path_planning.trajectory import mission as mission
+from path_planning.validation import oracle as pv
 
 
 def _preprocessed(seed, goal_heading):
@@ -86,7 +83,7 @@ def test_the_threshold_is_alpha_max_because_one_corner_stops_working_there():
 def test_shot_is_disabled_in_free_goal_mode():
     planner = astar_v0.KinodynamicAstar(_preprocessed(3, None))
     assert planner._free_goal
-    state = astar_v0.State((200000.0, 200000.0), math.radians(45.0))
+    state = State((200000.0, 200000.0), math.radians(45.0))
     planner.g_scores[state] = 0.0
     assert planner._try_goal_shot(state) is None
 
@@ -109,7 +106,7 @@ def test_shot_connects_an_adverse_approach_in_fixed_mode():
     )
     planner = astar_v0.KinodynamicAstar(pre)
     goal_wp = planner.goal_state.waypoint
-    state = astar_v0.State((goal_wp[0] - 80000.0, goal_wp[1] - 80000.0), 0.0)
+    state = State((goal_wp[0] - 80000.0, goal_wp[1] - 80000.0), 0.0)
     planner.g_scores[state] = 0.0
 
     shot = planner._try_goal_shot(state)
@@ -127,7 +124,7 @@ def test_shot_connects_an_adverse_approach_in_fixed_mode():
 def test_knob_off_removes_the_shot():
     pre = _preprocessed(5, REVERSED)
     planner = astar_v0.KinodynamicAstar(pre)
-    state = astar_v0.State((200000.0, 200000.0), math.radians(45.0))
+    state = State((200000.0, 200000.0), math.radians(45.0))
     planner.g_scores[state] = 0.0
     previous = config.GOAL_SHOT_ENABLED
     config.GOAL_SHOT_ENABLED = False

@@ -11,13 +11,9 @@ points too short to bridge constrained goal-approach slots (seed 4: +88 km).
 """
 import math
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar as astar,
-    map_generator as mg,
-    preprocessing as prep,
-)
-from path_planning.core.map_generator import generate_random_scenario
+from path_planning import config, planner as astar
+from path_planning.scenario import preprocessing as prep
+from path_planning.scenario.generator import generate_random_scenario
 
 
 @pytest.fixture

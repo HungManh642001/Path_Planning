@@ -8,14 +8,11 @@ shot grid is redundant and must be skipped. The gate fires ~100% on aligned
 (favorable) maps and ~0% on adverse maps where the shot is load-bearing."""
 import math
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar as astar,
-    path_validation as pv,
-    preprocessing as prep,
-)
-from path_planning.core.kinodynamic_astar import KinodynamicAstar, State
+from path_planning import config, planner as astar
+from path_planning.planner import KinodynamicAstar, State
 from path_planning.render import trajectory as tr
+from path_planning.scenario import preprocessing as prep
+from path_planning.validation import oracle as pv
 
 
 def _scenario(start_heading_deg, goal_heading_deg):

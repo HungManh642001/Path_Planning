@@ -167,7 +167,7 @@ def test_config_mutation_in_a_child_cannot_leak_into_the_parent(
 
     before = config.NUM_START_CORNERS
     runner.submit(_request())
-    assert config.NUM_START_CORNERS == before
+    assert before == config.NUM_START_CORNERS
 
 
 def test_an_empty_request_budget_does_not_collapse_the_deadline() -> None:

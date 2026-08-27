@@ -7,12 +7,8 @@ straight seeker run-in of length >= DSS in a search-chosen direction.
 
 import math
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar as astar,
-    map_generator as mg,
-    preprocessing as prep,
-)
+from path_planning import config, planner as astar
+from path_planning.scenario import preprocessing as prep, presets as mg
 
 
 # Comparison slack for a length in metres. Was config.EPS, which is gone: it

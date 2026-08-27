@@ -49,9 +49,13 @@ class PerformanceMetrics:
         full_wps = list(waypoints)
         orig_origin = preprocessed.get("start_pos") if preprocessed else None
         orig_target = preprocessed.get("goal_pos") if preprocessed else None
-        if orig_origin is not None and (not full_wps or math.dist(orig_origin, full_wps[0]) > 1.0):
+        if orig_origin is not None and (
+            not full_wps or math.dist(orig_origin, full_wps[0]) > 1.0
+        ):
             full_wps = [tuple(orig_origin), *full_wps]
-        if orig_target is not None and (not full_wps or math.dist(orig_target, full_wps[-1]) > 1.0):
+        if orig_target is not None and (
+            not full_wps or math.dist(orig_target, full_wps[-1]) > 1.0
+        ):
             full_wps = [*full_wps, tuple(orig_target)]
 
         # Calculate distances

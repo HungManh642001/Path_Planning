@@ -73,6 +73,7 @@ class Point2D(IdlStruct, typename="vtx.planning.Point2D"):
         x: X coordinate.
         y: Y coordinate.
     """
+
     x: float
     y: float
 
@@ -84,6 +85,7 @@ class Polygon(IdlStruct, typename="vtx.planning.Polygon"):
     Attributes:
         vertices: List of vertices.
     """
+
     vertices: sequence[Point2D]
 
 
@@ -95,6 +97,7 @@ class Circle(IdlStruct, typename="vtx.planning.Circle"):
         center: Center point.
         radius_m: Radius in meters.
     """
+
     center: Point2D
     radius_m: float
 
@@ -107,6 +110,7 @@ class VehicleLimits(IdlStruct, typename="vtx.planning.VehicleLimits"):
         turn_radius_m: Turn radius in meters.
         l0_m: L0 in meters.
     """
+
     turn_radius_m: float
     l0_m: float
     dss_m: float
@@ -121,6 +125,7 @@ class SearchBudget(IdlStruct, typename="vtx.planning.SearchBudget"):
     Attributes:
         time_budget_s: Time budget in seconds.
     """
+
     time_budget_s: float
 
 
@@ -131,6 +136,7 @@ class WireRequest(IdlStruct, typename="vtx.planning.VtxPathPlanRequest"):
     Attributes:
         request_id: Request ID.
     """
+
     request_id: array[uint8, 16]
     key("request_id")
     idl_version: uint32
@@ -155,6 +161,7 @@ class Waypoint(IdlStruct, typename="vtx.planning.Waypoint"):
         position: Waypoint position.
         heading_deg: Heading in degrees.
     """
+
     position: Point2D
     heading_deg: float
 
@@ -167,6 +174,7 @@ class SearchStats(IdlStruct, typename="vtx.planning.SearchStats"):
         iterations: Number of iterations.
         open_set_size: Size of open set.
     """
+
     iterations: uint32
     open_set_size: uint32
     is_search_failed: bool
@@ -180,6 +188,7 @@ class WireReply(IdlStruct, typename="vtx.planning.VtxPathPlanReply"):
     Attributes:
         request_id: Request ID.
     """
+
     request_id: array[uint8, 16]
     key("request_id")
     idl_version: uint32
@@ -473,34 +482,45 @@ class DdsTransport:
             domain_request = _to_domain(wire)  # type: ignore[arg-type]
         except ValueError as exc:
             reply = _invalid_request_reply(request_id, str(exc))
-        except Exception:  # noqa: BLE001 - R25: bất kỳ lỗi KHÁC nào ở đây cũng không được hạ service
-            logger.exception(f"[transport] request {request_id.hex()} lỗi khi dịch request từ dây:")
+        except Exception:
+            logger.exception(
+                f"[transport] request {request_id.hex()} lỗi khi dịch request từ dây:"
+            )
             reply = _internal_error_reply(request_id, "internal error khi dịch request")
         else:
             try:
                 reply = handler(domain_request)
-            except Exception:  # noqa: BLE001 - một request hỏng không được hạ cả service
-                logger.exception(f"[transport] request {request_id.hex()} lỗi khi xử lý:")
+            except Exception:
+                logger.exception(
+                    f"[transport] request {request_id.hex()} lỗi khi xử lý:"
+                )
                 reply = _internal_error_reply(
                     request_id, "internal error khi xử lý request"
                 )
 
         try:
             wire_reply = _to_wire_reply(reply)
-        except Exception:  # noqa: BLE001 - dịch reply lỗi cũng không được hạ service
-            logger.exception(f"[transport] request {request_id.hex()} lỗi khi dịch reply ra kiểu trên dây:")
+        except Exception:
+            logger.exception(
+                f"[transport] request {request_id.hex()} lỗi khi dịch reply ra kiểu "
+                "trên dây:"
+            )
             try:
                 wire_reply = _to_wire_reply(
                     _internal_error_reply(request_id, "internal error khi dịch reply")
                 )
-            except Exception:  # noqa: BLE001 - dựng reply lỗi cũng không được hạ service
-                logger.exception(f"[transport] request {request_id.hex()} lỗi cả khi dựng reply lỗi:")
+            except Exception:
+                logger.exception(
+                    f"[transport] request {request_id.hex()} lỗi cả khi dựng reply lỗi:"
+                )
                 return
 
         try:
             self._reply_writer.write(wire_reply)
-        except Exception:  # noqa: BLE001 - ghi lỗi không được hạ service
-            logger.exception(f"[transport] request {request_id.hex()} lỗi khi ghi reply:")
+        except Exception:
+            logger.exception(
+                f"[transport] request {request_id.hex()} lỗi khi ghi reply:"
+            )
 
     def wait_for_service(self, timeout_s: float) -> bool:
         """Chờ tới khi có một service khớp trên topic request.

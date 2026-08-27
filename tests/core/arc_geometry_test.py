@@ -2,11 +2,8 @@
 
 import math
 
-from path_planning.core import (
-    arc_geometry as ag,
-    path_validation as pv,
-    spatial_utils as su,
-)
+from path_planning.geometry import arc as ag, spatial as su
+from path_planning.validation import oracle as pv
 
 
 C = (100000.0, 100000.0)

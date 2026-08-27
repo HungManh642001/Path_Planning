@@ -185,14 +185,10 @@ class SearchStats(TypedDict):
 class PlanResultView(TypedDict):
     """The part of a planner result that consumers outside the planner read.
 
-    Both planners return a richer dict that also carries the planner instance;
-    this view is what the renderer, the GUI and the reporting scripts actually
-    need, and it keeps them from importing a planner module just for a type.
-
     Attributes:
-        path: The planned interior waypoints, or ``None`` if planning failed.
+        path: The planned interior waypoints, or None if planning failed.
         is_success: Whether the independent oracle accepted the full mission path.
-        failure_reason: ``None`` on is_success, otherwise why planning failed.
+        failure_reason: None on success, otherwise why planning failed.
         stats: Search counters.
     """
 
@@ -200,6 +196,24 @@ class PlanResultView(TypedDict):
     is_success: bool
     failure_reason: str | None
     stats: SearchStats
+
+
+class PlanResult(TypedDict):
+    """The result returned by KinodynamicAstar.plan / plan_trajectory.
+
+    Attributes:
+        path: The planned interior waypoints, or None if planning failed.
+        is_success: Whether the independent oracle accepted the full mission path.
+        failure_reason: None on success, otherwise why planning failed.
+        stats: Search counters.
+        planner: The planner instance.
+    """
+
+    path: list[PlannerState] | None
+    is_success: bool
+    failure_reason: str | None
+    stats: SearchStats
+    planner: object
 
 
 # --- Preprocessed scenario ----------------------------------------------------

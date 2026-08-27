@@ -11,18 +11,11 @@ import math
 
 import pytest
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar as astar_main,
-    kinodynamic_astar_v0 as astar_v0,
-    map_generator as mg,
-    preprocessing as prep,
-)
+from path_planning import config, planner as astar
+from path_planning.scenario import preprocessing as prep, presets as mg
 
 
-PLANNERS = pytest.mark.parametrize(
-    "planner_module", [astar_main, astar_v0], ids=["main", "v0"]
-)
+PLANNERS = pytest.mark.parametrize("planner_module", [astar], ids=["planner"])
 
 
 @pytest.fixture(scope="module")

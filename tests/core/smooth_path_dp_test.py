@@ -17,16 +17,11 @@ the oracle's own formula, bit for bit.
 
 import math
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar as astar,
-    kinodynamic_astar_v0 as astar_v0,
-    map_generator as mg,
-    preprocessing as prep,
-)
+from path_planning import config, planner as astar, planner as astar_v0
+from path_planning.scenario import preprocessing as prep, presets as mg
 
 
-PLANNERS = (astar.KinodynamicAstar, astar_v0.KinodynamicAstar)
+PLANNERS = (astar.KinodynamicAstar,)
 
 # A corner at exactly alpha_max, followed by waypoints the aircraft flies
 # straight through. l1 = 20 km - R*tan(45 deg) = 12 km, well over L0.

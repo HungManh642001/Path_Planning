@@ -26,12 +26,9 @@ import random
 import time
 
 from path_planning import config
-from path_planning.core import (
-    map_generator as mg,
-    mission as mission,
-    preprocessing as prep,
-    spatial_utils as su,
-)
+from path_planning.geometry import spatial as su
+from path_planning.scenario import generator as mg, preprocessing as prep
+from path_planning.trajectory import mission as mission
 
 
 logger = logging.getLogger(__name__)
@@ -78,10 +75,8 @@ def make_scenario(seed, mode="free"):
 
 
 def _load_planner(name):
-    if name == "v0":
-        from path_planning.core import kinodynamic_astar_v0 as m
-    elif name == "main":
-        from path_planning.core import kinodynamic_astar as m
+    if name in ("v0", "main", "planner"):
+        from path_planning import planner as m
     else:
         raise SystemExit(f"unknown planner {name!r}")
     return m
@@ -133,16 +128,17 @@ def run(args):
     results = {}
     t_all = time.perf_counter()
     for seed in seeds:
-        pre = prep.prepare_scenario(make_scenario(seed, turn_radius=args.mode))
+        pre = prep.prepare_scenario(make_scenario(seed, mode=args.mode))
         t0 = time.perf_counter()
         res = module.plan_trajectory(pre)
         dt = time.perf_counter() - t0
         path = res.get("path") or []
+        is_succ = bool(res.get("is_success", res.get("success", False)))
         results[str(seed)] = {
-            "success": bool(res["success"]),
-            "failure_reason": res["failure_reason"],
+            "success": is_succ,
+            "failure_reason": res.get("failure_reason"),
             "time_s": dt,
-            "length_m": _full_length(module, path, pre) if res["success"] else None,
+            "length_m": _full_length(module, path, pre) if is_succ else None,
             "waypoints": [[w[0], w[1], h] for w, h in path],
             "iterations": res["stats"]["iterations"],
         }

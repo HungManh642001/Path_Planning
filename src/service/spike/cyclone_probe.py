@@ -49,6 +49,7 @@ DOMAIN = 91
 @dataclass
 class Point2D(IdlStruct, typename="vtx.planning.Point2D"):
     """Point 2D."""
+
     x: float
     y: float
 
@@ -56,12 +57,14 @@ class Point2D(IdlStruct, typename="vtx.planning.Point2D"):
 @dataclass
 class Polygon(IdlStruct, typename="vtx.planning.Polygon"):
     """Polygon."""
+
     vertices: sequence[Point2D]
 
 
 @dataclass
 class Probe(IdlStruct, typename="vtx.planning.Probe"):
     """Probe."""
+
     request_id: array[uint8, 16]
     key("request_id")
     idl_version: int

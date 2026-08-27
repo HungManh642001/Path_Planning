@@ -15,7 +15,7 @@ correctly accepted:
 
 import math
 
-from path_planning.core import path_validation as pv
+from path_planning.validation import oracle as pv
 
 
 def _wp(pts):

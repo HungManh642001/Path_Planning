@@ -12,11 +12,9 @@ import math
 import time
 from typing import Any
 
-from path_planning.core import (
-    kinodynamic_astar_v0 as astar,
-    mission as mission,
-    preprocessing as prep,
-)
+from path_planning import planner as astar
+from path_planning.scenario import preprocessing as prep
+from path_planning.trajectory import mission as mission
 from service.vtx_service.angles import math_rad_to_bearing_deg
 from service.vtx_service.map_file import PreloadedMap
 from service.vtx_service.messages import (

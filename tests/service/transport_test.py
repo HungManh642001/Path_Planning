@@ -31,10 +31,10 @@ pytest.importorskip(
     "cyclonedds", reason="chưa cài binding DDS; xem quyết định ở Task 1"
 )
 
-from cyclonedds.idl.types import uint32  # noqa: E402
+from cyclonedds.idl.types import uint32
 
-from service.vtx_service import transport as transport_module  # noqa: E402
-from service.vtx_service.transport import (  # noqa: E402
+from service.vtx_service import transport as transport_module
+from service.vtx_service.transport import (
     DdsTransport,
     VehicleLimits as WireVehicleLimits,
     WireReply,

@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import math
 
-from path_planning.core import spatial_utils as su
-from path_planning.core.types import (
+from path_planning.geometry import spatial as su
+from path_planning.types import (
     PlannerState,
     Point,
     PolygonCoords,

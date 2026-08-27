@@ -12,14 +12,11 @@ try:
 except ImportError:
     import performance_eval as perf  # type: ignore
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar as astar,
-    preprocessing as prep,
-)
-from path_planning.core.map_generator import generate_random_scenario
+from path_planning import config, planner as astar
 from path_planning.logger_config import setup_logging
 from path_planning.render import visualizer as viz
+from path_planning.scenario import preprocessing as prep
+from path_planning.scenario.generator import generate_random_scenario
 
 
 logger = logging.getLogger(__name__)

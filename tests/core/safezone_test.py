@@ -11,13 +11,9 @@ import math
 from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 
-from path_planning import config
-from path_planning.core import (
-    kinodynamic_astar as astar,
-    map_generator as mg,
-    preprocessing as prep,
-)
-from path_planning.core.kinodynamic_astar import KinodynamicAstar
+from path_planning import config, planner as astar
+from path_planning.planner import KinodynamicAstar
+from path_planning.scenario import preprocessing as prep, presets as mg
 
 
 def _make_planner(
@@ -167,7 +163,9 @@ def test_open_scenario_path_stays_inside_safezones():
     assert pre["safezones"] == [band]  # propagated through preprocessing
 
     result = astar.plan_trajectory(pre)
-    assert result["is_success"], "open-water plan with a generous corridor should succeed"
+    assert result["is_success"], (
+        "open-water plan with a generous corridor should succeed"
+    )
 
     union = unary_union([Polygon(band)])
     for waypoint, _heading in result["path"]:

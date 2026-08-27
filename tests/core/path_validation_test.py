@@ -10,7 +10,7 @@ alpha_max - GEOM_EPS_RAD, the takeoff straight at L0 + GEOM_EPS_M).
 
 import math
 
-from path_planning.core import path_validation as pv
+from path_planning.validation import oracle as pv
 
 
 # A single inflated circle at the origin, radius 1000; a horizontal segment
