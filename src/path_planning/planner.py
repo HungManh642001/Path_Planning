@@ -43,7 +43,9 @@ class KinodynamicAstar:
     ) -> None:
         """Initialize Kinodynamic A* planner from preprocessed scenario."""
         self.scenario = preprocessed_scenario
-        self.time_budget_s = config.resolve_time_budget_s(time_budget_s)
+        self.time_budget_s = config.resolve_time_budget_s(
+            time_budget_s if time_budget_s is not None else config.TIME_BUDGET_S
+        )
 
         origin = preprocessed_scenario.get("start_pos")
         target = preprocessed_scenario.get("goal_pos")
