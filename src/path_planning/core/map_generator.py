@@ -7,11 +7,11 @@ hand-set.
 """
 
 from __future__ import annotations
+from dataclasses import dataclass
 
 import math
 import random
 from collections.abc import Callable
-from typing import NamedTuple
 
 from shapely import Point as ShapelyPoint, Polygon as ShapelyPolygon
 
@@ -32,7 +32,8 @@ _MAX_PLACEMENT_ATTEMPTS = 1000
 """Consecutive rejected placements before a generator gives up on the rest."""
 
 
-class _StartGoalGeometry(NamedTuple):
+@dataclass(frozen=True)
+class _StartGoalGeometry:
     """The start-goal line, precomputed once per generator call.
 
     Attributes:
@@ -145,6 +146,7 @@ def generate_random_islands(
     map_bounds: MapBounds,
     start: Point,
     goal: Point,
+    *,
     topology: Topology = "random",
     seed: int | None = None,
 ) -> list[PolygonCoords]:
@@ -213,6 +215,7 @@ def generate_dynamic_obstacles(
     map_bounds: MapBounds,
     start: Point,
     goal: Point,
+    *,
     topology: Topology = "random",
     seed: int | None = None,
 ) -> list[CircleGeometry]:
@@ -293,7 +296,7 @@ def create_scenario(scenario_config: ScenarioConfig) -> Scenario:
         map_bounds,
         start,
         goal,
-        topology,
+        topology=topology,
         seed=seed,
     )
     dynamic_obstacles = generate_dynamic_obstacles(
@@ -301,7 +304,7 @@ def create_scenario(scenario_config: ScenarioConfig) -> Scenario:
         map_bounds,
         start,
         goal,
-        topology,
+        topology=topology,
         seed=seed,
     )
 

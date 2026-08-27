@@ -63,7 +63,8 @@ def test_collinear_waypoint_does_not_split_the_straight_run():
     # the offending piece on its own really is too short for that fillet
     assert 1701.0 - 4000.0 < 0.0
 
-    is_ok, reason = pv.straight_segments_ok(path, R, L0, DSS)
+    _res = pv.straight_segments_ok(path, R, L0, DSS)
+    is_ok, reason = _res.is_ok, _res.detail
     assert is_ok, reason
 
 
@@ -78,7 +79,8 @@ def test_short_segment_between_two_real_turns_is_still_rejected():
 
     path = _wp([O, A, B, C, D])
     assert pv.turn_angles(path)[1] > math.radians(39.0)
-    is_ok, reason = pv.straight_segments_ok(path, R, L0, DSS)
+    _res = pv.straight_segments_ok(path, R, L0, DSS)
+    is_ok, reason = _res.is_ok, _res.detail
     assert not is_ok
     assert "l=" in reason
 
@@ -111,7 +113,8 @@ SEED166_POLY = [
 
 def test_fillet_tangent_to_polygon_edge_is_clear():
     path = _wp([SEED166_PREV, SEED166_W, SEED166_NEXT])
-    is_ok, reason = pv.arcs_clear(path, R, [], [SEED166_POLY])
+    _res = pv.arcs_clear(path, R, [], [SEED166_POLY])
+    is_ok, reason = _res.is_ok, _res.detail
     assert is_ok, reason
 
 
@@ -120,7 +123,8 @@ def test_arc_actually_entering_a_polygon_is_still_blocked():
     corner deep inside the polygon and the arc must be rejected."""
     inside = (280000.0, 182000.0)
     path = _wp([SEED166_PREV, inside, SEED166_NEXT])
-    is_ok, reason = pv.arcs_clear(path, R, [], [SEED166_POLY])
+    _res = pv.arcs_clear(path, R, [], [SEED166_POLY])
+    is_ok, reason = _res.is_ok, _res.detail
     assert not is_ok
     assert "blocked" in reason
 
@@ -129,5 +133,6 @@ def test_segment_running_along_a_polygon_edge_is_clear():
     """The same tolerance must keep the documented behaviour that a leg may hug
     an obstacle boundary (here: exactly along one edge, vertex to vertex)."""
     path = _wp([SEED166_W, SEED166_NEXT])
-    is_ok, reason = pv.segments_clear(path, [], [SEED166_POLY])
+    _res = pv.segments_clear(path, [], [SEED166_POLY])
+    is_ok, reason = _res.is_ok, _res.detail
     assert is_ok, reason

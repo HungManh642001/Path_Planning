@@ -10,7 +10,8 @@ vocabulary is imported under ``TYPE_CHECKING`` alone.
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, NamedTuple
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from shapely.geometry import LineString, Polygon
 
@@ -26,7 +27,8 @@ if TYPE_CHECKING:
     )
 
 
-class ValidationResult(NamedTuple):
+@dataclass(frozen=True)
+class ValidationResult:
     """The verdict of one validity check.
 
     Attributes:
@@ -37,6 +39,10 @@ class ValidationResult(NamedTuple):
 
     is_ok: bool
     detail: str
+
+    def __bool__(self) -> bool:
+        """Return True if the validation passed."""
+        return self.is_ok
 
 
 _OK = ValidationResult(True, "ok")
@@ -328,6 +334,7 @@ def arc_points(
     w_prev: Point,
     w: Point,
     w_next: Point,
+    *,
     turn_radius: float,
     n: int = _ARC_SAMPLES,
 ) -> list[Point]:
@@ -389,14 +396,17 @@ def arcs_clear(
         The verdict, naming the first blocked arc on failure.
     """
     for i in range(1, len(path) - 1):
-        points = arc_points(path[i - 1][0], path[i][0], path[i + 1][0], turn_radius)
+        points = arc_points(
+            path[i - 1][0], path[i][0], path[i + 1][0], turn_radius=turn_radius
+        )
         for j in range(len(points) - 1):
             if not _segment_clear(
                 points[j], points[j + 1], circle_obstacles, polygon_obstacles
             ):
                 return ValidationResult(
                     False,
-                    f"turn arc at wp[{i}] {path[i][0]} blocked ({points[j]} -> {points[j + 1]})",
+                    f"turn arc at wp[{i}] {path[i][0]} blocked "
+                    f"({points[j]} -> {points[j + 1]})",
                 )
     return _OK
 
@@ -405,6 +415,7 @@ def path_is_valid(
     path: Sequence[PlannerState],
     circle_obstacles: Sequence[CircleGeometry],
     polygon_obstacles: Sequence[PolygonCoords],
+    *,
     turn_radius: float,
     alpha_max_rad: float,
     l0: float,
@@ -444,11 +455,13 @@ def path_is_valid(
     if not path or len(path) < 2:
         return ValidationResult(False, "path too short")
 
-    is_ok, reason = segments_clear(path, circle_obstacles, polygon_obstacles)
+    _res = segments_clear(path, circle_obstacles, polygon_obstacles)
+    is_ok, reason = _res.is_ok, _res.detail
     if not is_ok:
         return ValidationResult(False, f"segments blocked: {reason}")
 
-    is_ok, reason = turn_angles_ok(path, alpha_max_rad)
+    _res = turn_angles_ok(path, alpha_max_rad)
+    is_ok, reason = _res.is_ok, _res.detail
     if not is_ok:
         return ValidationResult(False, f"turn angles invalid: {reason}")
 
@@ -458,11 +471,13 @@ def path_is_valid(
     arc_polys = (
         polygon_obstacles if raw_polygon_obstacles is None else raw_polygon_obstacles
     )
-    is_ok, reason = arcs_clear(path, turn_radius, arc_circles, arc_polys)
+    _res = arcs_clear(path, turn_radius, arc_circles, arc_polys)
+    is_ok, reason = _res.is_ok, _res.detail
     if not is_ok:
         return ValidationResult(False, f"turn arcs blocked: {reason}")
 
-    is_ok, reason = straight_segments_ok(path, turn_radius, l0, dss)
+    _res = straight_segments_ok(path, turn_radius, l0, dss)
+    is_ok, reason = _res.is_ok, _res.detail
     if not is_ok:
         return ValidationResult(False, f"straight segments invalid: {reason}")
 

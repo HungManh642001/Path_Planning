@@ -24,7 +24,7 @@ from path_planning.core.types import (
 )
 
 
-def inflation_ring(safe_margin: float = config.SAFE_MARGIN) -> float:
+def inflation_ring(*, safe_margin: float = config.SAFE_MARGIN) -> float:
     """Return the obstacle boundary offset used for display.
 
     There is a SINGLE ring, ``safe_margin`` -- exactly what
@@ -44,7 +44,7 @@ def inflation_ring(safe_margin: float = config.SAFE_MARGIN) -> float:
 
 
 def inflate_obstacles(
-    obstacles: list[Obstacle], safe_margin: float = config.SAFE_MARGIN
+    obstacles: list[Obstacle], *, safe_margin: float = config.SAFE_MARGIN
 ) -> list[Obstacle]:
     """Inflate obstacle boundaries by the stand-off margin.
 
@@ -84,6 +84,7 @@ def inflate_obstacles(
 def calculate_start_state(
     origin: Point,
     init_heading: float,
+    *,
     l0: float = config.L0,
     turn_radius: float = config.R,
     alpha_max_rad: float = config.ALPHA_MAX_RAD,
@@ -123,6 +124,7 @@ def calculate_start_state(
 def calculate_end_state(
     target: Point,
     target_heading: float,
+    *,
     dss: float = config.DSS,
     turn_radius: float = config.R,
     alpha_max_rad: float = config.ALPHA_MAX_RAD,
@@ -157,7 +159,7 @@ def calculate_end_state(
 
 
 def compute_inflated_obstacles(
-    obstacles: list[Obstacle], safe_margin: float = config.SAFE_MARGIN
+    obstacles: list[Obstacle], *, safe_margin: float = config.SAFE_MARGIN
 ) -> InflatedObstacleSets:
     """Inflate all obstacles and split them into the per-type sets the search uses.
 
@@ -168,7 +170,7 @@ def compute_inflated_obstacles(
     Returns:
         The inflated obstacle list plus its circle and polygon views.
     """
-    inflated = inflate_obstacles(obstacles, safe_margin)
+    inflated = inflate_obstacles(obstacles, safe_margin=safe_margin)
     circle_obstacles: list[CircleGeometry] = []
     polygon_obstacles: list[PolygonCoords] = []
     for obstacle in inflated:
@@ -185,6 +187,7 @@ def compute_inflated_obstacles(
 
 def prepare_scenario(
     scenario: Scenario,
+    *,
     turn_radius: float = config.R,
     l0: float = config.L0,
     dss: float = config.DSS,
@@ -205,7 +208,11 @@ def prepare_scenario(
         The preprocessed scenario the planner consumes.
     """
     start_state = calculate_start_state(
-        scenario["start"], scenario["start_heading"], l0, turn_radius, alpha_max_rad
+        scenario["start"],
+        scenario["start_heading"],
+        l0=l0,
+        turn_radius=turn_radius,
+        alpha_max_rad=alpha_max_rad,
     )
     goal_heading = scenario["goal_heading"]
     if goal_heading is None:
@@ -221,10 +228,16 @@ def prepare_scenario(
         }
     else:
         goal_state = calculate_end_state(
-            scenario["goal"], goal_heading, dss, turn_radius, alpha_max_rad
+            scenario["goal"],
+            goal_heading,
+            dss=dss,
+            turn_radius=turn_radius,
+            alpha_max_rad=alpha_max_rad,
         )
 
-    inflated = compute_inflated_obstacles(scenario["obstacles"], safe_margin)
+    inflated = compute_inflated_obstacles(
+        scenario["obstacles"], safe_margin=safe_margin
+    )
 
     # Raw (uninflated) obstacle sets, threaded through for callers that want to
     # measure or draw the true obstacle. They are NO LONGER the arc-clearance

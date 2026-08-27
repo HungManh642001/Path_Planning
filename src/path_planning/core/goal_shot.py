@@ -15,14 +15,15 @@ stays a pure-geometry leaf that can be tested in isolation.
 """
 
 from __future__ import annotations
+from dataclasses import dataclass
 
 import math
-from typing import NamedTuple
 
 from path_planning.core.types import Point
 
 
-class TwoCornerCandidate(NamedTuple):
+@dataclass(frozen=True)
+class TwoCornerCandidate:
     """One feasible 2-corner manoeuvre to the goal.
 
     Attributes:
@@ -57,7 +58,7 @@ def two_corner_candidates(
     min_straight: float,
     straight_budget_in: float,
     min_straight_in: float,
-    num_dir: int = 9,
+    *, num_dir: int = 9,
     num_cone: int = 9,
 ) -> list[TwoCornerCandidate]:
     """Enumerate feasible 2-corner manoeuvres to the goal, shortest first.

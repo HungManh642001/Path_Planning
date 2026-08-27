@@ -133,7 +133,7 @@ def run(args):
     results = {}
     t_all = time.perf_counter()
     for seed in seeds:
-        pre = prep.prepare_scenario(make_scenario(seed, args.mode))
+        pre = prep.prepare_scenario(make_scenario(seed, turn_radius=args.mode))
         t0 = time.perf_counter()
         res = module.plan_trajectory(pre)
         dt = time.perf_counter() - t0

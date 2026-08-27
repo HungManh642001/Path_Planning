@@ -26,7 +26,8 @@ def test_two_corner_candidates_are_feasible():
         P, H, GOAL, GH, R, AMAX, 10.0, 1e9, 10.0, num_dir=9, num_cone=9
     )
     assert cands, "adverse-launch open geometry must yield 2-corner candidates"
-    for total_len, C, d1, phi, budget_C, budget_W in cands:
+    for cand in cands:
+        total_len, C, d1, phi, budget_C, budget_W = cand.total_length, cand.corner, cand.leg1_heading, cand.arrival_heading, cand.budget_corner, cand.budget_goal
         a1 = abs(gs._angdiff(d1, H))  # turn at P
         a2 = abs(gs._angdiff(phi, d1))  # turn at C
         at = abs(gs._angdiff(GH, phi))  # terminal turn at the goal
@@ -43,7 +44,7 @@ def test_two_corner_candidates_are_feasible():
 
 def test_candidates_sorted_shortest_first():
     cands = gs.two_corner_candidates(P, H, GOAL, GH, R, AMAX, 10.0, 1e9, 10.0)
-    lengths = [c[0] for c in cands]
+    lengths = [c.total_length for c in cands]
     assert lengths == sorted(lengths)
 
 
@@ -58,6 +59,7 @@ def test_incoming_budget_gate_blocks_first_turn():
     cands = gs.two_corner_candidates(
         P, H, GOAL, GH, R, AMAX, 10.0, 100.0, 10.0
     )  # budget_in = 100 m
-    for _tot, _C, d1, _phi, _bC, _bW in cands:
+    for cand in cands:
+        d1 = cand.leg1_heading
         a1 = abs(gs._angdiff(d1, H))
         assert 100.0 - R * math.tan(a1 / 2.0) >= 10.0 - 1e-9

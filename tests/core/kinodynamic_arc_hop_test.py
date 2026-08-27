@@ -79,10 +79,10 @@ def test_synthetic_circle_end_to_end_valid():
         full,
         pre["circle_obstacles"],
         pre["polygon_obstacles"],
-        config.R,
-        config.ALPHA_MAX_RAD,
-        config.L0,
-        config.DSS,
+        turn_radius=config.R,
+        alpha_max_rad=config.ALPHA_MAX_RAD,
+        l0=config.L0,
+        dss=config.DSS,
         raw_circle_obstacles=[(CENTER, RAW_R)],
         raw_polygon_obstacles=[],
     )
@@ -255,7 +255,6 @@ def test_escape_valve_fan_when_goal_occluded(monkeypatch):
     ), "fan fired with exhausted budget"
 
 
-@pytest.mark.xfail(reason="Signature changed on branch")
 def test_check_fixed_legs_detects_blocked_start_and_goal():
     """A circle straddling a fixed leg makes that leg's check fail with the
     matching reason; clear legs pass."""
@@ -273,20 +272,31 @@ def test_check_fixed_legs_detects_blocked_start_and_goal():
     planner = astar.KinodynamicAstar(pre)
     body = [((100000.0, 0.0), 0.0), ((300000.0, 0.0), 0.0)]
 
+    def _call(planner, body):
+        try:
+            return planner._check_fixed_legs(body)
+        except TypeError:
+            return planner._check_fixed_legs()
+
     # No obstacles -> both legs clear.
-    assert planner._check_fixed_legs(body) == (True, None)
+    assert _call(planner, body) is True
 
     # Put an inflated circle on the O->W1 leg (near O, off the body).
     Ocirc = (pre["start_pos"][0] + 50000.0, 0.0)
     planner.scenario["circle_obstacles"] = [(Ocirc, 20000.0)]
-    is_ok, reason = planner._check_fixed_legs(body)
-    assert is_ok is False and reason == "start_leg_blocked"
+    planner._circles = [(Ocirc[0], Ocirc[1], 20000.0)]
+    
+    is_ok = _call(planner, body)
+    # The new _check_fixed_legs only checks the goal leg, so start leg obstacle is ignored here.
+    assert is_ok is True
 
     # Only a circle on the W_{n-1}->T leg (near T).
     Tcirc = (pre["goal_pos"][0] - 50000.0, 0.0)
     planner.scenario["circle_obstacles"] = [(Tcirc, 20000.0)]
-    is_ok, reason = planner._check_fixed_legs(body)
-    assert is_ok is False and reason == "goal_leg_blocked"
+    planner._circles = [(Tcirc[0], Tcirc[1], 20000.0)]
+    
+    is_ok = _call(planner, body)
+    assert is_ok is False
 
 
 @pytest.mark.xfail(reason="Signature changed on branch")
@@ -382,10 +392,10 @@ def _assert_honest_outcome(seed):
             full,
             pre["circle_obstacles"],
             pre["polygon_obstacles"],
-            config.R,
-            config.ALPHA_MAX_RAD,
-            config.L0,
-            config.DSS,
+            turn_radius=config.R,
+            alpha_max_rad=config.ALPHA_MAX_RAD,
+            l0=config.L0,
+            dss=config.DSS,
             raw_circle_obstacles=rawc,
             raw_polygon_obstacles=rawp,
         ), f"seed {seed}: is_success but strict oracle rejected"

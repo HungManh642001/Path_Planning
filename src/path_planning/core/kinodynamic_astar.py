@@ -13,6 +13,7 @@ this file follows it.
 """
 
 from __future__ import annotations
+from dataclasses import dataclass
 
 import logging
 
@@ -22,7 +23,7 @@ import heapq
 import math
 import time
 from collections import defaultdict
-from typing import TYPE_CHECKING, NamedTuple, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 from shapely.geometry import LineString, Point as ShapelyPoint, Polygon
 from shapely.ops import unary_union
@@ -108,7 +109,8 @@ class PlanResult(TypedDict):
     planner: KinodynamicAstar
 
 
-class _DpEntry(NamedTuple):
+@dataclass(frozen=True)
+class _DpEntry:
     """One frontier entry of the smoothing DP.
 
     Attributes:
@@ -1979,7 +1981,7 @@ class KinodynamicAstar:
             out.append((waypoints[node], heading))
         return out if len(out) >= 1 else path
 
-    def plan(self, verbose: bool = False) -> PlanResult:
+    def plan(self, *, verbose: bool = False) -> PlanResult:
         """Run the feasibility gates, the search, the smoother and the oracle.
 
         Args:
@@ -2027,7 +2029,7 @@ class KinodynamicAstar:
         # path_is_valid's raw_* escape hatch is left unset on purpose, because
         # inflation no longer carries a turn term for a fillet to bulge into.
         full = mission.full_mission_path(path, self.scenario)
-        valid, failure_reason = pv.path_is_valid(
+        res = pv.path_is_valid(
             full,
             self.scenario["circle_obstacles"],
             self.scenario["polygon_obstacles"],
@@ -2036,8 +2038,8 @@ class KinodynamicAstar:
             l0=self._l0,
             dss=self._dss,
         )
-        if not valid:
-            return self._result(path, False, failure_reason)
+        if not res.is_ok:
+            return self._result(path, False, res.detail)
 
         if verbose:
             logger.info(f"Path found with {len(path)} waypoints")
@@ -2058,7 +2060,7 @@ class KinodynamicAstar:
 
 def plan_trajectory(
     preprocessed_scenario: PreprocessedScenario,
-    verbose: bool = False,
+    *, verbose: bool = False,
     time_budget_s: float | None = None,
 ) -> PlanResult:
     """Plan an autonomous aircraft trajectory end to end.

@@ -28,6 +28,7 @@ def riding_sense(
     heading: float,
     center: Point,
     radius: float,
+    *,
     pos_tol: float = 1.0,
     ang_tol: float = 8.72e-3,
 ) -> RidingSense:

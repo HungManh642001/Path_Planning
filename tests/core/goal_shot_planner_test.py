@@ -30,10 +30,10 @@ def _oracle_ok(result, pre):
         full,
         pre["circle_obstacles"],
         pre["polygon_obstacles"],
-        config.R,
-        config.ALPHA_MAX_RAD,
-        config.L0,
-        config.DSS,
+        turn_radius=config.R,
+        alpha_max_rad=config.ALPHA_MAX_RAD,
+        l0=config.L0,
+        dss=config.DSS,
     )
 
 

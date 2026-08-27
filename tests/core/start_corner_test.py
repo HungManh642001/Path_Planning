@@ -77,9 +77,10 @@ def test_feasibility_diagonal_corridor(monkeypatch):
     assert len(result_k8["planner"].start_corners) >= 1
 
     full_path = tr.build_full_path(result_k8["path"], pre_k8)
-    is_ok, detail = pv.straight_segments_ok(
+    _res = pv.straight_segments_ok(
         full_path, config.R, config.L0, pre_k8["goal_state"]["engagement_distance"]
     )
+    is_ok, detail = _res.is_ok, _res.detail
     assert is_ok, detail
 
     poly = Polygon(scenario["safezones"][0])
@@ -125,9 +126,10 @@ def test_smoothed_path_keeps_l1_at_least_l0(monkeypatch):
 
     # Belt-and-braces: the independent oracle agrees.
     full_path = tr.build_full_path(path, pre)
-    is_ok, detail = pv.straight_segments_ok(
+    _res = pv.straight_segments_ok(
         full_path, config.R, config.L0, pre["goal_state"]["engagement_distance"]
     )
+    is_ok, detail = _res.is_ok, _res.detail
     assert is_ok, detail
 
 

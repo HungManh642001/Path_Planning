@@ -152,7 +152,7 @@ def test_shot_paths_satisfy_the_independent_oracle():
         if not result["is_success"]:
             continue
         full = mission.full_mission_path(result["path"], pre)
-        valid, reason = pv.path_is_valid(
+        res = pv.path_is_valid(
             full,
             pre["circle_obstacles"],
             pre["polygon_obstacles"],
@@ -161,7 +161,7 @@ def test_shot_paths_satisfy_the_independent_oracle():
             l0=config.L0,
             dss=config.DSS,
         )
-        assert valid, f"seed {seed}: {reason}"
+        assert res.is_ok, f"seed {seed}: {res.detail}"
 
 
 def test_ray_memo_never_changes_a_verdict():
