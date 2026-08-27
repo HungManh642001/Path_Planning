@@ -8,14 +8,8 @@ Run: PYTHONPATH=. python scripts/goal_shot_ab.py
 """
 
 import logging
-
-
-logger = logging.getLogger(__name__)
-
 import math
 import time
-
-from batch_random_test import generate_random_scenario
 
 from path_planning import config
 from path_planning.core import (
@@ -23,7 +17,11 @@ from path_planning.core import (
     path_validation as pv,
     preprocessing as prep,
 )
+from path_planning.core.map_generator import generate_random_scenario
 from path_planning.render import trajectory as tr
+
+
+logger = logging.getLogger(__name__)
 
 
 # Seeds 5, 7, 8 are FEASIBILITY failures (start in obstacle / DSS leg blocked),
@@ -40,7 +38,7 @@ def _run(seed):
     plen = 0.0
     valid = None
     if res["success"] and res["path"]:
-        for a, b in zip(res["path"][:-1], res["path"][1:]):
+        for a, b in zip(res["path"][:-1], res["path"][1:], strict=False):
             plen += math.dist(a[0], b[0])
         full = tr.build_full_path(res["path"], pre)
         # Same verdict plan_trajectory reaches: INFLATED obstacles for straights
@@ -107,7 +105,7 @@ def main():
         logger.info(
             f"  {seed:>4} {it_off:>6} {it_on:>6} {speedup_s} "
             f"{len_off_km:>12.1f} {len_on_km:>12.1f} {delta_km:>10.1f} "
-            f"{str(ok_off):>7} {str(ok_on):>6}"
+            f"{ok_off!s:>7} {ok_on!s:>6}"
         )
 
     n_off = sum(1 for v in off.values() if v[0])
@@ -126,7 +124,9 @@ def main():
     logger.info(
         f"  OFF: solved {n_off}/{len(SEEDS)}, mean iters (solved) = {mean_it_off:.1f}"
     )
-    logger.info(f"  ON : solved {n_on}/{len(SEEDS)}, mean iters (solved) = {mean_it_on:.1f}")
+    logger.info(
+        f"  ON : solved {n_on}/{len(SEEDS)}, mean iters (solved) = {mean_it_on:.1f}"
+    )
     if solved_off and solved_on:
         logger.info(
             f"  Mean iters speedup (OFF/ON, over each side's own solved set) = "

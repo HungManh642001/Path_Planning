@@ -1,84 +1,28 @@
-"""
-Run tests with random scenarios and visualize the results.
-"""
+"""Run tests with random scenarios and visualize the results."""
 
 import json
 import logging
-import math
 import os
-import random
 
 import matplotlib.pyplot as plt
-import performance_eval as perf
+
+
+try:
+    from scripts import performance_eval as perf
+except ImportError:
+    import performance_eval as perf  # type: ignore
 
 from path_planning import config
 from path_planning.core import (
     kinodynamic_astar as astar,
-    map_generator as mg,
     preprocessing as prep,
-    spatial_utils as su,
 )
+from path_planning.core.map_generator import generate_random_scenario
 from path_planning.logger_config import setup_logging
 from path_planning.render import visualizer as viz
 
 
 logger = logging.getLogger(__name__)
-
-
-def generate_random_scenario(seed=42):
-    """
-    Generate a random scenario with islands and dynamic obstacles.
-
-    Args:
-        seed: Random seed for reproducibility
-
-    Returns:
-        scenario: Dictionary containing map bounds, start/goal, islands, and dynamic obstacles
-    """
-    random.seed(seed)
-
-    # Map bounds
-    map_bounds = (config.MAP_WIDTH, config.MAP_HEIGHT)
-    width, height = map_bounds
-
-    # Random start and goal positions within the map bounds
-    while True:
-        start = (
-            random.uniform(width * 0.1, width * 0.9),
-            random.uniform(height * 0.1, height * 0.9),
-        )
-        goal = (
-            random.uniform(width * 0.1, width * 0.9),
-            random.uniform(height * 0.1, height * 0.9),
-        )
-        if su.distance(start, goal) > 400000:  # Ensure start and goal are not too close
-            break
-
-    heading_start_to_goal = su.angle_to_heading(start, goal)
-
-    topology = random.choices(
-        ["random", "center_cluster", "wall_block"], weights=[0.1, 0.45, 0.45]
-    )[0]  # Randomly choose a topology for obstacle placement
-
-    return mg.create_scenario(
-        {
-            "map_bounds": map_bounds,
-            "start": start,
-            "start_heading": heading_start_to_goal
-            + random.uniform(
-                -math.pi / 2, math.pi / 2
-            ),  # Add some randomness to the start heading
-            "goal": goal,
-            "goal_heading": heading_start_to_goal
-            + random.uniform(
-                -math.pi / 2, math.pi / 2
-            ),  # Add some randomness to the goal heading
-            "num_islands": random.randint(0, 20),
-            "num_dynamic_obstacles": random.randint(0, 20),
-            "topology": topology,
-            "seed": seed,
-        }
-    )
 
 
 def print_header(text):
@@ -122,7 +66,9 @@ def run_scenario(scenario_func, scenario_name, seed=42, output_dir="results"):
         scenario = scenario_func(seed=seed)
         metrics.end_timer("generation")
         logger.info(f"    Islands: {len(scenario.get('islands', []))}")
-        logger.info(f"    Dynamic Obstacles: {len(scenario.get('dynamic_obstacles', []))}")
+        logger.info(
+            f"    Dynamic Obstacles: {len(scenario.get('dynamic_obstacles', []))}"
+        )
 
         # Preprocess
         logger.info("  Preprocessing...")

@@ -22,7 +22,7 @@ packages = ["src/path_planning", "src/service"]
 target-version = "py310"
 line-length = 88
 indent-width = 4
-src = ["src", "tests"]
+src = ["src", "tests", "scripts"]
 
 extend-exclude = [
     ".git",
@@ -56,17 +56,17 @@ unfixable = []
 convention = "google"
 
 [tool.ruff.lint.isort]
-known-first-party = ["path_planning", "service"]
+known-first-party = ["path_planning", "service", "scripts"]
 combine-as-imports = true
 lines-after-imports = 2
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*" = ["S101", "D", "ANN", "ARG", "S105", "S106"]
 "**/*_test.py" = ["S101", "D", "ANN", "ARG", "S105", "S106"]
-"scripts/**" = ["D", "ANN"]
-"batch_random_test.py" = ["D", "ANN"]
-"performance_eval.py" = ["D", "ANN"]
+"scripts/**" = ["D", "ANN", "S101", "S311", "T201", "E501", "N806", "E741"]
+"**/*.ipynb" = ["D", "ANN", "E501", "T201", "B905"]
 "cases/**" = ["D", "ANN"]
+"src/path_planning/core/map_generator.py" = ["S311"]
 
 [tool.pyright]
 include = ["src"]
@@ -82,7 +82,6 @@ pythonPlatform = "All"
 typeCheckingMode = "strict"
 useLibraryCodeForTypes = true
 reportMissingTypeStubs = false
-reportMissingTypeAnnotations = "error"
 reportMissingParameterType = "error"
 reportUnknownMemberType = "warning"
 reportUntypedBaseClass = "warning"

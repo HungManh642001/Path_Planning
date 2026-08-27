@@ -3,14 +3,15 @@ is_success must be accepted by the independent oracle (with the shared circle
 tolerance) over the FULL O..T path, including the fixed legs."""
 
 import pytest
-from batch_random_test import generate_random_scenario
 
 from path_planning import config
 from path_planning.core import (
     kinodynamic_astar as astar,
+    map_generator as mg,
     path_validation as pv,
     preprocessing as prep,
 )
+from path_planning.core.map_generator import generate_random_scenario
 from path_planning.render import trajectory as tr
 
 

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from shapely import Point as ShapelyPoint, Polygon as ShapelyPolygon
 
 from path_planning import config
+from path_planning.core import spatial_utils as su
 from path_planning.core.types import (
     CircleGeometry,
     MapBounds,
@@ -113,7 +114,8 @@ def _sample_center(
         # first pass, or -- worse -- silently reusing the previous iteration's
         # centre on later ones, so every obstacle landed on the same spot.
         raise ValueError(
-            f"unknown topology {topology!r}; expected 'random', 'center_cluster' or 'wall_block'"
+            f"unknown topology {topology!r}; expected 'random', "
+            "'center_cluster' or 'wall_block'"
         )
     return (
         max(width * 0.1, min(center_x, width * 0.9)),
@@ -720,7 +722,7 @@ def get_all_scenarios() -> dict[str, Callable[[], Scenario]]:
     """Return all 18 predefined scenarios organized by difficulty.
 
     Returns:
-        dict[str, Callable]: A dictionary mapping scenario names to their builder functions.
+        dict[str, Callable]: Mapping of scenario names to builder functions.
     """
     return {
         # Original scenarios
@@ -732,12 +734,18 @@ def get_all_scenarios() -> dict[str, Callable[[], Scenario]]:
         "scenario_05_sparse_islands": scenario5_sparse_islands,
         "scenario_06_coastal_path": scenario6_coastal_path,
         "scenario_07_diagonal_crossing": scenario7_diagonal_crossing,
-        "scenario_08_open_with_dynamic_obstacles": scenario8_open_with_dynamic_obstacles,
+        "scenario_08_open_with_dynamic_obstacles": (
+            scenario8_open_with_dynamic_obstacles
+        ),
         # Medium scenarios
         "scenario_09_island_archipelago": scenario9_island_archipelago,
-        "scenario_10_dense_dynamic_obstacles": scenario10_dense_dynamic_obstacles,
+        "scenario_10_dense_dynamic_obstacles": (
+            scenario10_dense_dynamic_obstacles
+        ),
         "scenario_11_serpentine_route": scenario11_serpentine_route,
-        "scenario_12_perimeter_dynamic_obstacles": scenario12_perimeter_dynamic_obstacles,
+        "scenario_12_perimeter_dynamic_obstacles": (
+            scenario12_perimeter_dynamic_obstacles
+        ),
         # Hard scenarios
         "scenario_13_dense_island_field": scenario13_dense_island_field,
         "scenario_14_combined_obstacles": scenario14_combined_obstacles,
@@ -746,5 +754,62 @@ def get_all_scenarios() -> dict[str, Callable[[], Scenario]]:
         # Reversed approach: goal_heading points back down the outbound leg, so
         # the terminal needs two corners. Nothing above covers this.
         "scenario_17_reversed_approach_open": scenario17_reversed_approach_open,
-        "scenario_18_reversed_approach_cluttered": scenario18_reversed_approach_cluttered,
+        "scenario_18_reversed_approach_cluttered": (
+            scenario18_reversed_approach_cluttered
+        ),
     }
+
+
+def generate_random_scenario(seed: int = 42) -> Scenario:
+    """Generate a random scenario with islands and dynamic obstacles.
+
+    Args:
+        seed: Random seed for reproducibility.
+
+    Returns:
+        Scenario: Dictionary containing map bounds, start/goal, islands, and dynamic
+            obstacles.
+    """
+    random.seed(seed)
+
+    # Map bounds
+    map_bounds = (config.MAP_WIDTH, config.MAP_HEIGHT)
+    width, height = map_bounds
+
+    # Random start and goal positions within the map bounds
+    while True:
+        start = (
+            random.uniform(width * 0.1, width * 0.9),
+            random.uniform(height * 0.1, height * 0.9),
+        )
+        goal = (
+            random.uniform(width * 0.1, width * 0.9),
+            random.uniform(height * 0.1, height * 0.9),
+        )
+        if su.distance(start, goal) > 400000:  # Ensure start and goal are not too close
+            break
+
+    heading_start_to_goal = su.angle_to_heading(start, goal)
+
+    topologies: tuple[Topology, ...] = ("random", "center_cluster", "wall_block")
+    topology = random.choices(topologies, weights=[0.1, 0.45, 0.45])[0]
+
+    return create_scenario(
+        {
+            "map_bounds": map_bounds,
+            "start": start,
+            "start_heading": heading_start_to_goal
+            + random.uniform(
+                -math.pi / 2, math.pi / 2
+            ),  # Add some randomness to the start heading
+            "goal": goal,
+            "goal_heading": heading_start_to_goal
+            + random.uniform(
+                -math.pi / 2, math.pi / 2
+            ),  # Add some randomness to the goal heading
+            "num_islands": random.randint(0, 20),
+            "num_dynamic_obstacles": random.randint(0, 20),
+            "topology": topology,
+            "seed": seed,
+        }
+    )

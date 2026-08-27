@@ -14,16 +14,12 @@ this file follows it.
 
 from __future__ import annotations
 
-import logging
-from dataclasses import dataclass
-
-
-logger = logging.getLogger(__name__)
-
 import heapq
+import logging
 import math
 import time
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypedDict
 
 from shapely.geometry import LineString, Point as ShapelyPoint, Polygon
@@ -38,6 +34,9 @@ from path_planning.core import (
     path_validation as pv,
     spatial_utils as su,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 if TYPE_CHECKING:
@@ -1655,7 +1654,9 @@ class KinodynamicAstar:
                     continue
                 if not self._is_corner_arc_clear(leg1_heading, corner, goal_wp):
                     continue
-                if not self._is_corner_arc_clear(arrival_heading, goal_wp, self._target):
+                if not self._is_corner_arc_clear(
+                    arrival_heading, goal_wp, self._target
+                ):
                     continue
 
             # Leg 1: current -> C (stored heading = leg bearing).

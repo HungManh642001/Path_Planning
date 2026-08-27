@@ -125,7 +125,7 @@ def resolve_time_budget_s(value: float | None = None) -> float:
             it would silently disable the deadline rather than trip it.
     """
     budget = TIME_BUDGET_S if value is None else value
-    if not isinstance(budget, (int, float)) or math.isnan(budget):
+    if not isinstance(budget, (int, float)) or math.isnan(budget):  # pyright: ignore[reportUnnecessaryIsInstance]
         raise ValueError(
             f"time budget must be a finite number of seconds, got {budget!r}"
         )

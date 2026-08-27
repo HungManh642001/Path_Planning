@@ -12,14 +12,14 @@ asserted separately against the 5 s budget.
 import math
 import time
 
-from batch_random_test import generate_random_scenario
-
 from path_planning import config
 from path_planning.core import (
     kinodynamic_astar as astar,
+    map_generator as mg,
     path_validation as pv,
     preprocessing as prep,
 )
+from path_planning.core.map_generator import generate_random_scenario
 from path_planning.render import trajectory as tr
 
 

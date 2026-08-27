@@ -18,13 +18,9 @@ because that is what batch_random_test -- the production harness -- runs;
 a separate RNG so the obstacle field stays byte-identical between the modes.
 """
 
-import logging
-
-
-logger = logging.getLogger(__name__)
-
 import argparse
 import json
+import logging
 import math
 import random
 import time
@@ -36,6 +32,9 @@ from path_planning.core import (
     preprocessing as prep,
     spatial_utils as su,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def make_scenario(seed, mode="free"):
@@ -181,14 +180,18 @@ def _summary(payload):
 
 
 def compare(args):
-    a = json.load(open(args.base))
-    b = json.load(open(args.new))
+    with open(args.base) as f:
+        a = json.load(f)
+    with open(args.new) as f:
+        b = json.load(f)
     _summary(a)
     _summary(b)
     ra, rb = a["results"], b["results"]
     keys = sorted(set(ra) & set(rb), key=int)
     if len(keys) != len(ra) or len(keys) != len(rb):
-        logger.info(f"WARNING: seed sets differ ({len(ra)} vs {len(rb)}, {len(keys)} shared)")
+        logger.info(
+            f"WARNING: seed sets differ ({len(ra)} vs {len(rb)}, {len(keys)} shared)"
+        )
 
     identical = sum(1 for k in keys if ra[k]["waypoints"] == rb[k]["waypoints"])
     logger.info(f"\nbit-identical paths: {identical}/{len(keys)}")

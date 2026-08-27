@@ -13,10 +13,6 @@ signatures be fully known.
 from __future__ import annotations
 
 import logging
-
-
-logger = logging.getLogger(__name__)
-
 import math
 from itertools import pairwise
 from typing import TYPE_CHECKING, Literal
@@ -27,6 +23,9 @@ from matplotlib.patches import Circle as MplCircle, Polygon as MplPolygon, Recta
 
 from path_planning import config
 from path_planning.render import trajectory as tr
+
+
+logger = logging.getLogger(__name__)
 
 
 if TYPE_CHECKING:
@@ -527,7 +526,10 @@ def plot_scenario(
         try:
             _draw_trajectory(ax, preprocessed, result, trajectory_mode)
         except Exception as exc:
-            logger.debug("Arc interpolation failed, degrading to straight line.", exc_info=exc)
+            logger.debug(
+                "Arc interpolation failed, degrading to straight line.",
+                exc_info=exc,
+            )
             # Degrade to bare segments rather than losing the whole plot: this
             # runs inside the batch harness, where one unplottable scenario must
             # not abort the other fifteen.

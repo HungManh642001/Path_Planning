@@ -1,17 +1,23 @@
 """Logger configuration."""
+
 import logging
 import os
 import sys
 from logging.handlers import RotatingFileHandler
 
 
-# Set up logging configuration
-def setup_logging(service_name, log_file="app.log"):
+def setup_logging(
+    service_name: str,
+    log_file: str = "app.log",
+) -> logging.Logger:
     """Set up logging configuration for the application.
 
     Args:
-        service_name (str): Name of the service or application.
-        log_file (str): Path to the log file.
+        service_name: Name of the service or application.
+        log_file: Path to the log file.
+
+    Returns:
+        The configured logger instance.
     """
     # Create a logger
     logger = logging.getLogger(service_name)
@@ -23,8 +29,7 @@ def setup_logging(service_name, log_file="app.log"):
 
     # Create a rotating file handler for output to a log file
     if log_dir := os.path.dirname(log_file):
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
+        os.makedirs(log_dir, exist_ok=True)
     file_handler = RotatingFileHandler(
         log_file, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
     )  # 5 MB per file, keep 5 backups

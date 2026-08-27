@@ -4,12 +4,11 @@ Measures and analyzes algorithm runtime, path quality, and system efficiency
 """
 
 import logging
+import math
+import time
 
 
 logger = logging.getLogger(__name__)
-
-import math
-import time
 
 
 class PerformanceMetrics:
@@ -48,12 +47,12 @@ class PerformanceMetrics:
         # append T (mirroring render.trajectory.build_full_path) so
         # total_distance is the true flown length.
         full_wps = list(waypoints)
-        O = preprocessed.get("start_pos") if preprocessed else None
-        T = preprocessed.get("goal_pos") if preprocessed else None
-        if O is not None and (not full_wps or math.dist(O, full_wps[0]) > 1.0):
-            full_wps = [tuple(O)] + full_wps
-        if T is not None and (not full_wps or math.dist(T, full_wps[-1]) > 1.0):
-            full_wps = full_wps + [tuple(T)]
+        orig_origin = preprocessed.get("start_pos") if preprocessed else None
+        orig_target = preprocessed.get("goal_pos") if preprocessed else None
+        if orig_origin is not None and (not full_wps or math.dist(orig_origin, full_wps[0]) > 1.0):
+            full_wps = [tuple(orig_origin), *full_wps]
+        if orig_target is not None and (not full_wps or math.dist(orig_target, full_wps[-1]) > 1.0):
+            full_wps = [*full_wps, tuple(orig_target)]
 
         # Calculate distances
         segment_distances = []
@@ -126,8 +125,12 @@ class PerformanceMetrics:
         if self.search_stats:
             logger.info("\n🔍 A* Search Statistics:")
             logger.info(f"  Iterations: {self.search_stats.get('iterations', 0):6}")
-            logger.info(f"  Open Set Size: {self.search_stats.get('open_set_size', 0):6}")
-            logger.info(f"  Closed Set Size: {self.search_stats.get('closed_set_size', 0):6}")
+            logger.info(
+                f"  Open Set Size: {self.search_stats.get('open_set_size', 0):6}"
+            )
+            logger.info(
+                f"  Closed Set Size: {self.search_stats.get('closed_set_size', 0):6}"
+            )
 
             budget_s = self.search_stats.get("time_budget_s", 0.0)
             if budget_s:
@@ -144,9 +147,15 @@ class PerformanceMetrics:
             logger.info(f"  Segments: {self.path_stats.get('segments', 0):6}")
 
             if self.path_stats.get("segments", 0) > 0:
-                logger.info(f"  Avg Segment: {self.path_stats.get('avg_segment', 0):8.1f} m")
-                logger.info(f"  Min Segment: {self.path_stats.get('min_segment', 0):8.1f} m")
-                logger.info(f"  Max Segment: {self.path_stats.get('max_segment', 0):8.1f} m")
+                logger.info(
+                    f"  Avg Segment: {self.path_stats.get('avg_segment', 0):8.1f} m"
+                )
+                logger.info(
+                    f"  Min Segment: {self.path_stats.get('min_segment', 0):8.1f} m"
+                )
+                logger.info(
+                    f"  Max Segment: {self.path_stats.get('max_segment', 0):8.1f} m"
+                )
 
             logger.info(
                 f"  Max Turn Angle: {math.degrees(self.path_stats.get('max_turn_angle', 0)):8.2f}°"

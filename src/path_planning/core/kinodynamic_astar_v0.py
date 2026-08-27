@@ -13,16 +13,12 @@ this one is the standard and the main file follows it.
 
 from __future__ import annotations
 
-import logging
-from dataclasses import dataclass
-
-
-logger = logging.getLogger(__name__)
-
 import heapq
+import logging
 import math
 import time
 from collections import defaultdict
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypedDict
 
 from shapely.geometry import LineString, Point as ShapelyPoint, Polygon
@@ -36,6 +32,9 @@ from path_planning.core import (
     path_validation as pv,
     spatial_utils as su,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 if TYPE_CHECKING:
@@ -498,7 +497,9 @@ class KinodynamicAstar:
                 position[0] + config.WRAP_STEP_M * math.cos(heading),
                 position[1] + config.WRAP_STEP_M * math.sin(heading),
             )
-            if self._is_in_bounds(forward) and self._is_collision_free(position, forward):
+            if self._is_in_bounds(forward) and self._is_collision_free(
+                position, forward
+            ):
                 successors.append((State(forward, heading), config.WRAP_STEP_M))
 
         # --- Strategy A: dynamic tangent / vertex / goal candidates ---
@@ -793,7 +794,9 @@ class KinodynamicAstar:
             area. A collinear corner has no arc and is trivially clear.
         """
         prev = (w[0] - math.cos(h_in), w[1] - math.sin(h_in))
-        pts = pv.arc_points(prev, w, w_next, turn_radius=self.R, n=config.ARC_CHECK_SAMPLES)
+        pts = pv.arc_points(
+            prev, w, w_next, turn_radius=self.R, n=config.ARC_CHECK_SAMPLES
+        )
         if not pts:
             return True
 
@@ -1042,7 +1045,9 @@ class KinodynamicAstar:
                     continue
                 if not self._is_corner_arc_clear(leg1_heading, corner, goal_wp):
                     continue
-                if not self._is_corner_arc_clear(arrival_heading, goal_wp, self._target):
+                if not self._is_corner_arc_clear(
+                    arrival_heading, goal_wp, self._target
+                ):
                     continue
 
             corner_state = State(corner, leg1_heading)
