@@ -43,11 +43,7 @@ class KinodynamicAstar:
     ) -> None:
         """Initialize Kinodynamic A* planner from preprocessed scenario."""
         self.scenario = preprocessed_scenario
-        self.time_budget_s = (
-            float(time_budget_s)
-            if time_budget_s is not None
-            else float(config.TIME_BUDGET_S)
-        )
+        self.time_budget_s = config.resolve_time_budget_s(time_budget_s)
 
         origin = preprocessed_scenario.get("start_pos")
         target = preprocessed_scenario.get("goal_pos")
@@ -96,6 +92,7 @@ class KinodynamicAstar:
             is_goal_heading_free=self._free_goal,
         )
 
+        self.raw_route: list[PlannerState] | None = None
         self.start_corners = self.successor_generator.seed_start_corners()
         self.search_engine = AstarSearchEngine(
             self.start_corners,
@@ -348,7 +345,7 @@ class KinodynamicAstar:
             )
         if path is None:
             return self._result(None, False, "no_path")
-
+        self.raw_route = list(path)
         path = self.smooth_path(path)
         full = full_mission_path(path, self.scenario)
         res = pv.path_is_valid(

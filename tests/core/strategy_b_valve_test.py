@@ -46,7 +46,6 @@ def test_corner_expansions_do_not_consume_valve_budget():
     )
 
 
-@pytest.mark.xfail(reason="Logic changed on branch")
 def test_non_corner_expansion_still_consumes_valve_budget():
     # A regular state at a corner's position (same occluded-goal situation)
     # must keep decrementing the budget — the exemption is corners-only.
