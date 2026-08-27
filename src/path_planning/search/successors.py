@@ -20,7 +20,27 @@ _CAND_MIN_D2 = config.CANDIDATE_MIN_DIST_M * config.CANDIDATE_MIN_DIST_M
 
 
 class SuccessorGenerator:
-    """Generates next candidate states and seeded start corners."""
+    """Generates next candidate states and seeded start corners.
+
+    Attributes:
+        scenario: Preprocessed mission scenario parameters.
+        collision_detector: Spatial collision checker.
+        turn_radius: Minimum vehicle turn radius in metres.
+        alpha_max_rad: Maximum allowed turning angle per corner in radians.
+        l0: Takeoff level-flight straight stabilisation distance in metres.
+        dss: Terminal sensor engagement distance in metres.
+        origin: Vehicle takeoff point O.
+        target: Mission destination point T.
+        goal_state: Terminal goal state.
+        is_goal_heading_free: Whether terminal heading constraint is relaxed.
+        construct_delta: Obstacle inflation buffer in metres.
+        alpha_build: Construction turn angle limit (alpha_max - eps).
+        turn_cos_guard: Cosine threshold for rapid turn angle prefiltering.
+        poly_vertices: Inflated obstacle polygon vertices for candidate generation.
+        fan_rungs: Distance rungs for Strategy B radial fan expansions.
+        last_reject: Rejection code for the most recently tested candidate.
+        num_strategy_b: Remaining budget for Strategy B valve expansions.
+    """
 
     def __init__(
         self,
@@ -36,7 +56,20 @@ class SuccessorGenerator:
         goal_state: State,
         is_goal_heading_free: bool = False,
     ) -> None:
-        """Initialize successor generator with scenario limits and obstacle vertices."""
+        """Initialize successor generator with scenario limits and obstacle vertices.
+
+        Args:
+            scenario: Prepared scenario dictionary.
+            collision_detector: Collision detector engine.
+            turn_radius: Minimum vehicle turning radius in metres.
+            alpha_max_rad: Maximum allowable corner turn angle in radians.
+            l0: Level flight stabilization length after takeoff in metres.
+            dss: Final straight approach distance to target in metres.
+            origin: Takeoff coordinate (x, y).
+            target: Destination coordinate (x, y).
+            goal_state: Target goal state representation.
+            is_goal_heading_free: If True, arrival heading is unconstrained.
+        """
         self.scenario = scenario
         self.collision_detector = collision_detector
         self.turn_radius = turn_radius
@@ -75,7 +108,11 @@ class SuccessorGenerator:
         self.num_strategy_b = config.NUM_STRATEGY_B
 
     def seed_start_corners(self) -> list[State]:
-        """Seed the search with corners along the takeoff ray."""
+        """Seed the search with initial corner states along the takeoff ray.
+
+        Returns:
+            List of valid collision-free start corner states satisfying l1 >= L0.
+        """
         takeoff_heading = self.scenario["start_state"]["heading"]
         num_corners = max(1, int(config.NUM_START_CORNERS))
         tan_max = math.tan(self.alpha_build / 2.0)
@@ -111,7 +148,18 @@ class SuccessorGenerator:
         far_reserve: float = 0.0,
         advance: float = 0.0,
     ) -> float | None:
-        """Validate and update the straight budget for a candidate step."""
+        """Validate and update the straight budget for a candidate step.
+
+        Args:
+            current: Preceding state.
+            leg_len: Length of the candidate chord in metres.
+            turn: Turn angle required at current state in radians.
+            far_reserve: Turn fillet reserve required at the far end in metres.
+            advance: Distance slid along heading ray before turning in metres.
+
+        Returns:
+            Updated straight budget on the new leg if feasible; None if infeasible.
+        """
         reserve = self.turn_radius * math.tan(turn / 2.0)
         if current.straight_budget + advance - reserve < current.min_straight_in:
             return None
@@ -121,7 +169,17 @@ class SuccessorGenerator:
         return budget
 
     def get_next_states(self, current_state: State) -> list[tuple[State, float]]:
-        """Generate feasible successor states from current_state."""
+        """Generate feasible successor states from current_state.
+
+        Args:
+            current_state: State currently being expanded.
+
+        Returns:
+            List of (successor_state, step_cost) pairs.
+
+        Raises:
+            TypeError: If current_state has no heading.
+        """
         heading = current_state.heading
         if heading is None:
             raise TypeError("cannot expand a headingless goal target")
@@ -232,7 +290,19 @@ class SuccessorGenerator:
     def pivot_candidate(
         self, current: State, node: Point, advance: float
     ) -> tuple[State, float] | None:
-        """Validate and score a candidate step from current to node."""
+        """Validate and score a candidate step from current to node.
+
+        Args:
+            current: Origin state.
+            node: Target coordinate to transition to.
+            advance: Distance to advance along current heading before turning (m).
+
+        Returns:
+            Tuple (successor_state, step_cost) if feasible; None otherwise.
+
+        Raises:
+            TypeError: If current state lacks heading or trigonometric caches.
+        """
         position = current.waypoint
         heading = current.heading
         ux = current.cos_h
@@ -306,7 +376,18 @@ class SuccessorGenerator:
         return successor, advance + seg_len + config.TURN_PENALTY_WEIGHT * turn
 
     def slide_pivot(self, current: State, node: Point) -> tuple[State, float] | None:
-        """Retry an arc-rejected candidate from pivots slid forward."""
+        """Retry an arc-rejected candidate from pivots slid forward along heading ray.
+
+        Args:
+            current: Current state.
+            node: Target coordinate.
+
+        Returns:
+            Tuple (successor_state, step_cost) if a slid pivot succeeds; None otherwise.
+
+        Raises:
+            TypeError: If current state has no heading.
+        """
         position = current.waypoint
         heading = current.heading
         if heading is None:
@@ -346,7 +427,19 @@ class SuccessorGenerator:
         leg1_memo: dict[float, list[float]],
         leg2_memo: dict[float, list[float]],
     ) -> State | None:
-        """Build an analytic 2-corner manoeuvre from current to the goal."""
+        """Build an analytic 2-corner manoeuvre from current state to the goal.
+
+        Args:
+            current: Current search state.
+            leg1_memo: Clearance memoization dictionary for leg 1 rays.
+            leg2_memo: Clearance memoization dictionary for leg 2 rays.
+
+        Returns:
+            Terminal goal state linked via corner if shot succeeds; None otherwise.
+
+        Raises:
+            TypeError: If current heading or goal heading is missing in fixed-goal mode.
+        """
         if self.is_goal_heading_free:
             return None
         goal_wp = self.goal_state.waypoint

@@ -552,12 +552,26 @@ SPAWN_CLEARANCE_M = 5000.0
 
 
 def deg_to_rad(degrees: float) -> float:
-    """Convert degrees to radians."""
+    """Convert angle in degrees to radians.
+
+    Args:
+        degrees: Angle value in degrees.
+
+    Returns:
+        Equivalent angle in radians.
+    """
     return math.radians(degrees)
 
 
 def rad_to_deg(radians: float) -> float:
-    """Convert radians to degrees."""
+    """Convert angle in radians to degrees.
+
+    Args:
+        radians: Angle value in radians.
+
+    Returns:
+        Equivalent angle in degrees.
+    """
     return math.degrees(radians)
 
 

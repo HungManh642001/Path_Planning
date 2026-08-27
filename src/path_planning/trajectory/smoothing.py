@@ -40,7 +40,27 @@ def smooth_path(
     goal_heading: float | None = None,
     is_goal_heading_free: bool = False,
 ) -> list[PlannerState]:
-    """Return the shortest FEASIBLE subsequence of the path, by exact DP over O..T."""
+    """Return the shortest FEASIBLE subsequence of the path, by exact DP over O..T.
+
+    Evaluates candidate edge transitions with near and far fillet clearances
+    under dominance pruning to produce the optimal smoothed path.
+
+    Args:
+        path: Raw searched waypoints as (point, heading) tuples.
+        origin: Takeoff position O coordinate (x, y) in metres.
+        target: Terminal goal position T coordinate (x, y) in metres.
+        collision_detector: Spatial collision checking engine.
+        turn_radius: Minimum vehicle turning radius in metres.
+        alpha_max_rad: Maximum allowed turning angle per corner in radians.
+        l0: Takeoff straight stabilization length in metres.
+        dss: Terminal sensor lock straight distance in metres.
+        start_heading: Aircraft takeoff heading angle in radians.
+        goal_heading: Required arrival heading angle in radians, or None if free.
+        is_goal_heading_free: Whether terminal heading constraint is relaxed.
+
+    Returns:
+        The smoothed subsequence of waypoints maintaining all kinematic limits.
+    """
     if len(path) < 3:
         return path
 

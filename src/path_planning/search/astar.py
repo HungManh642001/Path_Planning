@@ -22,7 +22,31 @@ if TYPE_CHECKING:
 
 
 class AstarSearchEngine:
-    """Core A* priority queue loop with deadline budgeting."""
+    """Core A* priority queue loop with deadline budgeting.
+
+    Attributes:
+        start_corners: Seeded initial search corner states.
+        goal_state: Target goal state.
+        successors: Successor candidate generator.
+        collision: Spatial collision checker.
+        time_budget_s: Maximum allowable search duration in seconds.
+        origin: Aircraft takeoff location.
+        target: Mission target destination.
+        is_goal_heading_free: Whether goal approach heading is unconstrained.
+        turn_radius: Minimum turning radius in metres.
+        dss: Seeker approach distance in metres.
+        l0: Takeoff straight stabilization distance in metres.
+        alpha_build: Construction turn angle limit in radians.
+        heuristic_fn: Distance estimation heuristic function.
+        open_set: Priority queue of active states sorted by f-score.
+        closed_set: Set of visited states.
+        g_scores: Map from State to minimum known cost-to-come.
+        iteration_count: Number of loop iterations completed.
+        nodes_expanded: Number of distinct nodes popped from open set.
+        is_budget_bound: True if search was truncated by time budget.
+        is_search_failed: True if search queue emptied without reaching goal.
+        shot_armed: True if analytic two-corner goal shot solver is active.
+    """
 
     def __init__(
         self,
@@ -41,7 +65,23 @@ class AstarSearchEngine:
         alpha_build: float,
         heuristic_fn: Callable[[State, State], float] = euclidean_heuristic,
     ) -> None:
-        """Initialize A* search engine with start corners and budget."""
+        """Initialize A* search engine with start corners and budget.
+
+        Args:
+            start_corners: List of seeded initial corner states.
+            goal_state: Target goal state.
+            successor_generator: Successor state generator instance.
+            collision_detector: Collision detection engine instance.
+            time_budget_s: Maximum allowed search time in seconds.
+            origin: Aircraft takeoff point O.
+            target: Mission target point T.
+            is_goal_heading_free: True if arrival heading is unconstrained.
+            turn_radius: Minimum vehicle turn radius in metres.
+            dss: Terminal sensor engagement distance in metres.
+            l0: Takeoff stabilization distance in metres.
+            alpha_build: Construction turn angle limit in radians.
+            heuristic_fn: Distance heuristic function (state, goal) -> float.
+        """
         self.start_corners = start_corners
         self.goal_state = goal_state
         self.successors = successor_generator
@@ -88,7 +128,14 @@ class AstarSearchEngine:
                 self.g_scores[corner] = corner.g_cost
 
     def is_goal_reached(self, current: State) -> bool:
-        """Test whether a state within the goal threshold may terminate."""
+        """Test whether a state within the goal threshold may terminate.
+
+        Args:
+            current: State to evaluate.
+
+        Returns:
+            True if state satisfies terminal approach conditions; False otherwise.
+        """
         if self.is_goal_heading_free:
             parent = current.parent
             if parent is None or parent.heading is None:
@@ -104,7 +151,17 @@ class AstarSearchEngine:
         return abs(su.angle_diff(goal_heading, current.heading)) <= self.alpha_build
 
     def reconstruct_path(self, state: State) -> list[PlannerState]:
-        """Walk parent pointers back to the start, expanding pivot slides."""
+        """Walk parent pointers back to the start, expanding pivot slides.
+
+        Args:
+            state: Reached terminal goal state.
+
+        Returns:
+            Sequence of (waypoint, heading) states from start to goal.
+
+        Raises:
+            TypeError: If any reconstructed state is missing a heading.
+        """
         states: list[State] = []
         current: State | None = state
         while current is not None:
@@ -123,7 +180,12 @@ class AstarSearchEngine:
         return path
 
     def get_search_stats(self) -> SearchStats:
-        """Return diagnostic counters for the search run."""
+        """Return diagnostic counters for the search run.
+
+        Returns:
+            Dictionary containing iteration count, closed/open set sizes, time budget,
+            and timeout flags.
+        """
         return {
             "iterations": self.iteration_count,
             "closed_set_size": len(self.closed_set),
@@ -134,7 +196,11 @@ class AstarSearchEngine:
         }
 
     def search(self) -> list[PlannerState] | None:
-        """Run the A* search loop until goal reached or deadline expires."""
+        """Run the A* search loop until goal reached or deadline expires.
+
+        Returns:
+            Reconstructed path of (waypoint, heading) tuples, or None on failure.
+        """
         started_at = time.perf_counter()
         budget_s = self.time_budget_s
 

@@ -1,5 +1,11 @@
 # pyright: reportMissingTypeArgument=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownParameterType=false
-"""Kinodynamic A* path planning engine and high-level facade."""
+"""Kinodynamic A* path planning engine and high-level facade.
+
+This module provides the primary planning facade, :class:`KinodynamicAstar`, and
+the top-level entry point function :func:`plan_trajectory`. The planner computes
+kinodynamically feasible, collision-free flight paths for fixed-wing aerial vehicles
+under strict turn rate limits, stabilization lengths, and sensor approach geometries.
+"""
 
 from __future__ import annotations
 
@@ -34,14 +40,43 @@ logger = logging.getLogger(__name__)
 
 
 class KinodynamicAstar:
-    """Kinodynamic A* planner over (waypoint, heading) states."""
+    """Kinodynamic A* path planner over continuous (waypoint, heading) states.
+
+    This planner searches for minimum-cost paths connecting a takeoff position
+    to a terminal goal while strictly respecting vehicle kinematic limits (minimum
+    turn radius R, maximum turn angle alpha_max), level-flight stabilization length
+    L0, and terminal sensor alignment distance DSS.
+
+    Attributes:
+        scenario: Preprocessed scenario containing inflated obstacles and limits.
+        time_budget_s: Maximum allocated search time in seconds.
+        goal_state: Terminal goal state representation.
+        collision_detector: Spatial collision detection engine.
+        successor_generator: Lattice state expansion and candidate generator.
+        search_engine: Core priority queue search loop and budgeting controller.
+        raw_route: Unsmoothed sequence of states found by A* before shortcutting.
+        start_corners: Seeded takeoff corner states along the initial climb ray.
+        R: Minimum turn radius in metres.
+        alpha_max_rad: Maximum allowed turning angle per corner in radians.
+    """
 
     def __init__(
         self,
         preprocessed_scenario: PreprocessedScenario,
         time_budget_s: float | None = None,
     ) -> None:
-        """Initialize Kinodynamic A* planner from preprocessed scenario."""
+        """Initialize Kinodynamic A* planner from a preprocessed scenario.
+
+        Args:
+            preprocessed_scenario: Output dictionary from
+                :func:`path_planning.scenario.preprocessing.prepare_scenario`.
+            time_budget_s: Maximum search duration in seconds. If None, falls back
+                to :data:`path_planning.config.TIME_BUDGET_S`.
+
+        Raises:
+            ValueError: If start/goal are missing in `preprocessed_scenario`,
+                or if `time_budget_s` is non-positive / invalid.
+        """
         self.scenario = preprocessed_scenario
         self.time_budget_s = config.resolve_time_budget_s(
             time_budget_s if time_budget_s is not None else config.TIME_BUDGET_S
@@ -115,11 +150,12 @@ class KinodynamicAstar:
 
     @property
     def _turn_cos_guard(self) -> float:
-        """Return cosine turn guard."""
+        """Return cosine threshold guard for fast turn prefiltering."""
         return self.successor_generator.turn_cos_guard
 
     @property
     def _shot_armed(self) -> bool:
+        """Return whether analytic two-corner goal shot is armed."""
         return self.search_engine.shot_armed
 
     @_shot_armed.setter
@@ -128,7 +164,7 @@ class KinodynamicAstar:
 
     @property
     def num_strategy_b(self) -> int:
-        """Return Strategy B expansion budget."""
+        """Return remaining Strategy B radial fan expansion quota."""
         return self.successor_generator.num_strategy_b
 
     @num_strategy_b.setter
@@ -137,70 +173,82 @@ class KinodynamicAstar:
 
     @property
     def _fan_rungs(self) -> list[float]:
+        """Return distance rungs for radial fan exploration in metres."""
         return self.successor_generator.fan_rungs
 
     @property
     def _last_reject(self) -> str | None:
+        """Return rejection reason identifier for the most recent candidate state."""
         return self.successor_generator.last_reject
 
     @property
     def _poly_vertices(self) -> list[Point]:
+        """Return inflated obstacle polygon vertices used for candidate generation."""
         return self.successor_generator.poly_vertices
 
     @property
     def _polygons(self) -> list[Polygon]:
+        """Return Shapely polygon instances of static obstacles."""
         return self.collision_detector.polygons
 
     @property
     def _poly_bboxes(self) -> list[tuple[float, float, float, float]]:
+        """Return bounding boxes (minx, miny, maxx, maxy) of polygon obstacles."""
         return self.collision_detector.poly_bboxes
 
     @property
     def _circles(self) -> list[tuple[float, float, float]]:
+        """Return circular obstacles as (center_x, center_y, radius) in metres."""
         return self.collision_detector.circles
 
     @property
     def _safezone(self) -> Polygon | MultiPolygon | None:
+        """Return combined operational safezone boundary polygon if configured."""
         return self.collision_detector.safezone
 
     @property
     def _safezone_prep(self) -> PreparedGeometry | None:
+        """Return prepared spatial geometry of safezone for fast containment queries."""
         return self.collision_detector.safezone_prep
 
     @property
     def _has_explicit_bounds(self) -> bool:
+        """Return True if map dimensions were explicitly specified in the scenario."""
         return self.collision_detector.has_explicit_bounds
 
     @property
     def _bounds_w(self) -> float:
+        """Return operational area width in metres."""
         return self.collision_detector.bounds_w
 
     @property
     def _bounds_h(self) -> float:
+        """Return operational area height in metres."""
         return self.collision_detector.bounds_h
 
     @property
     def _construct_delta(self) -> float:
+        """Return construction stand-off buffer added to obstacles in metres."""
         return self.collision_detector.construct_delta
 
     @property
     def open_set(self) -> list[tuple[float, int, State]]:
-        """Return priority queue."""
+        """Return the priority queue of pending states sorted by f-score."""
         return self.search_engine.open_set
 
     @property
     def closed_set(self) -> set[State]:
-        """Return closed set."""
+        """Return the set of already expanded lattice states."""
         return self.search_engine.closed_set
 
     @property
     def g_scores(self) -> dict[State, float]:
-        """Return g-scores dictionary."""
+        """Return map of lowest known cost-to-come per lattice state."""
         return self.search_engine.g_scores
 
     @property
     def iteration_count(self) -> int:
-        """Return iteration counter."""
+        """Return total number of main loop iterations executed."""
         return self.search_engine.iteration_count
 
     @iteration_count.setter
@@ -209,39 +257,59 @@ class KinodynamicAstar:
 
     @property
     def is_budget_bound(self) -> bool:
-        """Return whether search hit budget."""
+        """Return True if search terminated due to time budget limit exhaustion."""
         return self.search_engine.is_budget_bound
 
     @property
     def is_search_failed(self) -> bool:
-        """Return whether search failed."""
+        """Return True if the open priority queue emptied without finding a path."""
         return self.search_engine.is_search_failed
 
     def heuristic(self, state: State, goal_state: State) -> float:
-        """Estimate remaining distance from state to goal_state."""
+        """Estimate remaining Euclidean flight distance from state to goal.
+
+        Args:
+            state: Current lattice state.
+            goal_state: Target goal state.
+
+        Returns:
+            Admissible straight-line distance heuristic in metres.
+        """
         return euclidean_heuristic(state, goal_state)
 
     def get_next_states(self, current_state: State) -> list[tuple[State, float]]:
-        """Generate next candidate states."""
+        """Generate all kinematically feasible successor states from current state.
+
+        Args:
+            current_state: State currently being expanded.
+
+        Returns:
+            List of tuples (successor_state, step_cost).
+        """
         return self.successor_generator.get_next_states(current_state)
 
     def _is_collision_free(self, p1: Point, p2: Point) -> bool:
+        """Test whether the straight line segment p1 -> p2 is collision-free."""
         return self.collision_detector.is_collision_free(p1, p2)
 
     def _is_corner_arc_clear(self, h_in: float, w: Point, w_next: Point) -> bool:
+        """Test whether radius-R fillet arc rounding corner w is collision-free."""
         return self.collision_detector.is_corner_arc_clear(h_in, w, w_next)
 
     def _is_sector_clear(
         self, center: Point, r_in: float, r_out: float, phi_a: float, phi_b: float
     ) -> bool:
+        """Test whether an annular sector around circle center is free of obstacles."""
         return self.collision_detector.is_sector_clear(
             center, r_in, r_out, phi_a, phi_b
         )
 
     def _is_in_bounds(self, point: Point) -> bool:
+        """Test whether point lies within valid operational boundaries."""
         return self.collision_detector.is_in_bounds(point)
 
     def _on_circle_boundary(self, point: Point, tol: float | None = None) -> bool:
+        """Test whether point lies on the outer boundary of any circular obstacle."""
         return self.collision_detector.on_circle_boundary(point, tol)
 
     def _ray_chord_clear(
@@ -252,6 +320,7 @@ class KinodynamicAstar:
         p1: Point,
         p2: Point,
     ) -> bool:
+        """Collision-test a chord, reusing what is already known about its ray."""
         span = memo.get(ray)
         if span is None:
             span = memo[ray] = [0.0, float("inf")]
@@ -266,11 +335,13 @@ class KinodynamicAstar:
         return False
 
     def _check_fixed_legs(self) -> bool:
+        """Test whether mandatory takeoff and approach legs are collision-free."""
         return self.collision_detector.check_fixed_legs(
             self.goal_state.waypoint, self._target
         )
 
     def _seed_start_corners(self) -> list[State]:
+        """Seed initial search states along takeoff ray with straight length >= L0."""
         return self.successor_generator.seed_start_corners()
 
     def _doan_trinh(
@@ -281,6 +352,7 @@ class KinodynamicAstar:
         far_reserve: float = 0.0,
         advance: float = 0.0,
     ) -> float | None:
+        """Validate and update straight budget for a candidate turn and leg length."""
         return self.successor_generator.doan_trinh(
             current, leg_len, turn, far_reserve, advance
         )
@@ -288,30 +360,50 @@ class KinodynamicAstar:
     def _pivot_candidate(
         self, current: State, node: Point, advance: float
     ) -> tuple[State, float] | None:
+        """Validate a candidate waypoint transition from current state to node."""
         return self.successor_generator.pivot_candidate(current, node, advance)
 
     def _slide_pivot(self, current: State, node: Point) -> tuple[State, float] | None:
+        """Attempt to recover arc-blocked candidate by sliding pivot along ray."""
         return self.successor_generator.slide_pivot(current, node)
 
     def _try_goal_shot(self, current: State) -> State | None:
+        """Attempt direct two-corner terminal connection to target goal."""
         return self.successor_generator.try_goal_shot(current, {}, {})
 
     def search(self) -> list[PlannerState] | None:
-        """Run the A* search loop."""
+        """Execute the A* search loop until a path is found or time budget expires.
+
+        Returns:
+            List of (waypoint, heading) states if found, or None on failure/timeout.
+        """
         return self.search_engine.search()
 
     def _is_goal_reached(self, current: State) -> bool:
+        """Check whether current state satisfies terminal arrival conditions."""
         return self.search_engine.is_goal_reached(current)
 
     def _reconstruct_path(self, state: State) -> list[PlannerState]:
+        """Backtrack parent pointers from terminal state to build waypoint path."""
         return self.search_engine.reconstruct_path(state)
 
     def get_search_stats(self) -> SearchStats:
-        """Return search diagnostics."""
+        """Return diagnostic metrics and counters from search execution.
+
+        Returns:
+            Dictionary containing search iteration count, set sizes, and budget status.
+        """
         return self.search_engine.get_search_stats()
 
     def smooth_path(self, path: list[PlannerState]) -> list[PlannerState]:
-        """Smooth path via dynamic programming shortcutting."""
+        """Optimize and shortcut path using dynamic programming subsequence selection.
+
+        Args:
+            path: Raw waypoint sequence from A* search.
+
+        Returns:
+            Optimized sequence of waypoints maintaining all kinematic invariants.
+        """
         start_h = self.scenario["start_state"]["heading"]
         goal_h = self.scenario.get("goal_heading")
         return smooth_path(
@@ -329,7 +421,15 @@ class KinodynamicAstar:
         )
 
     def plan(self, *, verbose: bool = False) -> PlanResult:
-        """Run the full planning pipeline from start to validated trajectory."""
+        """Run complete planning: feasibility check, search, smoothing, and validation.
+
+        Args:
+            verbose: If True, log detailed search progress to standard logger.
+
+        Returns:
+            PlanResult dictionary containing trajectory path, success flag, reason,
+            and execution statistics.
+        """
         if not self.start_corners:
             return self._result(None, False, "start_leg_blocked")
         if not self._check_fixed_legs():
@@ -369,6 +469,7 @@ class KinodynamicAstar:
     def _result(
         self, path: list[PlannerState] | None, is_success: bool, reason: str | None
     ) -> PlanResult:
+        """Package internal search outcomes into canonical PlanResult dictionary."""
         return {
             "path": path,
             "is_success": is_success,
@@ -384,7 +485,17 @@ def plan_trajectory(
     verbose: bool = False,
     time_budget_s: float | None = None,
 ) -> PlanResult:
-    """Plan an autonomous aircraft trajectory end to end."""
+    """Plan an autonomous flight path end-to-end for a preprocessed scenario.
+
+    Args:
+        preprocessed_scenario: Prepared mission dictionary containing endpoints,
+            inflated obstacles, turn limits, and safezone geometries.
+        verbose: If True, logs step-by-step solver progression.
+        time_budget_s: Wall-clock computation budget limit in seconds.
+
+    Returns:
+        Canonical PlanResult containing the smoothed flyable path and diagnostics.
+    """
     if verbose:
         logger.info("Initializing Kinodynamic A*...")
     return KinodynamicAstar(preprocessed_scenario, time_budget_s=time_budget_s).plan(
@@ -394,5 +505,4 @@ def plan_trajectory(
 
 # Aliases for test compatibility
 _angle_diff = su.angle_diff
-
 _MIN_STRAIGHT_M = config.MIN_STRAIGHT_M

@@ -1,4 +1,4 @@
-"""Search lattice node representation."""
+"""Search lattice node representation and state hashing."""
 
 from __future__ import annotations
 
@@ -14,14 +14,28 @@ if TYPE_CHECKING:
 
 
 class State:
-    """One search node: a waypoint plus the heading the vehicle holds there."""
+    """One search node representing a 2D position and vehicle heading.
+
+    Attributes:
+        waypoint: Planar 2D coordinate (x, y) in metres.
+        heading: Vehicle orientation angle in radians, or None for free-goal.
+        cos_h: Cosine of heading angle for fast dot-product prefiltering.
+        sin_h: Sine of heading angle for fast dot-product prefiltering.
+        parent: Pointer to preceding state on the search path.
+        g_cost: Accumulated cost from takeoff to this state in metres.
+        h_cost: Estimated heuristic cost from this state to the goal in metres.
+        straight_budget: Remaining straight flight length on the inbound leg (m).
+        min_straight_in: Minimum required straight flight threshold (m).
+        is_start_corner: True if state is one of the initial seeded takeoff corners.
+        via: Optional intermediate waypoint inserted during pivot sliding.
+    """
 
     def __init__(self, waypoint: Point, heading: float | None) -> None:
-        """Initialize search lattice state.
+        """Initialize a search lattice state node.
 
         Args:
-            waypoint: 2D coordinates of the state.
-            heading: Heading angle in radians (or None for free goal target).
+            waypoint: 2D planar coordinates (x, y) in metres.
+            heading: Heading angle in radians, or None for headingless goal target.
         """
         self.waypoint: Point = waypoint
         self.heading: float | None = heading
@@ -37,19 +51,38 @@ class State:
         self._key: LatticeKey | None = None
 
     def _compute_key(self) -> LatticeKey:
+        """Quantize continuous state coordinates onto discrete lattice bins.
+
+        Returns:
+            Tuple (x_bin, y_bin, heading_bin).
+
+        Raises:
+            TypeError: If heading is None.
+        """
         if self.heading is None:
             raise TypeError("a headingless goal target has no lattice key")
         return su.state_to_tuple(self.waypoint, self.heading)
 
     def __hash__(self) -> int:
-        """Hash on the quantised search lattice, caching the key."""
+        """Hash on the quantised search lattice cell, caching computed key.
+
+        Returns:
+            Integer hash value.
+        """
         key = self._key
         if key is None:
             key = self._key = self._compute_key()
         return hash(key)
 
     def __eq__(self, other: object) -> bool:
-        """Compare on the quantised search lattice."""
+        """Test equality based on quantized lattice cell keys.
+
+        Args:
+            other: Comparison target object.
+
+        Returns:
+            True if other is State and falls in the same quantized lattice cell.
+        """
         if not isinstance(other, State):
             return NotImplemented
         key = self._key
@@ -61,13 +94,20 @@ class State:
         return key == other_key
 
     def __lt__(self, other: State) -> bool:
-        """Order by f = g + w*h for the priority queue."""
+        """Order states by total estimated cost f = g + w*h for priority queue.
+
+        Args:
+            other: Another State to compare with.
+
+        Returns:
+            True if this state has strictly lower f-cost than other.
+        """
         return (self.g_cost + config.HEURISTIC_WEIGHT * self.h_cost) < (
             other.g_cost + config.HEURISTIC_WEIGHT * other.h_cost
         )
 
     def __repr__(self) -> str:
-        """Return debug representation."""
+        """Return human-readable debug representation of state."""
         heading = (
             "none" if self.heading is None else f"{math.degrees(self.heading):.1f}°"
         )

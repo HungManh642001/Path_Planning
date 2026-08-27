@@ -1,5 +1,10 @@
 # pyright: reportMissingTypeArgument=false, reportUnknownMemberType=false, reportUnknownVariableType=false
-"""Spatial collision detector for straight chords, turn arcs and boundaries."""
+"""Spatial collision detector for straight chords, turn arcs and boundaries.
+
+Provides the :class:`CollisionDetector` class, which handles all 2D collision
+queries between straight flight paths, fillet turn arcs, annular sweep sectors,
+obstacle bounding boxes, and operational safezone polygons.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +25,21 @@ if TYPE_CHECKING:
 
 
 class CollisionDetector:
-    """Collision engine checking straight line-of-sight and corner clearance."""
+    """Collision engine checking straight line-of-sight and corner clearance.
+
+    Attributes:
+        scenario: Preprocessed scenario containing obstacles and boundaries.
+        turn_radius: Minimum vehicle turn radius in metres.
+        construct_delta: Clearance buffer added to obstacle geometry in metres.
+        polygons: List of Shapely polygon representations of island obstacles.
+        poly_bboxes: Bounding boxes (minx, miny, maxx, maxy) for all polygon obstacles.
+        circles: List of circular obstacles as (center_x, center_y, radius).
+        safezone: Enclosing multi-polygon safe operational area, if defined.
+        safezone_prep: Prepared Shapely geometry for fast spatial containment queries.
+        has_explicit_bounds: Whether bounding box limits were provided.
+        bounds_w: Operational area width in metres.
+        bounds_h: Operational area height in metres.
+    """
 
     def __init__(
         self,
@@ -28,7 +47,12 @@ class CollisionDetector:
         *,
         turn_radius: float = config.R,
     ) -> None:
-        """Initialize obstacle geometry, bboxes and safezones."""
+        """Initialize obstacle geometry, bounding boxes and safezones.
+
+        Args:
+            preprocessed_scenario: Preprocessed scenario dictionary.
+            turn_radius: Minimum vehicle turning radius in metres.
+        """
         self.scenario = preprocessed_scenario
         self.turn_radius = turn_radius
         self.construct_delta = config.CONSTRUCTION_CLEARANCE_M + config.GEOM_EPS_M
@@ -60,7 +84,20 @@ class CollisionDetector:
         )
 
     def is_collision_free(self, p1: Point, p2: Point) -> bool:
-        """Test whether the straight segment p1 -> p2 is flyable."""
+        """Test whether the straight segment p1 -> p2 is flyable and collision-free.
+
+        Applies axis-aligned bounding box filtering before computing exact
+        point-to-segment distances for circular obstacles and Shapely relate_pattern
+        topological intersection tests for polygonal obstacles.
+
+        Args:
+            p1: Segment start coordinate (x, y) in metres.
+            p2: Segment end coordinate (x, y) in metres.
+
+        Returns:
+            True if the segment clears all obstacles and remains inside safezone;
+            False otherwise.
+        """
         x0, x1 = (p1[0], p2[0]) if p1[0] <= p2[0] else (p2[0], p1[0])
         y0, y1 = (p1[1], p2[1]) if p1[1] <= p2[1] else (p2[1], p1[1])
 
@@ -92,7 +129,16 @@ class CollisionDetector:
         return True
 
     def is_corner_arc_clear(self, h_in: float, w: Point, w_next: Point) -> bool:
-        """Test whether the radius-R fillet arc rounding corner w is clear."""
+        """Test whether the radius-R fillet arc rounding corner w is clear of obstacles.
+
+        Args:
+            h_in: Inbound heading angle into corner w in radians.
+            w: Corner waypoint position (x, y) in metres.
+            w_next: Outbound destination waypoint position (x, y) in metres.
+
+        Returns:
+            True if the fillet curve does not intersect any obstacles; False otherwise.
+        """
         prev = (w[0] - math.cos(h_in), w[1] - math.sin(h_in))
         pts = pv.arc_points(
             prev, w, w_next, turn_radius=self.turn_radius, n=config.ARC_CHECK_SAMPLES
@@ -137,7 +183,18 @@ class CollisionDetector:
     def is_sector_clear(
         self, center: Point, r_in: float, r_out: float, phi_a: float, phi_b: float
     ) -> bool:
-        """Test whether an annular sector is free of obstacles."""
+        """Test whether an annular sector around circle center is free of obstacles.
+
+        Args:
+            center: Circle centre coordinate (x, y).
+            r_in: Inner boundary radius in metres.
+            r_out: Outer boundary radius in metres.
+            phi_a: Start azimuth of sector in radians.
+            phi_b: End azimuth of sector in radians.
+
+        Returns:
+            True if no other obstacles intrude into the annular sector; False otherwise.
+        """
         lo, hi = (phi_a, phi_b) if phi_a <= phi_b else (phi_b, phi_a)
         for c2, r2 in self.scenario["circle_obstacles"]:
             dx, dy = c2[0] - center[0], c2[1] - center[1]
@@ -168,7 +225,15 @@ class CollisionDetector:
         return True
 
     def on_circle_boundary(self, point: Point, tol: float | None = None) -> bool:
-        """Test whether a point rides an inflated circle boundary."""
+        """Test whether a point rides the inflated boundary of any circular obstacle.
+
+        Args:
+            point: Query point coordinate (x, y).
+            tol: Distance tolerance in metres. If None, uses default construction delta.
+
+        Returns:
+            True if point is within tolerance of a circle boundary; False otherwise.
+        """
         if tol is None:
             tol = self.construct_delta + config.GEOM_EPS_M
         return any(
@@ -177,7 +242,14 @@ class CollisionDetector:
         )
 
     def is_in_bounds(self, point: Point) -> bool:
-        """Test whether a point lies inside the operating area."""
+        """Test whether a point lies inside the valid operational area.
+
+        Args:
+            point: Query coordinate (x, y) in metres.
+
+        Returns:
+            True if inside map boundary / safezone; False otherwise.
+        """
         if self.safezone_prep is not None:
             return self.safezone_prep.covers(ShapelyPoint(*point))
         if not self.has_explicit_bounds:
@@ -186,7 +258,15 @@ class CollisionDetector:
         return 0 < x < self.bounds_w and 0 < y < self.bounds_h
 
     def check_fixed_legs(self, goal_wp: Point, target: Point) -> bool:
-        """Test the mandatory W_{n-1} -> T seeker run-in for collisions."""
+        """Test whether mandatory terminal seeker run-in W_{n-1} -> T is clear.
+
+        Args:
+            goal_wp: Penultimate waypoint position W_{n-1}.
+            target: Final target destination T.
+
+        Returns:
+            True if terminal run-in straight chord is collision-free; False otherwise.
+        """
         return self.is_collision_free(goal_wp, target)
 
     def ray_chord_clear(
@@ -197,7 +277,18 @@ class CollisionDetector:
         p1: Point,
         p2: Point,
     ) -> bool:
-        """Collision-test a chord, reusing what is already known about its ray."""
+        """Collision-test a chord along a ray, memoizing known clear/blocked spans.
+
+        Args:
+            memo: Ray clearance map from ray angle to [min_clear, max_blocked].
+            ray: Ray angle in radians.
+            dist: Distance from ray origin to end point in metres.
+            p1: Segment start point (x, y).
+            p2: Segment end point (x, y).
+
+        Returns:
+            True if chord is collision-free; False if blocked.
+        """
         span = memo.get(ray)
         if span is None:
             span = memo[ray] = [0.0, float("inf")]

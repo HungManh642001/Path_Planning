@@ -1,4 +1,8 @@
-"""Kinodynamic A* path planning library."""
+"""Kinodynamic A* path planning library for autonomous aerial vehicles.
+
+Provides kinodynamically feasible path generation under minimum turning radius,
+acceleration, and approach geometry constraints across obstacle environments.
+"""
 
 from __future__ import annotations
 

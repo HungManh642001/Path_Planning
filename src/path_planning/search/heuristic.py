@@ -1,4 +1,4 @@
-"""Heuristic distance estimator for A* search."""
+"""Heuristic distance estimator for A* graph search."""
 
 from __future__ import annotations
 
@@ -11,7 +11,15 @@ if TYPE_CHECKING:
 
 
 def euclidean_heuristic(state: State, goal_state: State) -> float:
-    """Estimate remaining distance from state to goal_state."""
+    """Estimate remaining Euclidean distance from state to goal_state.
+
+    Args:
+        state: Current search state node.
+        goal_state: Target goal state node.
+
+    Returns:
+        Admissible straight-line Euclidean distance in metres.
+    """
     dx = goal_state.waypoint[0] - state.waypoint[0]
     dy = goal_state.waypoint[1] - state.waypoint[1]
     return math.sqrt(dx * dx + dy * dy)
