@@ -173,9 +173,8 @@ def run_scenario(scenario_func, scenario_name, seed=42, output_dir="results"):
             "metrics": metrics,
         }
 
-    except Exception as e:
-        logger.info(f"\n❌ {scenario_name}: FAILED")
-        logger.info(f"   Error: {str(e)}")
+    except (ValueError, RuntimeError) as exc:
+        logger.exception(f"\n❌ {scenario_name}: FAILED")
         return {
             "scenario_name": scenario_name,
             "is_success": False,
@@ -183,6 +182,7 @@ def run_scenario(scenario_func, scenario_name, seed=42, output_dir="results"):
             "preprocessing_time": 0,
             "planning_time": 0,
             "metrics": metrics,
+            "error": str(exc),
         }
 
 

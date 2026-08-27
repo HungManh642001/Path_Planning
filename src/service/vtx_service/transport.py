@@ -21,7 +21,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 import time
-import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -475,19 +474,13 @@ class DdsTransport:
         except ValueError as exc:
             reply = _invalid_request_reply(request_id, str(exc))
         except Exception:  # noqa: BLE001 - R25: bất kỳ lỗi KHÁC nào ở đây cũng không được hạ service
-            logger.error(
-                f"[transport] request {request_id.hex()} lỗi khi dịch request từ dây:\n"
-                f"{traceback.format_exc(limit=5)}"
-            )
+            logger.exception(f"[transport] request {request_id.hex()} lỗi khi dịch request từ dây:")
             reply = _internal_error_reply(request_id, "internal error khi dịch request")
         else:
             try:
                 reply = handler(domain_request)
             except Exception:  # noqa: BLE001 - một request hỏng không được hạ cả service
-                logger.error(
-                f"[transport] request {request_id.hex()} lỗi khi xử lý:\n"
-                f"{traceback.format_exc(limit=5)}"
-            )
+                logger.exception(f"[transport] request {request_id.hex()} lỗi khi xử lý:")
                 reply = _internal_error_reply(
                     request_id, "internal error khi xử lý request"
                 )
@@ -495,28 +488,19 @@ class DdsTransport:
         try:
             wire_reply = _to_wire_reply(reply)
         except Exception:  # noqa: BLE001 - dịch reply lỗi cũng không được hạ service
-            logger.error(
-                f"[transport] request {request_id.hex()} lỗi khi dịch reply ra kiểu trên dây:\n"
-                f"{traceback.format_exc(limit=5)}"
-            )
+            logger.exception(f"[transport] request {request_id.hex()} lỗi khi dịch reply ra kiểu trên dây:")
             try:
                 wire_reply = _to_wire_reply(
                     _internal_error_reply(request_id, "internal error khi dịch reply")
                 )
             except Exception:  # noqa: BLE001 - dựng reply lỗi cũng không được hạ service
-                logger.error(
-                f"[transport] request {request_id.hex()} lỗi cả khi dựng reply lỗi:\n"
-                f"{traceback.format_exc(limit=5)}"
-            )
+                logger.exception(f"[transport] request {request_id.hex()} lỗi cả khi dựng reply lỗi:")
                 return
 
         try:
             self._reply_writer.write(wire_reply)
         except Exception:  # noqa: BLE001 - ghi lỗi không được hạ service
-            logger.error(
-                f"[transport] request {request_id.hex()} lỗi khi ghi reply:\n"
-                f"{traceback.format_exc(limit=5)}"
-            )
+            logger.exception(f"[transport] request {request_id.hex()} lỗi khi ghi reply:")
 
     def wait_for_service(self, timeout_s: float) -> bool:
         """Chờ tới khi có một service khớp trên topic request.

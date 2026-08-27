@@ -22,8 +22,9 @@ def setup_logging(service_name, log_file="app.log"):
     console_handler.setLevel(logging.INFO)  # Set console logging level
 
     # Create a rotating file handler for output to a log file
-    if not os.path.exists(os.path.dirname(log_file)):
-        os.makedirs(os.path.dirname(log_file))
+    if log_dir := os.path.dirname(log_file):
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
     file_handler = RotatingFileHandler(
         log_file, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
     )  # 5 MB per file, keep 5 backups

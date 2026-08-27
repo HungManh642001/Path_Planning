@@ -526,7 +526,8 @@ def plot_scenario(
     if result and result.get("path"):
         try:
             _draw_trajectory(ax, preprocessed, result, trajectory_mode)
-        except Exception:
+        except Exception as exc:
+            logger.debug("Arc interpolation failed, degrading to straight line.", exc_info=exc)
             # Degrade to bare segments rather than losing the whole plot: this
             # runs inside the batch harness, where one unplottable scenario must
             # not abort the other fifteen.
