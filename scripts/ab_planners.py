@@ -20,6 +20,7 @@ a separate RNG so the obstacle field stays byte-identical between the modes.
 
 import logging
 
+
 logger = logging.getLogger(__name__)
 
 import argparse

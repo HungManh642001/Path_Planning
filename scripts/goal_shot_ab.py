@@ -9,6 +9,7 @@ Run: PYTHONPATH=. python scripts/goal_shot_ab.py
 
 import logging
 
+
 logger = logging.getLogger(__name__)
 
 import math

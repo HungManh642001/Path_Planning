@@ -2,11 +2,8 @@
 Run tests with random scenarios and visualize the results.
 """
 
-import logging
-
-logger = logging.getLogger(__name__)
-
 import json
+import logging
 import math
 import os
 import random
@@ -23,6 +20,9 @@ from path_planning.core import (
 )
 from path_planning.logger_config import setup_logging
 from path_planning.render import visualizer as viz
+
+
+logger = logging.getLogger(__name__)
 
 
 def generate_random_scenario(seed=42):
@@ -149,7 +149,7 @@ def run_scenario(scenario_func, scenario_name, seed=42, output_dir="results"):
         metrics.start_timer("visualization")
 
         # Main trajectory plot
-        main_fig = viz.plot_scenario(
+        viz.plot_scenario(
             scenario,
             preprocessed,
             result,

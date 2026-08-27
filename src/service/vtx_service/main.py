@@ -16,6 +16,16 @@ import sys
 from pathlib import Path
 from types import FrameType
 
+from service.vtx_service.map_file import PreloadedMap
+from service.vtx_service.messages import PlanReply, PlanRequest, PlanStatus
+from service.vtx_service.runner import PlanRunner
+from service.vtx_service.runtime import (
+    MAX_REQUEST_TIME_BUDGET_S,
+    config_hash,
+    effective_time_budget_s,
+    planner_version,
+)
+
 
 def main(argv: list[str] | None = None) -> int:
     """Chạy service lập lịch đường bay DDS.
@@ -45,16 +55,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     log = logging.getLogger("vtx-planner")
 
-    from service.vtx_service.map_file import PreloadedMap
-    from service.vtx_service.messages import PlanReply, PlanRequest, PlanStatus
-    from service.vtx_service.runner import PlanRunner
-    from service.vtx_service.runtime import (
-        MAX_REQUEST_TIME_BUDGET_S,
-        config_hash,
-        effective_time_budget_s,
-        planner_version,
-    )
-
     preloaded = PreloadedMap.load(args.preloaded_map) if args.preloaded_map else None
     if preloaded is not None:
         log.info(
@@ -76,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
         MAX_REQUEST_TIME_BUDGET_S,
     )
 
-    from service.vtx_service.transport import DdsTransport
+    from service.vtx_service.transport import DdsTransport  # lazy import
 
     transport = DdsTransport(domain_id=args.domain_id)
     log.info("sẵn sàng trên domain %d", args.domain_id)

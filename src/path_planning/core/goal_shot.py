@@ -15,9 +15,9 @@ stays a pure-geometry leaf that can be tested in isolation.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
 
 import math
+from dataclasses import dataclass
 
 from path_planning.core.types import Point
 

@@ -12,9 +12,10 @@ this one is the standard and the main file follows it.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
 
 import logging
+from dataclasses import dataclass
+
 
 logger = logging.getLogger(__name__)
 

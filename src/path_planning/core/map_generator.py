@@ -7,11 +7,11 @@ hand-set.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
 
 import math
 import random
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from shapely import Point as ShapelyPoint, Polygon as ShapelyPolygon
 

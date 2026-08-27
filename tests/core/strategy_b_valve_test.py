@@ -11,7 +11,6 @@ points too short to bridge constrained goal-approach slots (seed 4: +88 km).
 """
 import math
 
-import pytest
 from batch_random_test import generate_random_scenario
 
 from path_planning import config

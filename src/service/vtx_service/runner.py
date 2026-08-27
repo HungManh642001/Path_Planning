@@ -39,6 +39,11 @@ from service.vtx_service.messages import (
     PlanStatus,
     SearchStats,
 )
+from service.vtx_service.runtime import (
+    config_hash,
+    effective_time_budget_s,
+    planner_version,
+)
 
 
 _PRELOAD = [
@@ -114,7 +119,7 @@ def _child(
                 time.sleep(3600)
         if raise_:
             raise RuntimeError("lỗi giả lập trong tiến trình con")
-        from service.vtx_service.planner import plan
+        from service.vtx_service.planner import plan  # lazy import
 
         pipe.send(("ok", plan(request, preloaded=preloaded)))
     except BaseException:  # noqa: BLE001 - báo lỗi về cha thay vì chết câm
@@ -167,7 +172,6 @@ class PlanRunner:
             Reply của planner, hoặc một reply ``TIMEOUT`` / ``INTERNAL_ERROR``.
         """
         assert self._ctx is not None, "phải gọi start() trước"
-        from service.vtx_service.runtime import effective_time_budget_s
 
         hang, self._force_hang_next = self._force_hang_next, False
         raise_, self._force_raise_next = self._force_raise_next, False
@@ -220,12 +224,6 @@ class PlanRunner:
     def _failed(
         request: PlanRequest, status: PlanStatus, detail: str, elapsed_s: float
     ) -> PlanReply:
-        from service.vtx_service.runtime import (
-            config_hash,
-            effective_time_budget_s,
-            planner_version,
-        )
-
         # is_budget_bound chỉ đúng cho TIMEOUT: đó là trạng thái DUY NHẤT nơi
         # ngân sách thời gian là lý do request không xong. Một tiến trình con
         # NÉM LỖI (INTERNAL_ERROR) không hề chạm trần thời gian.

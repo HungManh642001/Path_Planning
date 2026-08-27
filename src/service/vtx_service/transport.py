@@ -17,9 +17,9 @@ bình thường - chỉ module khai báo IdlStruct mới bị.
 
 import logging
 
+
 logger = logging.getLogger(__name__)
 
-import sys
 import time
 import traceback
 from collections.abc import Callable

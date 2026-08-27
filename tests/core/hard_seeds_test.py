@@ -12,7 +12,6 @@ asserted separately against the 5 s budget.
 import math
 import time
 
-import pytest
 from batch_random_test import generate_random_scenario
 
 from path_planning import config
