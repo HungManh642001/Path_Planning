@@ -17,6 +17,12 @@ class State:
     """One search node: a waypoint plus the heading the vehicle holds there."""
 
     def __init__(self, waypoint: Point, heading: float | None) -> None:
+        """Initialize search lattice state.
+
+        Args:
+            waypoint: 2D coordinates of the state.
+            heading: Heading angle in radians (or None for free goal target).
+        """
         self.waypoint: Point = waypoint
         self.heading: float | None = heading
         self.cos_h: float | None = math.cos(heading) if heading is not None else None
