@@ -71,9 +71,6 @@ def test_non_riding_state_has_no_arc_hops():
     assert planner._arc_hop_successors(st) == []
 
 
-@pytest.mark.xfail(
-    reason="Experimental arc-hop feature removed in favor of v0 production engine"
-)
 def test_synthetic_circle_end_to_end_valid():
     scn = synthetic_circle_scenario()
     pre = prep.prepare_scenario(scn)
@@ -149,9 +146,6 @@ def test_fan_added_while_riding_boundary():
     ), "fan successors missing at a riding state"
 
 
-@pytest.mark.xfail(
-    reason="Experimental arc-hop feature removed in favor of v0 production engine"
-)
 def test_plan_trajectory_smooths_output():
     """Open water: the smoothed path is the minimal W1->goal route."""
     pre = prep.prepare_scenario(open_water_scenario())
@@ -354,9 +348,6 @@ def test_plan_maps_blocked_leg_to_failure_reason():
     assert result["failure_reason"] == "goal_leg_blocked"
 
 
-@pytest.mark.xfail(
-    reason="Experimental arc-hop feature removed in favor of v0 production engine"
-)
 def test_plan_succeeds_open_water_reason_none():
     scn = {
         "start": (100000.0, 250000.0),
@@ -372,9 +363,6 @@ def test_plan_succeeds_open_water_reason_none():
     assert result["failure_reason"] is None
 
 
-@pytest.mark.xfail(
-    reason="Experimental arc-hop feature removed in favor of v0 production engine"
-)
 def test_plan_no_path_reason():
     """When search finds nothing, failure_reason is 'no_path'."""
     # Goal boxed so tightly the planner cannot reach an aligned arrival is hard
@@ -438,9 +426,6 @@ def _assert_honest_outcome(seed):
         )
 
 
-@pytest.mark.xfail(
-    reason="Experimental arc-hop feature removed in favor of v0 production engine"
-)
 def test_seed_155_historic_polygon_escape_is_honest():
     """Seed 155 historically emitted an arc-expansion chord through a polygon
     interior (the annulus gap). With sector-based ride clearance the planner
@@ -449,9 +434,6 @@ def test_seed_155_historic_polygon_escape_is_honest():
     _assert_honest_outcome(155)
 
 
-@pytest.mark.xfail(
-    reason="Experimental arc-hop feature removed in favor of v0 production engine"
-)
 def test_seed_223_historic_phantom_edge_is_honest():
     """Seed 223 historically carried a never-validated 'phantom' edge from
     lattice-dedup came_from splicing (misread as a 37 m legitimate graze).
