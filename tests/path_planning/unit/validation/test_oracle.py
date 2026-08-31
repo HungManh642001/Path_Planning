@@ -22,9 +22,8 @@ def test_validation_result_ok_factory_method() -> None:
     res = ValidationResult.ok()
 
     # Assert
-    assert res.valid is True
-    assert res.reason == "ok"
-    assert res.details is None
+    assert res.is_ok is True
+    assert res.detail == "ok"
 
 
 def test_path_is_valid_on_clear_straight_path_returns_ok() -> None:
@@ -50,8 +49,8 @@ def test_path_is_valid_on_clear_straight_path_returns_ok() -> None:
     )
 
     # Assert
-    assert res.valid is True
-    assert res.reason == "ok"
+    assert res.is_ok is True
+    assert res.detail == "ok"
 
 
 def test_segments_clear_detects_obstacle_collision() -> None:
@@ -72,8 +71,8 @@ def test_segments_clear_detects_obstacle_collision() -> None:
     )
 
     # Assert
-    assert res.valid is False
-    assert "intersects circle" in res.reason
+    assert res.is_ok is False
+    assert "intersects circle" in res.detail
 
 
 def test_turn_angles_ok_detects_excessive_corner_turn() -> None:
@@ -89,8 +88,8 @@ def test_turn_angles_ok_detects_excessive_corner_turn() -> None:
     res = turn_angles_ok(sharp_turn_path, alpha_max_rad=math.radians(90.0))
 
     # Assert
-    assert res.valid is False
-    assert "exceeds maximum" in res.reason
+    assert res.is_ok is False
+    assert "exceeds maximum" in res.detail
 
 
 def test_straight_segments_ok_detects_insufficient_takeoff_length() -> None:
@@ -111,8 +110,8 @@ def test_straight_segments_ok_detects_insufficient_takeoff_length() -> None:
     )
 
     # Assert
-    assert res.valid is False
-    assert "shorter than required" in res.reason
+    assert res.is_ok is False
+    assert "shorter than required" in res.detail
 
 
 def test_arcs_clear_detects_fillet_arc_obstacle_collision() -> None:
@@ -135,5 +134,5 @@ def test_arcs_clear_detects_fillet_arc_obstacle_collision() -> None:
     )
 
     # Assert
-    assert res.valid is False
-    assert "intersects" in res.reason
+    assert res.is_ok is False
+    assert "intersects" in res.detail
