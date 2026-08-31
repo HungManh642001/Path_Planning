@@ -6,6 +6,10 @@ from tools.qa_suite.core.batch_runner import (
 )
 from tools.qa_suite.core.report_generator import ReportGenerator
 from tools.qa_suite.core.runner import ExecutionDriver, ExecutionMode, QAResult
+from tools.qa_suite.core.stress_tester import (
+    NatsStressTester,
+    StressTestSummary,
+)
 from tools.qa_suite.core.visualizer_2d import PlotlyVisualizer2D
 
 
@@ -14,7 +18,9 @@ __all__ = [
     "BatchSummary",
     "ExecutionDriver",
     "ExecutionMode",
+    "NatsStressTester",
     "PlotlyVisualizer2D",
     "QAResult",
     "ReportGenerator",
+    "StressTestSummary",
 ]

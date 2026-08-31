@@ -87,7 +87,7 @@ def _classify_failure_status(reason: str | None) -> str:
     return _REASON_TO_STATUS.get(reason, "ORACLE_REJECTED")
 
 
-def _scenario_to_plan_request(
+def scenario_to_plan_request(
     scenario: Scenario, name: str, time_budget_s: float
 ) -> PlanRequest:
     """Chuyển đổi Scenario dict sang PlanRequest của microservice."""
@@ -144,6 +144,9 @@ def _scenario_to_plan_request(
         limits=limits,
         budget=budget,
     )
+
+
+_scenario_to_plan_request = scenario_to_plan_request
 
 
 class ExecutionDriver:
