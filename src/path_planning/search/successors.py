@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING
 
 from path_planning import config
 from path_planning.geometry import spatial
-from path_planning.geometry.goal_shot import two_corner_candidates
+from path_planning.geometry.goal_shot import (
+    GoalConeEntry,
+    build_goal_cone,
+    two_corner_candidates,
+)
 from path_planning.search.state import State
 
 
@@ -106,6 +110,15 @@ class SuccessorGenerator:
 
         self.last_reject: str | None = None
         self.num_strategy_b = config.NUM_STRATEGY_B
+
+        self.goal_shot_cone: list[GoalConeEntry] = []
+        if not self.is_goal_heading_free and self.goal_state.heading is not None:
+            self.goal_shot_cone = build_goal_cone(
+                self.goal_state.heading,
+                self.turn_radius,
+                self.alpha_build,
+                num_cone=int(config.GOAL_SHOT_CONE),
+            )
 
     def seed_start_corners(self) -> list[State]:
         """Gieo trạng thái góc rẽ xuất phát dọc theo tia cất cánh (chiều dài >= L0).
@@ -459,7 +472,7 @@ class SuccessorGenerator:
             current.straight_budget,
             current.min_straight_in,
             num_dir=config.GOAL_SHOT_DIRS,
-            num_cone=config.GOAL_SHOT_CONE,
+            cone=self.goal_shot_cone,
         )
         if not candidates:
             return None
@@ -473,7 +486,7 @@ class SuccessorGenerator:
             if not self.collision_detector.ray_chord_clear(
                 leg1_memo,
                 leg1_heading,
-                math.dist(position, corner),
+                candidate.leg1_len,
                 position,
                 corner,
             ):
@@ -481,7 +494,7 @@ class SuccessorGenerator:
             if not self.collision_detector.ray_chord_clear(
                 leg2_memo,
                 arrival_heading,
-                math.dist(corner, goal_wp),
+                candidate.leg2_len,
                 corner,
                 goal_wp,
             ):
@@ -505,7 +518,7 @@ class SuccessorGenerator:
             turn_1 = abs(spatial.angle_diff(leg1_heading, heading))
             corner_state.g_cost = (
                 base_g
-                + math.dist(current.waypoint, corner)
+                + candidate.leg1_len
                 + config.TURN_PENALTY_WEIGHT * turn_1
             )
             corner_state.straight_budget = candidate.budget_corner
@@ -515,7 +528,7 @@ class SuccessorGenerator:
             turn_2 = abs(spatial.angle_diff(arrival_heading, leg1_heading))
             goal_state.g_cost = (
                 corner_state.g_cost
-                + math.dist(corner, goal_wp)
+                + candidate.leg2_len
                 + config.TURN_PENALTY_WEIGHT * turn_2
             )
             goal_state.straight_budget = candidate.budget_goal

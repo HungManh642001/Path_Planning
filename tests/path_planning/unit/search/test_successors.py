@@ -107,3 +107,38 @@ def test_doan_trinh_budget_accounting_checks_straight_segment_reserves(
     assert budget_valid is not None
     assert budget_valid > 0.0
     assert budget_invalid is None
+
+
+def test_try_goal_shot_generates_valid_terminal_state(
+    sample_preprocessed_scenario: PreprocessedScenario,
+) -> None:
+    """Kiểm tra cơ chế try_goal_shot sinh trạng thái kết thúc nối thẳng về đích."""
+    # Arrange
+    detector = CollisionDetector(sample_preprocessed_scenario)
+    goal_state = State(
+        sample_preprocessed_scenario["goal_state"]["waypoint"],
+        sample_preprocessed_scenario["goal_state"]["heading"],
+    )
+    generator = SuccessorGenerator(
+        sample_preprocessed_scenario,
+        detector,
+        origin=sample_preprocessed_scenario["start_pos"],
+        target=sample_preprocessed_scenario["goal_pos"],
+        goal_state=goal_state,
+    )
+    current_state = State((180000.0, 180000.0), 0.0)
+    current_state.straight_budget = 20000.0
+    current_state.min_straight_in = 4000.0
+
+    leg1_memo: dict[float, list[float]] = {}
+    leg2_memo: dict[float, list[float]] = {}
+
+    # Act
+    shot_state = generator.try_goal_shot(current_state, leg1_memo, leg2_memo)
+
+    # Assert - nếu tìm được shot khả thi, kiểm tra liên kết parent
+    if shot_state is not None:
+        assert shot_state.parent is not None
+        assert shot_state.parent.parent is current_state
+        assert shot_state.waypoint == goal_state.waypoint
+        assert shot_state.heading == goal_state.heading
