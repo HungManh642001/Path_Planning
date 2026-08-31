@@ -16,7 +16,17 @@ def test_seed_start_corners_generates_valid_takeoff_states(
     """Kiểm tra gieo các góc rẽ xuất phát ban đầu dọc theo tia cất cánh l1 >= L0."""
     # Arrange
     detector = CollisionDetector(sample_preprocessed_scenario)
-    generator = SuccessorGenerator(sample_preprocessed_scenario, detector)
+    goal_state = State(
+        sample_preprocessed_scenario["goal_state"]["waypoint"],
+        sample_preprocessed_scenario["goal_state"]["heading"],
+    )
+    generator = SuccessorGenerator(
+        sample_preprocessed_scenario,
+        detector,
+        origin=sample_preprocessed_scenario["start_pos"],
+        target=sample_preprocessed_scenario["goal_pos"],
+        goal_state=goal_state,
+    )
 
     # Act
     corners = generator.seed_start_corners()
@@ -37,7 +47,17 @@ def test_get_next_states_expands_candidates_from_start_corner(
     """Kiểm tra sinh các trạng thái kế tiếp từ một điểm rẽ cất cánh hợp lệ."""
     # Arrange
     detector = CollisionDetector(sample_preprocessed_scenario)
-    generator = SuccessorGenerator(sample_preprocessed_scenario, detector)
+    goal_state = State(
+        sample_preprocessed_scenario["goal_state"]["waypoint"],
+        sample_preprocessed_scenario["goal_state"]["heading"],
+    )
+    generator = SuccessorGenerator(
+        sample_preprocessed_scenario,
+        detector,
+        origin=sample_preprocessed_scenario["start_pos"],
+        target=sample_preprocessed_scenario["goal_pos"],
+        goal_state=goal_state,
+    )
     corners = generator.seed_start_corners()
     current_state = corners[0]
 
@@ -58,7 +78,17 @@ def test_doan_trinh_budget_accounting_checks_straight_segment_reserves(
     """Kiểm tra tính toán và cập nhật ngân sách đoạn bay thẳng đoản trình."""
     # Arrange
     detector = CollisionDetector(sample_preprocessed_scenario)
-    generator = SuccessorGenerator(sample_preprocessed_scenario, detector)
+    goal_state = State(
+        sample_preprocessed_scenario["goal_state"]["waypoint"],
+        sample_preprocessed_scenario["goal_state"]["heading"],
+    )
+    generator = SuccessorGenerator(
+        sample_preprocessed_scenario,
+        detector,
+        origin=sample_preprocessed_scenario["start_pos"],
+        target=sample_preprocessed_scenario["goal_pos"],
+        goal_state=goal_state,
+    )
     current_state = State((50000.0, 50000.0), 0.0)
     current_state.straight_budget = 10000.0
     current_state.min_straight_in = 4000.0

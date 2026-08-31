@@ -32,12 +32,24 @@ def test_smooth_path_with_less_than_three_waypoints_returns_unchanged_path(
     assert smoothed == short_path
 
 
-def test_smooth_path_shortcuts_collinear_intermediate_waypoints(
-    sample_preprocessed_scenario: PreprocessedScenario,
-) -> None:
+def test_smooth_path_shortcuts_collinear_intermediate_waypoints() -> None:
     """Kiểm tra quy hoạch động loại bỏ các điểm thẳng hàng không cần thiết trên đường bay."""
-    # Arrange
-    detector = CollisionDetector(sample_preprocessed_scenario)
+    # Arrange: Scenario rỗng hoàn toàn không có vật cản trên đường bay
+    empty_scenario: PreprocessedScenario = {
+        "start_pos": (50000.0, 50000.0),
+        "goal_pos": (450000.0, 450000.0),
+        "start_state": {"waypoint": (50000.0, 50000.0), "heading": math.pi / 4},
+        "goal_state": {"waypoint": (450000.0, 450000.0), "heading": math.pi / 4},
+        "start_heading": math.pi / 4,
+        "goal_heading": math.pi / 4,
+        "map_bounds": (500000.0, 500000.0),
+        "safezones": None,
+        "circle_obstacles": [],
+        "polygon_obstacles": [],
+        "all_obstacles": [],
+        "alpha_max_rad": math.pi / 2,
+    }
+    detector = CollisionDetector(empty_scenario)
     origin: Point = (50000.0, 50000.0)
     target: Point = (450000.0, 450000.0)
     # 4 điểm nằm thẳng hàng từ (60000, 60000) đến (400000, 400000)

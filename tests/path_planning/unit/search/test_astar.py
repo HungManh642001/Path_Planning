@@ -16,12 +16,18 @@ def test_astar_search_engine_initialization(
     """Kiểm tra khởi tạo động cơ AstarSearchEngine với đầy đủ tham số cấu hình."""
     # Arrange
     detector = CollisionDetector(sample_preprocessed_scenario)
-    generator = SuccessorGenerator(sample_preprocessed_scenario, detector)
-    corners = generator.seed_start_corners()
     goal_state = State(
         sample_preprocessed_scenario["goal_state"]["waypoint"],
         sample_preprocessed_scenario["goal_state"]["heading"],
     )
+    generator = SuccessorGenerator(
+        sample_preprocessed_scenario,
+        detector,
+        origin=sample_preprocessed_scenario["start_pos"],
+        target=sample_preprocessed_scenario["goal_pos"],
+        goal_state=goal_state,
+    )
+    corners = generator.seed_start_corners()
 
     # Act
     engine = AstarSearchEngine(
@@ -81,12 +87,18 @@ def test_astar_search_finds_valid_path_in_clean_scenario(
     """Kiểm tra động cơ A* tìm thấy đường bay khả thi trong kịch bản mẫu."""
     # Arrange
     detector = CollisionDetector(sample_preprocessed_scenario)
-    generator = SuccessorGenerator(sample_preprocessed_scenario, detector)
-    corners = generator.seed_start_corners()
     goal_state = State(
         sample_preprocessed_scenario["goal_state"]["waypoint"],
         sample_preprocessed_scenario["goal_state"]["heading"],
     )
+    generator = SuccessorGenerator(
+        sample_preprocessed_scenario,
+        detector,
+        origin=sample_preprocessed_scenario["start_pos"],
+        target=sample_preprocessed_scenario["goal_pos"],
+        goal_state=goal_state,
+    )
+    corners = generator.seed_start_corners()
     engine = AstarSearchEngine(
         corners,
         goal_state,
