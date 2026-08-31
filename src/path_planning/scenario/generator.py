@@ -333,11 +333,15 @@ def create_scenario(scenario_config: ScenarioConfig) -> Scenario:
 # ============ PREDEFINED SCENARIOS ============
 
 
-def generate_random_scenario(seed: int = 42) -> Scenario:
+def generate_random_scenario(
+    seed: int = 42, topology: Topology | None = None
+) -> Scenario:
     """Sinh kịch bản ngẫu nhiên hoàn chỉnh với đảo và chướng ngại vật tròn.
 
     Args:
         seed: Random seed for reproducibility.
+        topology: Optional obstacle topology ("random", "center_cluster", "wall_block").
+            If None, a topology is sampled randomly.
 
     Returns:
         Scenario: Dictionary containing map bounds, start/goal, islands, and dynamic
@@ -366,8 +370,13 @@ def generate_random_scenario(seed: int = 42) -> Scenario:
 
     heading_start_to_goal = spatial.angle_to_heading(start, goal)
 
-    topologies: tuple[Topology, ...] = ("random", "center_cluster", "wall_block")
-    topology = random.choices(topologies, weights=[0.1, 0.45, 0.45])[0]
+    if topology is None:
+        topologies: tuple[Topology, ...] = ("random", "center_cluster", "wall_block")
+        selected_topology: Topology = random.choices(
+            topologies, weights=[0.1, 0.45, 0.45]
+        )[0]
+    else:
+        selected_topology = topology
 
     return create_scenario(
         {
@@ -384,7 +393,7 @@ def generate_random_scenario(seed: int = 42) -> Scenario:
             ),  # Add some randomness to the goal heading
             "num_islands": random.randint(0, 20),
             "num_dynamic_obstacles": random.randint(0, 20),
-            "topology": topology,
+            "topology": selected_topology,
             "seed": seed,
         }
     )
