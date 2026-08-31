@@ -13,7 +13,6 @@ except ImportError:
     import performance_eval as perf  # type: ignore
 
 from path_planning import config, planner
-from path_planning.logger_config import setup_logging
 from path_planning.render import visualizer
 from path_planning.scenario import preprocessing
 from path_planning.scenario.generator import generate_random_scenario
@@ -257,7 +256,8 @@ def main():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    # Configure logging
-    logger = setup_logging("BatchRandomTest", log_file="logs/batch_random_test.log")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
     main()

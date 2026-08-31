@@ -179,50 +179,6 @@ class CollisionDetector:
                 return False
         return True
 
-    def is_sector_clear(
-        self, center: Point, r_in: float, r_out: float, phi_a: float, phi_b: float
-    ) -> bool:
-        """Kiểm tra hình quạt vành khuyên quanh tâm đường tròn có bị cản không.
-
-        Args:
-            center: Circle centre coordinate (x, y).
-            r_in: Inner boundary radius in metres.
-            r_out: Outer boundary radius in metres.
-            phi_a: Start azimuth of sector in radians.
-            phi_b: End azimuth of sector in radians.
-
-        Returns:
-            True if no other obstacles intrude into the annular sector; False otherwise.
-        """
-        lo, hi = (phi_a, phi_b) if phi_a <= phi_b else (phi_b, phi_a)
-        for c2, r2 in self.scenario["circle_obstacles"]:
-            dx, dy = c2[0] - center[0], c2[1] - center[1]
-            d = math.hypot(dx, dy)
-            if d - r2 >= r_out or d + r2 <= r_in:
-                continue
-            if d <= r2:
-                return False
-            theta = math.atan2(dy, dx)
-            half = math.asin(min(1.0, r2 / d))
-            if arc.has_angular_overlap(theta - half, theta + half, lo, hi):
-                return False
-
-        if self.poly_bboxes:
-            pts = arc.sector_polygon(center, r_in, r_out, lo, hi)
-            qx0 = min(p[0] for p in pts)
-            qx1 = max(p[0] for p in pts)
-            qy0 = min(p[1] for p in pts)
-            qy1 = max(p[1] for p in pts)
-            quad: Polygon | None = None
-            for i, (bx0, by0, bx1, by1) in enumerate(self.poly_bboxes):
-                if qx1 < bx0 or bx1 < qx0 or qy1 < by0 or by1 < qy0:
-                    continue
-                if quad is None:
-                    quad = Polygon(pts)
-                if self.polygons[i].relate_pattern(quad, "T********"):
-                    return False
-        return True
-
     def on_circle_boundary(self, point: Point, tol: float | None = None) -> bool:
         """Kiểm tra điểm có nằm trên biên chướng ngại vật tròn nào không.
 

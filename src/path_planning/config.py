@@ -49,15 +49,6 @@ SAFE_MARGIN = 0.0
 # (preserving the arc-clearance guarantee) for the convex-ish islands here.
 POLYGON_MITRE_LIMIT = 5.0
 
-# Angular step (deg) for expanding a circle-boundary arc into waypoint
-# vertices (circumscribed polygon) at OUTPUT time. Max supported 45. Search
-# connectivity does NOT depend on it: arc clearance is checked at the fixed
-# 45-deg bulge radius r/cos(pi/8), which covers any expansion step <= 45 deg.
-ARC_WAYPOINT_STEP_DEG = 30.0
-
-# Angular step (deg) for sampling arc clearance during search.
-ARC_SAMPLE_STEP_DEG = 5.0
-
 # Collision checking is EXACT: any penetration of a circle's INFLATED
 # boundary (dist < radius) is a collision — zero tolerance. Feasibility of
 # boundary-riding geometry is achieved on the CONSTRUCTION side instead:

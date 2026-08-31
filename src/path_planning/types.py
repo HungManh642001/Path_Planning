@@ -40,12 +40,6 @@ LatticeKey = tuple[int, int, int]
 Topology = Literal["random", "center_cluster", "wall_block"]
 """Chiến lược phân bố chướng ngại vật: ngẫu nhiên, cụm trung tâm hoặc chắn ngang."""
 
-WrapSense = Literal[-1, 1]
-"""Chiều di chuyển bám cung tròn: +1 là ngược chiều (CCW), -1 là thuận chiều (CW)."""
-
-RidingSense = Literal[-1, 0, 1]
-"""Chiều bám cung tròn: +1 (CCW), -1 (CW), hoặc 0 nếu không bám đường tròn."""
-
 
 # --- Chướng ngại vật ----------------------------------------------------------
 

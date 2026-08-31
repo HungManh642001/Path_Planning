@@ -1,9 +1,5 @@
 """Kiểm thử đơn vị cho module collision.detector (động cơ kiểm tra va chạm không gian)."""
 
-from __future__ import annotations
-
-import math
-
 from path_planning.collision.detector import CollisionDetector
 from path_planning.types import Point, PreprocessedScenario
 
@@ -72,25 +68,6 @@ def test_is_corner_arc_clear_with_open_water_turn_returns_true(
 
     # Assert
     assert arc_clear is True
-
-
-def test_is_sector_clear_with_empty_sector_returns_true(
-    sample_preprocessed_scenario: PreprocessedScenario,
-) -> None:
-    """Kiểm tra hình quạt vành khuyên không chứa vật cản trả về True."""
-    # Arrange
-    detector = CollisionDetector(sample_preprocessed_scenario)
-    center: Point = (50000.0, 50000.0)
-    r_in = 1000.0
-    r_out = 5000.0
-    phi_a = 0.0
-    phi_b = math.pi / 2
-
-    # Act
-    sector_clear = detector.is_sector_clear(center, r_in, r_out, phi_a, phi_b)
-
-    # Assert
-    assert sector_clear is True
 
 
 def test_on_circle_boundary_with_boundary_point_returns_true(
