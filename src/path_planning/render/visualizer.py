@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 
     from matplotlib.figure import Figure
 
-    from path_planning.render.trajectory import RenderMode
+    from path_planning.render.sampling import RenderMode
     from path_planning.types import (
         Obstacle,
         PlanResultView,

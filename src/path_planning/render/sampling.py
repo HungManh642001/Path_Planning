@@ -12,7 +12,7 @@ import math
 from collections.abc import Sequence
 from typing import Literal, TypedDict
 
-from path_planning.trajectory import mission as mission
+from path_planning.trajectory import mission_path as mission_path
 from path_planning.types import PlannerState, Point, PreprocessedScenario
 
 
@@ -106,7 +106,7 @@ def build_full_path(
     Returns:
         The full mission path, endpoints included.
     """
-    return mission.full_mission_path(result_path, preprocessed)
+    return mission_path.full_mission_path(result_path, preprocessed)
 
 
 # --------------------------------------------------------------------------

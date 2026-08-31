@@ -38,7 +38,7 @@ def planner_config_snapshot() -> dict[str, object]:
     import path_planning.search.heuristic as _sh
     import path_planning.search.state as _ss
     import path_planning.search.successors as _sg
-    import path_planning.trajectory.mission as _tm
+    import path_planning.trajectory.mission_path as _tm
     import path_planning.trajectory.smoothing as _ts
 
     modules = [astar, _cd, _sa, _sh, _ss, _sg, _tm, _ts]

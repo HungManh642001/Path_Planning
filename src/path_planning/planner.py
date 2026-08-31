@@ -22,7 +22,7 @@ from path_planning.search.astar import AstarSearchEngine
 from path_planning.search.heuristic import euclidean_heuristic
 from path_planning.search.state import State
 from path_planning.search.successors import SuccessorGenerator
-from path_planning.trajectory.mission import full_mission_path
+from path_planning.trajectory.mission_path import full_mission_path
 from path_planning.trajectory.smoothing import smooth_path
 from path_planning.validation import oracle as pv
 
