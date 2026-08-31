@@ -109,22 +109,7 @@ def inflate_polygon(polygon_coords: PolygonCoords, inflation: float) -> PolygonC
     return polygon_coords
 
 
-def state_to_tuple(waypoint: Point, heading: float) -> LatticeKey:
-    """Rời rạc hóa trạng thái (tọa_độ, hướng_bay) thành khóa ô lưới.
-
-    Args:
-        waypoint: Tọa độ điểm (x, y) tính bằng mét.
-        heading: Góc hướng bay tính bằng radian.
-
-    Returns:
-        Khóa ô lưới dạng (x_index, y_index, heading_index).
-    """
-    q = config.STATE_POS_QUANTUM
-    hq = math.radians(config.STATE_HEADING_QUANTUM_DEG)
-    hx = int(waypoint[0] // q)
-    hy = int(waypoint[1] // q)
-    hh = round(math.atan2(math.sin(heading), math.cos(heading)) / hq)
-    return (hx, hy, hh)
+from path_planning.search.state import state_to_tuple as state_to_tuple
 
 
 def circle_tangent_points(point: Point, center: Point, radius: float) -> list[Point]:

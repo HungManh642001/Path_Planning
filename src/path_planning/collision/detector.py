@@ -235,9 +235,8 @@ class CollisionDetector:
         """
         if tol is None:
             tol = self.construct_delta + config.GEOM_EPS_M
-        return any(
-            abs(math.hypot(point[0] - center[0], point[1] - center[1]) - radius) < tol
-            for center, radius in self.scenario["circle_obstacles"]
+        return ag.is_point_on_any_circle_boundary(
+            point, self.scenario["circle_obstacles"], tol
         )
 
     def is_in_bounds(self, point: Point) -> bool:
