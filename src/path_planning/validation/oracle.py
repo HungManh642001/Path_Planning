@@ -11,6 +11,8 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from path_planning import config
+
 from shapely.geometry import LineString, Polygon
 
 
@@ -30,9 +32,8 @@ class ValidationResult:
     """Kết quả kiểm định một tiêu chí hợp lệ của đường bay.
 
     Attributes:
-        is_ok: Whether the check passed.
-        detail: ``'ok'`` on is_success, otherwise which waypoint or segment failed
-            and by how much.
+        is_ok: True nếu thỏa mãn tiêu chí kiểm định, False nếu vi phạm.
+        detail: 'ok' khi thành công, hoặc mô tả chi tiết vị trí/nguyên nhân vi phạm.
     """
 
     is_ok: bool
@@ -42,8 +43,13 @@ class ValidationResult:
         """Trả về True nếu kiểm tra hợp lệ thành công."""
         return self.is_ok
 
+    @classmethod
+    def ok(cls) -> ValidationResult:
+        """Trả về kết quả kiểm định hợp lệ thành công chuẩn."""
+        return cls(True, "ok")
 
-_OK = ValidationResult(True, "ok")
+
+VALIDATION_OK = ValidationResult.ok()
 
 # Shortest interior overlap with a polygon that this validator can still tell
 # apart from a tangency (metres).
@@ -62,27 +68,9 @@ _OK = ValidationResult(True, "ok")
 # 1e-6 m is 100x above that noise and still 6 orders below anything operational
 # (SAFE_MARGIN is metres; a real crossing runs to kilometres). It was 1e-3 m,
 # which WAS a genuine forgiveness — 1000x more than the artefact needs.
-POLYGON_TOUCH_TOL_M = 1e-6
-
-# A turn whose fillet bites less than this many metres out of the straight is
-# not a turn: the waypoint is flown straight through and does not split the
-# straight run (see straight_segments_ok). At R = 8000 m this is a turn of
-# 1.4e-5 degrees, so it only ever absorbs float noise in collinear waypoints,
-# never a manoeuvre.
-#
-# This is the one number here that is NOT a check, and it deliberately keeps a
-# tolerance. It CLASSIFIES waypoints (does this one split the straight run?)
-# rather than comparing a quantity against a limit. Driving it to 0 would make
-# every float-noise reserve at a collinear waypoint split the run, manufacturing
-# zero-length segments that then fail the exact `l > 0` test — the checker would
-# reject paths for its own rounding. The planner emits genuinely collinear
-# waypoints as a matter of course (arc-hop departures leave tangentially, and a
-# pivot slide flies straight THROUGH its parent), so this case is the norm, not
-# an edge. Like every classifier tolerance, it must stay above construction
-# noise: keep it well clear of GEOM_EPS_M.
-TURN_RESERVE_TOL_M = 1e-6
-
-_ARC_SAMPLES = 24
+POLYGON_TOUCH_TOL_M = config.ORACLE_POLYGON_TOUCH_TOL_M
+TURN_RESERVE_TOL_M = config.ORACLE_TURN_RESERVE_TOL_M
+_ARC_SAMPLES = config.ORACLE_ARC_SAMPLES
 """Segments the fillet arc at a corner is sampled into for clearance checks."""
 
 
@@ -199,7 +187,7 @@ def segments_clear(
         b = path[i + 1][0]
         if not _segment_clear(a, b, circle_obstacles, polygon_obstacles):
             return ValidationResult(False, f"segment {i} blocked ({a} -> {b})")
-    return _OK
+    return ValidationResult.ok()
 
 
 def _seg_heading(a: Point, b: Point) -> float:
@@ -249,7 +237,7 @@ def turn_angles_ok(
                 f"wp[{i + 1}] {path[i + 1][0]} turn angle {math.degrees(angle):.3f}° "
                 f"> alpha_max {math.degrees(alpha_max_rad):.3f}°",
             )
-    return _OK
+    return ValidationResult.ok()
 
 
 def _seg_len(a: Point, b: Point) -> float:
@@ -318,7 +306,7 @@ def straight_segments_ok(
                 )
         elif usable <= 0.0:  # middle: l > 0
             return ValidationResult(False, f"middle {span} l={usable:.3f} <= 0")
-    return _OK
+    return ValidationResult.ok()
 
 
 def _unit(a: Point, b: Point) -> Point:
@@ -406,7 +394,7 @@ def arcs_clear(
                     f"turn arc at wp[{i}] {path[i][0]} blocked "
                     f"({points[j]} -> {points[j + 1]})",
                 )
-    return _OK
+    return ValidationResult.ok()
 
 
 def path_is_valid(
@@ -453,15 +441,13 @@ def path_is_valid(
     if not path or len(path) < 2:
         return ValidationResult(False, "path too short")
 
-    _res = segments_clear(path, circle_obstacles, polygon_obstacles)
-    is_ok, reason = _res.is_ok, _res.detail
-    if not is_ok:
-        return ValidationResult(False, f"segments blocked: {reason}")
+    seg_res = segments_clear(path, circle_obstacles, polygon_obstacles)
+    if not seg_res.is_ok:
+        return ValidationResult(False, f"segments blocked: {seg_res.detail}")
 
-    _res = turn_angles_ok(path, alpha_max_rad)
-    is_ok, reason = _res.is_ok, _res.detail
-    if not is_ok:
-        return ValidationResult(False, f"turn angles invalid: {reason}")
+    turn_res = turn_angles_ok(path, alpha_max_rad)
+    if not turn_res.is_ok:
+        return ValidationResult(False, f"turn angles invalid: {turn_res.detail}")
 
     arc_circles = (
         circle_obstacles if raw_circle_obstacles is None else raw_circle_obstacles
@@ -469,14 +455,12 @@ def path_is_valid(
     arc_polys = (
         polygon_obstacles if raw_polygon_obstacles is None else raw_polygon_obstacles
     )
-    _res = arcs_clear(path, turn_radius, arc_circles, arc_polys)
-    is_ok, reason = _res.is_ok, _res.detail
-    if not is_ok:
-        return ValidationResult(False, f"turn arcs blocked: {reason}")
+    arc_res = arcs_clear(path, turn_radius, arc_circles, arc_polys)
+    if not arc_res.is_ok:
+        return ValidationResult(False, f"turn arcs blocked: {arc_res.detail}")
 
-    _res = straight_segments_ok(path, turn_radius, l0, dss)
-    is_ok, reason = _res.is_ok, _res.detail
-    if not is_ok:
-        return ValidationResult(False, f"straight segments invalid: {reason}")
+    straight_res = straight_segments_ok(path, turn_radius, l0, dss)
+    if not straight_res.is_ok:
+        return ValidationResult(False, f"straight segments invalid: {straight_res.detail}")
 
-    return _OK
+    return ValidationResult.ok()

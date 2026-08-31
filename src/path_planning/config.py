@@ -641,3 +641,13 @@ CANDIDATE_MIN_DIST_M = 0.0
 # limit, and 1e-9 rad clears it with three orders to spare. 1e-9 rad over an
 # 8 km radius is 8 microns of arc.
 GEOM_EPS_RAD = 1e-9
+
+# ====== VALIDATION & ORACLE TOLERANCES ======
+# Ngưỡng dung sai phân biệt tiếp xúc biên và thấu giao cắt đa giác trong oracle (m)
+ORACLE_POLYGON_TOUCH_TOL_M = 1e-6
+
+# Ngưỡng dung sai dự trữ cung lượn nhận diện đổi hướng bay trong oracle (m)
+ORACLE_TURN_RESERVE_TOL_M = 1e-6
+
+# Số đoạn lấy mẫu cung lượn fillet arc khi kiểm tra va chạm độc lập trong oracle
+ORACLE_ARC_SAMPLES = 24
