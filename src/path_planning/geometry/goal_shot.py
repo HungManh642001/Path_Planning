@@ -13,6 +13,7 @@ from typing import TypeAlias
 
 from path_planning.types import Point
 
+
 GoalConeEntry: TypeAlias = tuple[float, float, float, float]
 """(arrival_heading, cos(arrival_heading), sin(arrival_heading), reserve_terminal)"""
 
@@ -62,7 +63,8 @@ def build_goal_cone(
         num_cone: Số hướng lấy mẫu góc tiếp cận mục tiêu trong nón hợp lệ (>= 2).
 
     Returns:
-        Danh sách các phần tử GoalConeEntry (arrival_heading, cos, sin, reserve_terminal).
+        Danh sách các phần tử GoalConeEntry
+        (arrival_heading, cos, sin, reserve_terminal).
 
     Raises:
         ValueError: Nếu num_cone < 2.
@@ -128,7 +130,7 @@ def two_corner_candidates(
     """
     if num_dir < 2 or (cone is None and num_cone < 2):
         raise ValueError(
-            f"num_dir and num_cone must be >= 2; got num_dir={num_dir}, num_cone={num_cone}"
+            f"num_dir and num_cone must be >= 2; got {num_dir=}, {num_cone=}"
         )
 
     px, py = position

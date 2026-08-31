@@ -517,9 +517,7 @@ class SuccessorGenerator:
             corner_state.parent = current
             turn_1 = abs(spatial.angle_diff(leg1_heading, heading))
             corner_state.g_cost = (
-                base_g
-                + candidate.leg1_len
-                + config.TURN_PENALTY_WEIGHT * turn_1
+                base_g + candidate.leg1_len + config.TURN_PENALTY_WEIGHT * turn_1
             )
             corner_state.straight_budget = candidate.budget_corner
 
