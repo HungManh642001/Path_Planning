@@ -1,587 +1,242 @@
-"""Lớp DDS. Module DUY NHẤT trong service được phép import một binding DDS.
+"""Lớp giao vận NATS cho VTX Algorithm Service.
 
-Mọi thứ khác - hợp đồng dữ liệu, adapter, runner, bản đồ - độc lập với stack đã
-chọn. Đổi stack là viết lại file này, không đụng chỗ nào khác.
-
-QoS: cả hai topic RELIABLE + VOLATILE; request KEEP_ALL, reply KEEP_LAST(8).
-VOLATILE là bắt buộc, không phải mặc định tuỳ tiện: TRANSIENT_LOCAL trên topic
-request nghĩa là service khởi động lại sẽ nhận và lập kế hoạch lại một mission
-cũ đã hết hiệu lực. Một lệnh bay không được phép phát lại.
-
-KHÔNG dùng `from __future__ import annotations` trong file này. cyclonedds phân
-giải chú thích kiểu LÚC CHẠY, còn PEP 563 biến chúng thành chuỗi, nên
-`Topic(...)` ném `TypeError: Type array[uint8, 16] ... cannot be resolved`. Đã
-đo: có dòng đó thì hỏng, bỏ ra thì chạy. Mọi module khác trong service vẫn dùng
-bình thường - chỉ module khai báo IdlStruct mới bị.
+Module phụ trách kết nối NATS Server, đăng ký Queue Group và điều phối
+các yêu cầu lập lịch đường bay (Request-Reply) bất đồng bộ với Protocol Buffers.
 """
 
+from __future__ import annotations
+
+import asyncio
 import logging
-
-
-logger = logging.getLogger(__name__)
-
-import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
 
-from cyclonedds.core import (
-    InstanceState,
-    Policy,
-    Qos,
-    ReadCondition,
-    SampleState,
-    ViewState,
-    WaitSet,
-)
-from cyclonedds.domain import DomainParticipant
-from cyclonedds.idl import IdlStruct
-from cyclonedds.idl.annotations import key
-from cyclonedds.idl.types import array, sequence, uint8, uint32
-from cyclonedds.pub import DataWriter, Publisher
-from cyclonedds.sub import DataReader, Subscriber
-from cyclonedds.topic import Topic
-from cyclonedds.util import duration
+import nats
+from nats.aio.client import Client as NatsClientConnection
+from nats.aio.msg import Msg
 
-from service.vtx_service import messages as msg, runtime
+from service.vtx_service import codec, messages as msg
 
 
-REQUEST_TOPIC = "VtxPathPlanRequest"
-REPLY_TOPIC = "VtxPathPlanReply"
+logger = logging.getLogger("vtx-planner.transport")
 
-_RELIABLE = Policy.Reliability.Reliable(duration(seconds=10))
-# IgnoreLocal.Participant là BẮT BUỘC, không phải tuỳ chọn. Không có nó, một
-# DataWriter khớp với DataReader của CHÍNH participant mình, nên
-# `wait_for_service` trả True ngay cả khi không có service nào - đã đo:
-# current_count = 1 với một participant duy nhất, = 0 khi bật IgnoreLocal.
-_IGNORE_SELF = Policy.IgnoreLocal.Participant
-REQUEST_QOS = Qos(
-    _RELIABLE, Policy.History.KeepAll, Policy.Durability.Volatile, _IGNORE_SELF
-)
-REPLY_QOS = Qos(
-    _RELIABLE, Policy.History.KeepLast(8), Policy.Durability.Volatile, _IGNORE_SELF
-)
+DEFAULT_NATS_SERVER = "nats://localhost:4222"
+DEFAULT_SUBJECT = "vtx.algorithms.path_planning.plan"
+DEFAULT_QUEUE_GROUP = "vtx.algorithms.path_planning"
 
 
-# --- kiểu trên dây, khớp service/idl/vtx_path_planning.idl --------------------
-
-
-@dataclass
-class Point2D(IdlStruct, typename="vtx.planning.Point2D"):
-    """Point 2D structure.
+class NatsTransport:
+    """Bộ giao vận NATS cho service lập lịch đường bay.
 
     Attributes:
-        x: X coordinate.
-        y: Y coordinate.
+        server_url: Địa chỉ NATS server (vd: 'nats://localhost:4222').
+        subject: NATS subject lắng nghe yêu cầu.
+        queue: Tên Queue Group để cân bằng tải giữa các instance.
+        nc: Kết nối NATS client.
     """
 
-    x: float
-    y: float
-
-
-@dataclass
-class Polygon(IdlStruct, typename="vtx.planning.Polygon"):
-    """Polygon structure.
-
-    Attributes:
-        vertices: List of vertices.
-    """
-
-    vertices: sequence[Point2D]
-
-
-@dataclass
-class Circle(IdlStruct, typename="vtx.planning.Circle"):
-    """Circle structure.
-
-    Attributes:
-        center: Center point.
-        radius_m: Radius in meters.
-    """
-
-    center: Point2D
-    radius_m: float
-
-
-@dataclass
-class VehicleLimits(IdlStruct, typename="vtx.planning.VehicleLimits"):
-    """Vehicle limits structure.
-
-    Attributes:
-        turn_radius_m: Turn radius in meters.
-        l0_m: L0 in meters.
-    """
-
-    turn_radius_m: float
-    l0_m: float
-    dss_m: float
-    safe_margin_m: float
-    alpha_max_deg: float
-
-
-@dataclass
-class SearchBudget(IdlStruct, typename="vtx.planning.SearchBudget"):
-    """Search budget structure.
-
-    Attributes:
-        time_budget_s: Time budget in seconds.
-    """
-
-    time_budget_s: float
-
-
-@dataclass
-class WireRequest(IdlStruct, typename="vtx.planning.VtxPathPlanRequest"):
-    """Wire request structure.
-
-    Attributes:
-        request_id: Request ID.
-    """
-
-    request_id: array[uint8, 16]
-    key("request_id")
-    idl_version: uint32
-    start: Point2D
-    start_heading_deg: float
-    goal: Point2D
-    goal_heading_deg: float
-    is_goal_heading_free: bool
-    islands: sequence[Polygon]
-    dynamic_obstacles: sequence[Circle]
-    safezones: sequence[Polygon]
-    use_preloaded_map: bool
-    limits: VehicleLimits
-    budget: SearchBudget
-
-
-@dataclass
-class Waypoint(IdlStruct, typename="vtx.planning.Waypoint"):
-    """Waypoint structure.
-
-    Attributes:
-        position: Waypoint position.
-        heading_deg: Heading in degrees.
-    """
-
-    position: Point2D
-    heading_deg: float
-
-
-@dataclass
-class SearchStats(IdlStruct, typename="vtx.planning.SearchStats"):
-    """Search stats structure.
-
-    Attributes:
-        iterations: Number of iterations.
-        open_set_size: Size of open set.
-    """
-
-    iterations: uint32
-    open_set_size: uint32
-    is_search_failed: bool
-    is_budget_bound: bool
-
-
-@dataclass
-class WireReply(IdlStruct, typename="vtx.planning.VtxPathPlanReply"):
-    """Wire reply structure.
-
-    Attributes:
-        request_id: Request ID.
-    """
-
-    request_id: array[uint8, 16]
-    key("request_id")
-    idl_version: uint32
-    # uint32, NOT msg.PlanStatus / the IDL's `PlanStatus status`, on purpose:
-    # cyclonedds only accepts a *cyclonedds-native* enum type
-    # (`cyclonedds.idl.IdlEnum`) as an IdlStruct field (verified - a plain
-    # `enum.IntEnum` field raises `AttributeError: __idl_annotations__` at
-    # Topic construction). Giving `msg.PlanStatus` that base class would pull
-    # the DDS binding into `messages.py`, which the module docstring there
-    # forbids. So the ordinal crosses the wire as a bare `uint32`, and
-    # `test_idl_status_enum_matches_python_exactly` (+ its sibling checking
-    # this field's TYPE) is what keeps the two sides from silently drifting
-    # apart on the numbering that makes this safe.
-    status: uint32
-    detail: str
-    waypoints: sequence[Waypoint]
-    path_length_m: float
-    plan_wall_time_s: float
-    applied_time_budget_s: float
-    stats: SearchStats
-    planner_version: str
-    config_hash: str
-
-
-# --- dịch giữa kiểu trên dây và kiểu nội bộ ----------------------------------
-
-
-def _ring(polygon: Polygon) -> tuple[msg.Point, ...]:
-    return tuple((v.x, v.y) for v in polygon.vertices)
-
-
-def _to_domain(wire: WireRequest) -> msg.PlanRequest:
-    return msg.PlanRequest(
-        request_id=bytes(wire.request_id),
-        idl_version=int(wire.idl_version),
-        start=(wire.start.x, wire.start.y),
-        start_heading_deg=wire.start_heading_deg,
-        goal=(wire.goal.x, wire.goal.y),
-        goal_heading_deg=wire.goal_heading_deg,
-        is_goal_heading_free=wire.is_goal_heading_free,
-        islands=tuple(_ring(p) for p in wire.islands),
-        dynamic_obstacles=tuple(
-            msg.Circle(center=(c.center.x, c.center.y), radius_m=c.radius_m)
-            for c in wire.dynamic_obstacles
-        ),
-        safezones=tuple(_ring(p) for p in wire.safezones),
-        use_preloaded_map=wire.use_preloaded_map,
-        limits=msg.VehicleLimits(
-            wire.limits.turn_radius_m,
-            wire.limits.l0_m,
-            wire.limits.dss_m,
-            wire.limits.safe_margin_m,
-            wire.limits.alpha_max_deg,
-        ),
-        budget=msg.SearchBudget(wire.budget.time_budget_s),
-    )
-
-
-def _to_wire_request(request: msg.PlanRequest) -> WireRequest:
-    def rings(source: tuple[tuple[msg.Point, ...], ...]) -> list[Polygon]:
-        """Convert a tuple of rings to a list of Polygons.
-
-        Args:
-            source: The source tuple of rings.
-
-        Returns:
-            list[Polygon]: The list of polygons.
-        """
-        return [Polygon(vertices=[Point2D(x, y) for x, y in ring]) for ring in source]
-
-    return WireRequest(
-        request_id=list(request.request_id),
-        idl_version=request.idl_version,
-        start=Point2D(*request.start),
-        start_heading_deg=request.start_heading_deg,
-        goal=Point2D(*request.goal),
-        goal_heading_deg=request.goal_heading_deg,
-        is_goal_heading_free=request.is_goal_heading_free,
-        islands=rings(request.islands),
-        dynamic_obstacles=[
-            Circle(center=Point2D(*c.center), radius_m=c.radius_m)
-            for c in request.dynamic_obstacles
-        ],
-        safezones=rings(request.safezones),
-        use_preloaded_map=request.use_preloaded_map,
-        limits=VehicleLimits(
-            request.limits.turn_radius_m,
-            request.limits.l0_m,
-            request.limits.dss_m,
-            request.limits.safe_margin_m,
-            request.limits.alpha_max_deg,
-        ),
-        budget=SearchBudget(request.budget.time_budget_s),
-    )
-
-
-def _to_wire_reply(reply: msg.PlanReply) -> WireReply:
-    return WireReply(
-        request_id=list(reply.request_id),
-        idl_version=reply.idl_version,
-        status=int(reply.status),
-        detail=reply.detail,
-        waypoints=[
-            Waypoint(position=Point2D(*w.position), heading_deg=w.heading_deg)
-            for w in reply.waypoints
-        ],
-        path_length_m=reply.path_length_m,
-        plan_wall_time_s=reply.plan_wall_time_s,
-        applied_time_budget_s=reply.applied_time_budget_s,
-        stats=SearchStats(
-            reply.stats.iterations,
-            reply.stats.open_set_size,
-            reply.stats.is_search_failed,
-            reply.stats.is_budget_bound,
-        ),
-        planner_version=reply.planner_version,
-        config_hash=reply.config_hash,
-    )
-
-
-def _from_wire_reply(wire: WireReply) -> msg.PlanReply:
-    return msg.PlanReply(
-        request_id=bytes(wire.request_id),
-        idl_version=int(wire.idl_version),
-        status=msg.PlanStatus(int(wire.status)),
-        detail=wire.detail,
-        waypoints=tuple(
-            msg.Waypoint(
-                position=(w.position.x, w.position.y), heading_deg=w.heading_deg
-            )
-            for w in wire.waypoints
-        ),
-        path_length_m=wire.path_length_m,
-        plan_wall_time_s=wire.plan_wall_time_s,
-        applied_time_budget_s=wire.applied_time_budget_s,
-        stats=msg.SearchStats(
-            int(wire.stats.iterations),
-            int(wire.stats.open_set_size),
-            wire.stats.is_search_failed,
-            wire.stats.is_budget_bound,
-        ),
-        planner_version=wire.planner_version,
-        config_hash=wire.config_hash,
-    )
-
-
-def _internal_error_reply(request_id: bytes, detail: str) -> msg.PlanReply:
-    """Reply PLAN_INTERNAL_ERROR mang đúng ``request_id``, để client không treo.
-
-    Dùng khi handler ném lỗi, hoặc khi dịch reply của nó ra kiểu trên dây thất
-    bại - cả hai đều không được phép làm chết vòng ``serve``.
-
-    ``planner_version`` / ``config_hash`` / ``applied_time_budget_s`` là giá
-    trị THẬT (qua ``vtx_service.runtime``, module không phụ thuộc DDS), không
-    phải chuỗi rỗng / ``0.0`` mặc định: mục 4.4 của spec tồn tại để client
-    phân biệt được "input khác" với "bản build/cấu hình khác", và ``0.0`` ở
-    ``applied_time_budget_s`` không hề trung tính - nó ĐỌC ĐƯỢC như "client
-    không đề nghị gì" (xem ``runtime.effective_time_budget_s``), nên một
-    placeholder ở đây không chỉ thiếu thông tin mà còn SAI.
-    """
-    return msg.PlanReply(
-        request_id=request_id,
-        idl_version=msg.IDL_VERSION,
-        status=msg.PlanStatus.INTERNAL_ERROR,
-        detail=detail,
-        waypoints=(),
-        path_length_m=0.0,
-        plan_wall_time_s=0.0,
-        applied_time_budget_s=runtime.effective_time_budget_s(),
-        stats=msg.SearchStats(0, 0, True, False),
-        planner_version=runtime.planner_version(),
-        config_hash=runtime.config_hash(),
-    )
-
-
-def _invalid_request_reply(request_id: bytes, detail: str) -> msg.PlanReply:
-    """Reply PLAN_INVALID_REQUEST khi wire request không dịch được sang domain.
-
-    ``_to_domain`` dựng ``msg.VehicleLimits`` / ``msg.Circle`` / ``msg.
-    PlanRequest``, và ``__post_init__`` của chúng validate - nên một
-    ``ValueError`` thoát ra từ đó nghĩa là client gửi hình học vô lý (ví dụ
-    ``VehicleLimits`` mặc định toàn 0, lỗi client dễ mắc nhất). Đây PHẢI là
-    PLAN_INVALID_REQUEST theo mục 6 của spec, không phải INTERNAL_ERROR - và
-    thông báo gốc (``turn_radius_m phải dương`` và tương tự) được giữ nguyên
-    văn trong ``detail``, vì đó là thứ client cần để sửa request.
-    """
-    return msg.PlanReply(
-        request_id=request_id,
-        idl_version=msg.IDL_VERSION,
-        status=msg.PlanStatus.INVALID_REQUEST,
-        detail=detail,
-        waypoints=(),
-        path_length_m=0.0,
-        plan_wall_time_s=0.0,
-        applied_time_budget_s=runtime.effective_time_budget_s(),
-        stats=msg.SearchStats(0, 0, True, False),
-        planner_version=runtime.planner_version(),
-        config_hash=runtime.config_hash(),
-    )
-
-
-# --- transport ----------------------------------------------------------------
-
-
-class DdsTransport:
-    """Hai topic, tương quan bằng ``request_id``.
-
-    Cùng một lớp đóng cả hai vai: :meth:`serve` cho phía service, :meth:`request`
-    cho phía client trong test và công cụ chẩn đoán.
-    """
-
-    def __init__(self, domain_id: int = 0) -> None:
-        """Initialize DdsTransport.
-
-        Args:
-            domain_id: DDS domain ID.
-        """
-        self._participant = DomainParticipant(domain_id)
-        self._request_topic = Topic(
-            self._participant, REQUEST_TOPIC, WireRequest, qos=REQUEST_QOS
-        )
-        self._reply_topic = Topic(
-            self._participant, REPLY_TOPIC, WireReply, qos=REPLY_QOS
-        )
-        publisher = Publisher(self._participant)
-        subscriber = Subscriber(self._participant)
-        self._request_writer = DataWriter(
-            publisher, self._request_topic, qos=REQUEST_QOS
-        )
-        self._request_reader = DataReader(
-            subscriber, self._request_topic, qos=REQUEST_QOS
-        )
-        self._reply_writer = DataWriter(publisher, self._reply_topic, qos=REPLY_QOS)
-        self._reply_reader = DataReader(subscriber, self._reply_topic, qos=REPLY_QOS)
-        self._running = False
-
-    def serve(self, handler: Callable[[msg.PlanRequest], msg.PlanReply]) -> None:
-        """Nhận request và trả lời, tuần tự, tới khi :meth:`close`.
-
-        Args:
-            handler: Hàm nhận một request và trả về một reply. Được gọi lần
-                lượt, không bao giờ đồng thời.
-        """
-        condition = ReadCondition(
-            self._request_reader,
-            ViewState.Any | InstanceState.Alive | SampleState.NotRead,
-        )
-        waitset = WaitSet(self._participant)
-        waitset.attach(condition)
-        self._running = True
-
-        while self._running:
-            if waitset.wait(duration(milliseconds=200)) == 0:
-                continue
-            for wire in self._request_reader.take(N=16, condition=condition):
-                if not self._running:
-                    return
-                self._handle_one(wire, handler)
-
-    def _handle_one(
-        self, wire: object, handler: Callable[[msg.PlanRequest], msg.PlanReply]
+    def __init__(
+        self,
+        server_url: str = DEFAULT_NATS_SERVER,
+        subject: str = DEFAULT_SUBJECT,
+        queue: str = DEFAULT_QUEUE_GROUP,
     ) -> None:
-        """Xử lý một request, không bao giờ để lỗi thoát ra ngoài.
+        """Khởi tạo NatsTransport.
 
-        Bốn tầng lỗi tách bạch, phân loại KHÁC nhau:
-
-        - ``_to_domain`` ném ``ValueError`` - client gửi hình học vô lý (vd.
-          ``VehicleLimits`` toàn 0). Đây là PLAN_INVALID_REQUEST, giữ nguyên
-          thông báo validate gốc (mục 6 của spec) - KHÔNG rơi vào catch chung
-          bên dưới, nơi nó từng bị nuốt thành INTERNAL_ERROR mất hết thông tin.
-        - ``_to_domain`` ném bất kỳ lỗi KHÁC ``ValueError`` - PLAN_INTERNAL_ERROR.
-          (R25) Hẹp catch ở nhánh trên từ ``Exception`` xuống ``ValueError`` mở
-          lại đúng lỗ hổng R18(a) đã đóng: mọi ``__post_init__`` hiện tại chỉ
-          ném ``ValueError``, nên lỗ hổng này còn ẩn - nhưng nếu một validator
-          sau này ném thứ khác (``TypeError``, ``KeyError``...), nó sẽ THOÁT
-          KHỎI ``_handle_one`` hoàn toàn (``serve()`` không bọc lời gọi này) và
-          hạ vòng phục vụ VĨNH VIỄN. Bất biến "không ngoại lệ nào hạ được
-          ``serve()``" phải giữ ở CẢ HAI hướng phân loại, không chỉ hướng vừa
-          sửa.
-        - ``handler`` ném lỗi bất kỳ khác - PLAN_INTERNAL_ERROR.
-        - dịch reply (của handler hoặc của ba nhánh trên) ra kiểu trên dây
-          thất bại - cũng PLAN_INTERNAL_ERROR.
-
-        Không nhánh nào được phép hạ cả service: mọi lỗi trả về một reply
-        mang đúng ``request_id`` rồi vòng lặp tiếp tục. Nếu dựng CẢ reply lỗi
-        cũng thất bại, log rồi bỏ qua mẫu tin này - vòng lặp vẫn phải sống tới
-        mẫu tiếp theo.
+        Args:
+            server_url: Địa chỉ NATS server kết nối tới.
+            subject: Subject nhận request lập lịch.
+            queue: Tên queue group cân bằng tải.
         """
-        request_id = bytes(wire.request_id)  # type: ignore[attr-defined]
-        try:
-            domain_request = _to_domain(wire)  # type: ignore[arg-type]
-        except ValueError as exc:
-            reply = _invalid_request_reply(request_id, str(exc))
-        except Exception:
-            logger.exception(
-                f"[transport] request {request_id.hex()} lỗi khi dịch request từ dây:"
-            )
-            reply = _internal_error_reply(request_id, "internal error khi dịch request")
-        else:
-            try:
-                reply = handler(domain_request)
-            except Exception:
-                logger.exception(
-                    f"[transport] request {request_id.hex()} lỗi khi xử lý:"
-                )
-                reply = _internal_error_reply(
-                    request_id, "internal error khi xử lý request"
-                )
+        self.server_url = server_url
+        self.subject = subject
+        self.queue = queue
+        self.nc: NatsClientConnection | None = None
+        self._sub = None
+        self._shutdown_event: asyncio.Event | None = None
+        self._executor = ThreadPoolExecutor(thread_name_prefix="nats-worker")
 
-        try:
-            wire_reply = _to_wire_reply(reply)
-        except Exception:
-            logger.exception(
-                f"[transport] request {request_id.hex()} lỗi khi dịch reply ra kiểu "
-                "trên dây:"
-            )
-            try:
-                wire_reply = _to_wire_reply(
-                    _internal_error_reply(request_id, "internal error khi dịch reply")
-                )
-            except Exception:
-                logger.exception(
-                    f"[transport] request {request_id.hex()} lỗi cả khi dựng reply lỗi:"
-                )
+    async def start(
+        self, handler: Callable[[msg.PlanRequest], msg.PlanReply]
+    ) -> None:
+        """Kết nối NATS và đăng ký lắng nghe request với Queue Group.
+
+        Args:
+            handler: Hàm xử lý nghiệp vụ PlanRequest -> PlanReply.
+        """
+        self.nc = await nats.connect(self.server_url)
+        logger.info("đã kết nối NATS server tại %s", self.server_url)
+
+        loop = asyncio.get_running_loop()
+
+        async def on_message(nats_msg: Msg) -> None:
+            """Xử lý tin nhắn đến từ NATS."""
+            if not nats_msg.reply:
+                logger.warning("nhận message không có reply inbox, bỏ qua")
                 return
 
-        try:
-            self._reply_writer.write(wire_reply)
-        except Exception:
-            logger.exception(
-                f"[transport] request {request_id.hex()} lỗi khi ghi reply:"
-            )
+            try:
+                request = codec.decode_request(nats_msg.data)
+            except Exception as exc:
+                logger.error("lỗi giải mã Protobuf request: %s", exc)
+                error_reply = msg.PlanReply(
+                    request_id=b"\x00" * 16,
+                    idl_version=msg.IDL_VERSION,
+                    status=msg.PlanStatus.INVALID_REQUEST,
+                    detail=f"Lỗi giải mã Protobuf request: {exc}",
+                    waypoints=(),
+                    path_length_m=0.0,
+                    plan_wall_time_s=0.0,
+                    applied_time_budget_s=0.0,
+                    stats=msg.SearchStats(
+                        iterations=0,
+                        open_set_size=0,
+                        is_search_failed=True,
+                        is_budget_bound=False,
+                    ),
+                    planner_version="unknown",
+                    config_hash="unknown",
+                )
+                await self.nc.publish(nats_msg.reply, codec.encode_reply(error_reply))
+                return
 
-    def wait_for_service(self, timeout_s: float) -> bool:
-        """Chờ tới khi có một service khớp trên topic request.
+            # Chạy handler CPU-bound trong executor để không block asyncio loop
+            try:
+                reply = await loop.run_in_executor(
+                    self._executor, handler, request
+                )
+            except Exception as exc:
+                logger.exception("lỗi ngoại lệ trong quá trình xử lý: %s", exc)
+                reply = msg.PlanReply(
+                    request_id=request.request_id,
+                    idl_version=request.idl_version,
+                    status=msg.PlanStatus.INTERNAL_ERROR,
+                    detail=f"Ngoại lệ xử lý nội bộ: {exc}",
+                    waypoints=(),
+                    path_length_m=0.0,
+                    plan_wall_time_s=0.0,
+                    applied_time_budget_s=0.0,
+                    stats=msg.SearchStats(
+                        iterations=0,
+                        open_set_size=0,
+                        is_search_failed=True,
+                        is_budget_bound=False,
+                    ),
+                    planner_version="unknown",
+                    config_hash="unknown",
+                )
 
-        Ghi trước khi khớp là mất mẫu tin trong im lặng với QoS VOLATILE.
+            encoded_reply = codec.encode_reply(reply)
+            if self.nc is not None:
+                await self.nc.publish(nats_msg.reply, encoded_reply)
 
-        Args:
-            timeout_s: Thời gian chờ tối đa.
+        self._sub = await self.nc.subscribe(
+            self.subject, queue=self.queue, cb=on_message
+        )
+        await self.nc.flush()
+        logger.info(
+            "đang lắng nghe trên subject '%s' (queue group '%s')",
+            self.subject,
+            self.queue,
+        )
 
-        Returns:
-            ``True`` nếu đã khớp.
-        """
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
-            if self._request_writer.get_publication_matched_status().current_count > 0:
-                # Cho reader phía kia kịp khớp nốt chiều còn lại.
-                time.sleep(0.5)
-                return True
-            time.sleep(0.1)
-        return False
+    async def close(self) -> None:
+        """Đóng kết nối NATS và dọn dẹp tài nguyên."""
+        if self._shutdown_event is not None:
+            self._shutdown_event.set()
 
-    def request(
-        self, request: msg.PlanRequest, timeout_s: float = 30.0
+        if self.nc is not None and not self.nc.is_closed:
+            logger.info("đang đóng kết nối NATS...")
+            await self.nc.drain()
+            await self.nc.close()
+            self.nc = None
+        self._executor.shutdown(wait=False)
+
+    async def run_forever(
+        self, handler: Callable[[msg.PlanRequest], msg.PlanReply]
+    ) -> None:
+        """Khởi động và duy trì vòng lặp phục vụ cho tới khi bị dừng."""
+        self._shutdown_event = asyncio.Event()
+        await self.start(handler)
+        await self._shutdown_event.wait()
+
+    def stop(self) -> None:
+        """Kích hoạt tín hiệu dừng service từ bên ngoài (đồng bộ)."""
+        if self._shutdown_event is not None:
+            self._shutdown_event.set()
+
+    def serve(
+        self, handler: Callable[[msg.PlanRequest], msg.PlanReply]
+    ) -> None:
+        """Hàm đồng bộ chạy service vòng lặp vô tận."""
+        asyncio.run(self.run_forever(handler))
+
+
+class NatsClient:
+    """Client NATS để gửi yêu cầu lập lịch và nhận kết quả.
+
+    Attributes:
+        server_url: Địa chỉ NATS server.
+        subject: Subject gửi request.
+        nc: Kết nối NATS client.
+    """
+
+    def __init__(
+        self,
+        server_url: str = DEFAULT_NATS_SERVER,
+        subject: str = DEFAULT_SUBJECT,
+    ) -> None:
+        """Khởi tạo NatsClient."""
+        self.server_url = server_url
+        self.subject = subject
+        self.nc: NatsClientConnection | None = None
+
+    async def connect(self) -> None:
+        """Kết nối tới NATS server."""
+        if self.nc is None or self.nc.is_closed:
+            self.nc = await nats.connect(self.server_url)
+
+    async def close(self) -> None:
+        """Đóng kết nối NATS client."""
+        if self.nc is not None and not self.nc.is_closed:
+            await self.nc.close()
+            self.nc = None
+
+    async def request_plan(
+        self, request: msg.PlanRequest, timeout_s: float = 6.0
     ) -> msg.PlanReply:
-        """Gửi một request và chờ reply khớp ``request_id``.
+        """Gửi PlanRequest qua NATS và đợi PlanReply phản hồi.
 
         Args:
-            request: Mission cần gửi.
-            timeout_s: Thời gian chờ tối đa.
+            request: Yêu cầu lập lịch gửi đi.
+            timeout_s: Thời gian chờ tối đa (giây).
 
         Returns:
-            Reply tương ứng.
+            PlanReply: Kết quả nhận được từ service.
 
         Raises:
-            TimeoutError: Khi không có reply khớp trong thời gian chờ.
+            RuntimeError: Nếu client chưa được kết nối.
+            TimeoutError: Nếu quá thời gian timeout mà không có phản hồi.
         """
-        condition = ReadCondition(
-            self._reply_reader,
-            ViewState.Any | InstanceState.Alive | SampleState.NotRead,
+        if self.nc is None or self.nc.is_closed:
+            await self.connect()
+        assert self.nc is not None
+
+        encoded_req = codec.encode_request(request)
+        msg_reply = await self.nc.request(
+            self.subject, encoded_req, timeout=timeout_s
         )
-        waitset = WaitSet(self._participant)
-        waitset.attach(condition)
+        return codec.decode_reply(msg_reply.data)
 
-        self._request_writer.write(_to_wire_request(request))
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
-            if waitset.wait(duration(milliseconds=200)) == 0:
-                continue
-            for wire in self._reply_reader.take(N=16, condition=condition):
-                if bytes(wire.request_id) == request.request_id:
-                    return _from_wire_reply(wire)
-        raise TimeoutError(f"không có reply cho {request.request_id.hex()[:8]}")
+    def request_plan_sync(
+        self, request: msg.PlanRequest, timeout_s: float = 6.0
+    ) -> msg.PlanReply:
+        """Wrapper đồng bộ của request_plan."""
+        async def _run() -> msg.PlanReply:
+            await self.connect()
+            try:
+                return await self.request_plan(request, timeout_s=timeout_s)
+            finally:
+                await self.close()
 
-    def close(self) -> None:
-        """Dừng vòng phục vụ.
-
-        Chỉ hạ cờ ``_running`` để :meth:`serve` thoát ở lượt ``wait`` tiếp
-        theo (tối đa 200 ms) - KHÔNG giải phóng participant/topic/writer/
-        reader. Chúng sống tới khi tiến trình thoát và hệ điều hành thu hồi;
-        đây là service một-tiến-trình chạy tới khi bị dừng, không phải một
-        transport được tạo/hủy nhiều lần trong đời một tiến trình, nên không
-        có gì cần dọn sớm hơn thế.
-        """
-        self._running = False
+        return asyncio.run(_run())
