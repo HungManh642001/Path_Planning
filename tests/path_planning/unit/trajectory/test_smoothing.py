@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+from path_planning import config
 from path_planning.collision.detector import CollisionDetector
 from path_planning.trajectory.smoothing import smooth_path
 from path_planning.types import PlannerState, Point, PreprocessedScenario
@@ -32,45 +33,50 @@ def test_smooth_path_with_less_than_three_waypoints_returns_unchanged_path(
     assert smoothed == short_path
 
 
-def test_smooth_path_shortcuts_collinear_intermediate_waypoints() -> None:
-    """Kiểm tra quy hoạch động loại bỏ các điểm thẳng hàng không cần thiết trên đường bay."""
-    # Arrange: Scenario rỗng hoàn toàn không có vật cản trên đường bay
+def test_smooth_path_drops_straight_pass_through_waypoints() -> None:
+    """Kiểm tra quy hoạch động loại bỏ các điểm đi thẳng không đổi hướng trên đường bay."""
+    # Arrange: Tạo kịch bản trống với điểm rẽ 90 độ và 3 điểm thẳng hàng trung gian
+    corner: Point = (20000.0, 0.0)
+    goal: Point = (20000.0, 200000.0)
+    pass_through: list[Point] = [
+        (20000.0, 40000.0),
+        (20000.0, 80000.0),
+        (20000.0, 120000.0),
+    ]
     empty_scenario: PreprocessedScenario = {
-        "start_pos": (50000.0, 50000.0),
-        "goal_pos": (450000.0, 450000.0),
-        "start_state": {"waypoint": (50000.0, 50000.0), "heading": math.pi / 4},
-        "goal_state": {"waypoint": (450000.0, 450000.0), "heading": math.pi / 4},
-        "start_heading": math.pi / 4,
-        "goal_heading": math.pi / 4,
-        "map_bounds": (500000.0, 500000.0),
+        "start_pos": (0.0, 0.0),
+        "goal_pos": goal,
+        "start_state": {"waypoint": (0.0, 0.0), "heading": 0.0},
+        "goal_state": {"waypoint": goal, "heading": None},
+        "start_heading": 0.0,
+        "goal_heading": None,
+        "map_bounds": (config.MAP_WIDTH, config.MAP_HEIGHT),
         "safezones": None,
         "circle_obstacles": [],
         "polygon_obstacles": [],
         "all_obstacles": [],
-        "alpha_max_rad": math.pi / 2,
+        "alpha_max_rad": math.radians(90.0),
     }
     detector = CollisionDetector(empty_scenario)
-    origin: Point = (50000.0, 50000.0)
-    target: Point = (450000.0, 450000.0)
-    # 4 điểm nằm thẳng hàng từ (60000, 60000) đến (400000, 400000)
-    collinear_path: list[PlannerState] = [
-        ((60000.0, 60000.0), math.pi / 4),
-        ((120000.0, 120000.0), math.pi / 4),
-        ((250000.0, 250000.0), math.pi / 4),
-        ((400000.0, 400000.0), math.pi / 4),
-    ]
+    raw_path: list[PlannerState] = (
+        [(corner, math.pi / 2)]
+        + [(w, math.pi / 2) for w in pass_through]
+        + [(goal, math.pi / 2)]
+    )
 
     # Act
     smoothed = smooth_path(
-        collinear_path,
-        origin=origin,
-        target=target,
+        raw_path,
+        origin=(0.0, 0.0),
+        target=goal,
         collision_detector=detector,
-        start_heading=math.pi / 4,
-        goal_heading=math.pi / 4,
+        start_heading=0.0,
+        goal_heading=None,
+        is_goal_heading_free=True,
     )
 
     # Assert
-    assert len(smoothed) < len(collinear_path)
-    assert smoothed[0][0] == collinear_path[0][0]
-    assert smoothed[-1][0] == collinear_path[-1][0]
+    kept_points = [w for w, _ in smoothed]
+    for pt in pass_through:
+        assert pt not in kept_points
+    assert corner in kept_points
