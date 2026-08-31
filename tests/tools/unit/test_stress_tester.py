@@ -96,7 +96,7 @@ async def test_nats_stress_tester_handles_errors_and_timeouts() -> None:
 
     call_index = 0
 
-    async def side_effect_request(*args, **kwargs) -> PlanReply:
+    async def side_effect_request(*args: object, **kwargs: object) -> PlanReply:
         nonlocal call_index
         idx = call_index
         call_index += 1
@@ -135,7 +135,7 @@ async def test_nats_stress_tester_concurrency_limiting() -> None:
     max_in_flight = 0
     in_flight_lock = asyncio.Lock()
 
-    async def delayed_request(*args, **kwargs) -> PlanReply:
+    async def delayed_request(*args: object, **kwargs: object) -> PlanReply:
         nonlocal current_in_flight, max_in_flight
         async with in_flight_lock:
             current_in_flight += 1
