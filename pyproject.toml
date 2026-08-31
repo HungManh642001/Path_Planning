@@ -103,6 +103,13 @@ reportUnknownMemberType = false
 reportUnknownArgumentType = false
 
 [[tool.pyright.executionEnvironments]]
+root = "src/tools"
+extraPaths = ["src"]
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+
+
+[[tool.pyright.executionEnvironments]]
 root = "src/service"
 extraPaths = ["src"]
 reportUnknownMemberType = false
