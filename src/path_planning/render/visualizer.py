@@ -22,7 +22,7 @@ from matplotlib.axes import Axes
 from matplotlib.patches import Circle as MplCircle, Polygon as MplPolygon, Rectangle
 
 from path_planning import config
-from path_planning.render import trajectory as tr
+from path_planning.render import sampling
 
 
 logger = logging.getLogger(__name__)
@@ -353,8 +353,8 @@ def _draw_trajectory(
 
     turn_radius = preprocessed.get("turn_radius", config.R)
     # Span the full mission O..T (the planner path covers only W_1..W_{n-1}).
-    full = tr.build_full_path(path, preprocessed)
-    samples = tr.sample_trajectory(full, turn_radius, mode=trajectory_mode)
+    full = sampling.build_full_path(path, preprocessed)
+    samples = sampling.sample_trajectory(full, turn_radius, mode=trajectory_mode)
     if len(samples) < 2:
         _draw_waypoints_only(ax, waypoints)
         return
@@ -378,7 +378,7 @@ def _draw_trajectory(
 
     # Mark where each turn arc begins and ends (small dots).
     if trajectory_mode == "dubins":
-        for j, turn in enumerate(tr.turn_markers(full, turn_radius)):
+        for j, turn in enumerate(sampling.turn_markers(full, turn_radius)):
             ax.plot(
                 *turn["start"],
                 "o",
@@ -464,7 +464,7 @@ def _info_footer(
     if path:
         # Total flown distance over the FULL mission O -> W1 ... W_{n-1} -> T
         # (straight chords, the same measure performance_eval uses).
-        full_mission = tr.build_full_path(path, preprocessed)
+        full_mission = sampling.build_full_path(path, preprocessed)
         total_km = (
             sum(
                 math.dist(full_mission[i][0], full_mission[i + 1][0])

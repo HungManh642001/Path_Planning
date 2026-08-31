@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from shapely import Point as ShapelyPoint, Polygon as ShapelyPolygon
 
 from path_planning import config
-from path_planning.geometry import spatial as su
+from path_planning.geometry import spatial
 from path_planning.types import (
     CircleGeometry,
     MapBounds,
@@ -359,10 +359,12 @@ def generate_random_scenario(seed: int = 42) -> Scenario:
             random.uniform(width * 0.1, width * 0.9),
             random.uniform(height * 0.1, height * 0.9),
         )
-        if su.distance(start, goal) > 400000:  # Ensure start and goal are not too close
+        if (
+            spatial.distance(start, goal) > 400000
+        ):  # Ensure start and goal are not too close
             break
 
-    heading_start_to_goal = su.angle_to_heading(start, goal)
+    heading_start_to_goal = spatial.angle_to_heading(start, goal)
 
     topologies: tuple[Topology, ...] = ("random", "center_cluster", "wall_block")
     topology = random.choices(topologies, weights=[0.1, 0.45, 0.45])[0]

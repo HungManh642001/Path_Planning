@@ -12,9 +12,9 @@ import math
 import time
 from typing import Any
 
-from path_planning import planner as astar
-from path_planning.scenario import preprocessing as prep
-from path_planning.trajectory import mission as mission
+from path_planning import planner
+from path_planning.scenario import preprocessing
+from path_planning.trajectory import mission_path
 from service.vtx_service.angles import math_rad_to_bearing_deg
 from service.vtx_service.map_file import PreloadedMap
 from service.vtx_service.messages import (
@@ -43,35 +43,26 @@ _REASON_TO_STATUS = {
 
 
 def plan(request: PlanRequest, preloaded: PreloadedMap | None = None) -> PlanReply:
-    """Lập kế hoạch cho một mission.
-
-    Args:
-        request: Mission cần giải, toạ độ mét trong hệ Oxy.
-        preloaded: Bản đồ nền tĩnh, hoặc ``None`` khi service không nạp bản đồ
-            nào. Chỉ dùng khi ``request.use_preloaded_map`` bật.
-
-    Returns:
-        Đường bay đầy đủ ``O..T``, kèm trạng thái, bộ đếm search và nhận dạng
-        phiên bản/cấu hình.
-    """
+    """Điểm vào duy nhất cho một yêu cầu lập kế hoạch đường bay."""
     started = time.perf_counter()
-
     if request.idl_version != IDL_VERSION:
         return _refusal(
-            request, f"idl_version {request.idl_version} != {IDL_VERSION}", started
+            request,
+            f"sai phiên bản IDL (nhận {request.idl_version}, cần {IDL_VERSION})",
+            started,
         )
 
     if request.use_preloaded_map:
         if preloaded is None:
             return _refusal(
                 request,
-                "yêu cầu preloaded map nhưng service không nạp bản đồ nào",
+                "request đòi use_preloaded_map nhưng service không có bản đồ nền",
                 started,
             )
         request = preloaded.merged_into(request)
 
     try:
-        preprocessed = prep.prepare_scenario(
+        preprocessed = preprocessing.prepare_scenario(
             build_scenario(request),
             turn_radius=request.limits.turn_radius_m,
             l0=request.limits.l0_m,
@@ -86,7 +77,7 @@ def plan(request: PlanRequest, preloaded: PreloadedMap | None = None) -> PlanRep
     # nhất; effective_time_budget_s quyết định nó được nhận nguyên vẹn, rơi về
     # mặc định, hay bị kẹp. Reply báo cáo lại đúng con số này.
     budget_s = effective_time_budget_s(request.budget.time_budget_s)
-    result = astar.plan_trajectory(preprocessed, time_budget_s=budget_s)
+    result = planner.plan_trajectory(preprocessed, time_budget_s=budget_s)
 
     status, detail = _classify(result)
     return PlanReply(
@@ -116,7 +107,7 @@ def _full_path(result: dict[str, Any], preprocessed: dict[str, Any]) -> list[Any
     """Đường bay đầy đủ ``O..T``, hoặc rỗng khi không có đường nào."""
     if not result["path"]:
         return []
-    return mission.full_mission_path(result["path"], preprocessed)
+    return mission_path.full_mission_path(result["path"], preprocessed)
 
 
 def _waypoints_out(

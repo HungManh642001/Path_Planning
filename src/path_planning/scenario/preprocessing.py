@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 
 from path_planning import config
-from path_planning.geometry import spatial as su
+from path_planning.geometry import spatial
 from path_planning.types import (
     CircleGeometry,
     GoalState,
@@ -76,7 +76,9 @@ def inflate_obstacles(
             inflated.append(circle)
         else:
             polygon = obstacle.copy()
-            polygon["polygon"] = su.inflate_polygon(obstacle["polygon"], safe_margin)
+            polygon["polygon"] = spatial.inflate_polygon(
+                obstacle["polygon"], safe_margin
+            )
             inflated.append(polygon)
     return inflated
 

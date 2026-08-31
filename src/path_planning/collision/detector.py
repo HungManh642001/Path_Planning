@@ -15,8 +15,8 @@ from shapely.ops import unary_union
 from shapely.prepared import PreparedGeometry, prep as shp_prep
 
 from path_planning import config
-from path_planning.geometry import arc as ag, spatial as su
-from path_planning.validation import oracle as pv
+from path_planning.geometry import arc, spatial
+from path_planning.validation import oracle
 
 
 if TYPE_CHECKING:
@@ -108,7 +108,7 @@ class CollisionDetector:
                 or cy - radius > y1
             ):
                 continue
-            if su.point_to_line_distance((cx, cy), p1, p2) < radius:
+            if spatial.point_to_line_distance((cx, cy), p1, p2) < radius:
                 return False
 
         line: LineString | None = None
@@ -139,7 +139,7 @@ class CollisionDetector:
             True if the fillet curve does not intersect any obstacles; False otherwise.
         """
         prev = (w[0] - math.cos(h_in), w[1] - math.sin(h_in))
-        pts = pv.arc_points(
+        pts = oracle.arc_points(
             prev, w, w_next, turn_radius=self.turn_radius, n=config.ARC_CHECK_SAMPLES
         )
         if not pts:
@@ -160,7 +160,7 @@ class CollisionDetector:
                 continue
             center = (cx, cy)
             for j in range(len(pts) - 1):
-                if su.point_to_line_distance(center, pts[j], pts[j + 1]) < radius:
+                if spatial.point_to_line_distance(center, pts[j], pts[j + 1]) < radius:
                     return False
 
         line: LineString | None = None
@@ -204,11 +204,11 @@ class CollisionDetector:
                 return False
             theta = math.atan2(dy, dx)
             half = math.asin(min(1.0, r2 / d))
-            if ag.has_angular_overlap(theta - half, theta + half, lo, hi):
+            if arc.has_angular_overlap(theta - half, theta + half, lo, hi):
                 return False
 
         if self.poly_bboxes:
-            pts = ag.sector_polygon(center, r_in, r_out, lo, hi)
+            pts = arc.sector_polygon(center, r_in, r_out, lo, hi)
             qx0 = min(p[0] for p in pts)
             qx1 = max(p[0] for p in pts)
             qy0 = min(p[1] for p in pts)
@@ -235,7 +235,7 @@ class CollisionDetector:
         """
         if tol is None:
             tol = self.construct_delta + config.GEOM_EPS_M
-        return ag.is_point_on_any_circle_boundary(
+        return arc.is_point_on_any_circle_boundary(
             point, self.scenario["circle_obstacles"], tol
         )
 

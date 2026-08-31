@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
-from path_planning.geometry import spatial as su
+from path_planning.geometry import spatial
 from path_planning.types import (
     CircleGeometry,
     PlannerState,
@@ -135,7 +135,7 @@ def departure_point(
     Returns:
         Tọa độ điểm rời (x, y), hoặc None nếu target nằm bên trong đường tròn.
     """
-    for dep in su.circle_tangent_points(target, center, radius):
+    for dep in spatial.circle_tangent_points(target, center, radius):
         nx = (dep[0] - center[0]) / radius
         ny = (dep[1] - center[1]) / radius
         if (-sense * ny) * (target[0] - dep[0]) + (sense * nx) * (

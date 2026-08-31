@@ -17,14 +17,14 @@ from shapely.prepared import PreparedGeometry
 
 from path_planning import config
 from path_planning.collision.detector import CollisionDetector
-from path_planning.geometry import spatial as su
+from path_planning.geometry import spatial
 from path_planning.search.astar import AstarSearchEngine
 from path_planning.search.heuristic import euclidean_heuristic
 from path_planning.search.state import State
 from path_planning.search.successors import SuccessorGenerator
 from path_planning.trajectory.mission_path import full_mission_path
 from path_planning.trajectory.smoothing import smooth_path
-from path_planning.validation import oracle as pv
+from path_planning.validation import oracle
 
 
 if TYPE_CHECKING:
@@ -449,7 +449,7 @@ class KinodynamicAstar:
         self.raw_route = list(path)
         path = self.smooth_path(path)
         full = full_mission_path(path, self.scenario)
-        res = pv.path_is_valid(
+        res = oracle.path_is_valid(
             full,
             self.scenario["circle_obstacles"],
             self.scenario["polygon_obstacles"],
@@ -503,5 +503,5 @@ def plan_trajectory(
 
 
 # Aliases for test compatibility
-_angle_diff = su.angle_diff
+_angle_diff = spatial.angle_diff
 _MIN_STRAIGHT_M = config.MIN_STRAIGHT_M

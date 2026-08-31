@@ -12,10 +12,10 @@ try:
 except ImportError:
     import performance_eval as perf  # type: ignore
 
-from path_planning import config, planner as astar
+from path_planning import config, planner
 from path_planning.logger_config import setup_logging
-from path_planning.render import visualizer as viz
-from path_planning.scenario import preprocessing as prep
+from path_planning.render import visualizer
+from path_planning.scenario import preprocessing
 from path_planning.scenario.generator import generate_random_scenario
 
 
@@ -70,13 +70,13 @@ def run_scenario(scenario_func, scenario_name, seed=42, output_dir="results"):
         # Preprocess
         logger.info("  Preprocessing...")
         metrics.start_timer("preprocessing")
-        preprocessed = prep.prepare_scenario(scenario)
+        preprocessed = preprocessing.prepare_scenario(scenario)
         preprocessed_time = metrics.end_timer("preprocessing")
 
         # Plan trajectory
         logger.info("  Planning trajectory...")
         metrics.start_timer("planning")
-        result = astar.plan_trajectory(preprocessed, verbose=False)
+        result = planner.plan_trajectory(preprocessed, verbose=False)
         planning_time = metrics.end_timer("planning")
 
         # Record search statistics
@@ -92,7 +92,7 @@ def run_scenario(scenario_func, scenario_name, seed=42, output_dir="results"):
         metrics.start_timer("visualization")
 
         # Main trajectory plot
-        viz.plot_scenario(
+        visualizer.plot_scenario(
             scenario,
             preprocessed,
             result,

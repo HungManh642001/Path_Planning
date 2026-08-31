@@ -11,11 +11,11 @@ import logging
 import math
 import time
 
-from path_planning import config, planner as astar
-from path_planning.render import trajectory as tr
-from path_planning.scenario import preprocessing as prep
+from path_planning import config, planner
+from path_planning.render import sampling
+from path_planning.scenario import preprocessing
 from path_planning.scenario.generator import generate_random_scenario
-from path_planning.validation import oracle as pv
+from path_planning.validation import oracle
 
 
 logger = logging.getLogger(__name__)
@@ -28,32 +28,29 @@ SEEDS = [0, 1, 2, 3, 4, 6, 9]
 
 def _run(seed):
     scen = generate_random_scenario(seed=seed)
-    pre = prep.prepare_scenario(scen)
+    pre = preprocessing.prepare_scenario(scen)
     t0 = time.perf_counter()
-    res = astar.plan_trajectory(pre)
+    res = planner.plan_trajectory(pre)
     dt = time.perf_counter() - t0
     plen = 0.0
     valid = None
-    if res["success"] and res["path"]:
+    if res["is_success"] and res["path"]:
         for a, b in zip(res["path"][:-1], res["path"][1:], strict=False):
             plen += math.dist(a[0], b[0])
-        full = tr.build_full_path(res["path"], pre)
+        full = sampling.build_full_path(res["path"], pre)
         # Same verdict plan_trajectory reaches: INFLATED obstacles for straights
-        # AND arcs. This used to pass raw_circle_obstacles/raw_polygon_obstacles,
-        # which path_is_valid documents as a legacy escape hatch for reproducing
-        # the old inflation model -- it validates arcs against the uninflated
-        # obstacle, so a path dipping inside SAFE_MARGIN reads as valid here and
-        # invalid to the planner. Invisible today only because SAFE_MARGIN is 0.
-        valid, _reason = pv.path_is_valid(
+        # AND arcs.
+        valid_res = oracle.path_is_valid(
             full,
             pre["circle_obstacles"],
             pre["polygon_obstacles"],
-            config.R,
-            config.ALPHA_MAX_RAD,
-            config.L0,
-            config.DSS,
+            turn_radius=pre["turn_radius"],
+            alpha_max_rad=pre["alpha_max_rad"],
+            l0=config.L0,
+            dss=config.DSS,
         )
-    return res["success"], res["stats"]["iterations"], dt, plen, valid
+        valid = valid_res.is_ok
+    return res["is_success"], res["stats"]["iterations"], dt, plen, valid
 
 
 def main():

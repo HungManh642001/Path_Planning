@@ -10,7 +10,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from path_planning import config
-from path_planning.geometry import spatial as su
+from path_planning.geometry import spatial
 from path_planning.search.heuristic import euclidean_heuristic
 from path_planning.search.state import State
 
@@ -108,8 +108,8 @@ class AstarSearchEngine:
         if not self.is_goal_heading_free:
             goal_h = self.goal_state.heading
             if goal_h is not None:
-                travel = su.angle_to_heading(self.origin, self.target)
-                reversal = abs(su.angle_diff(goal_h, travel))
+                travel = spatial.angle_to_heading(self.origin, self.target)
+                reversal = abs(spatial.angle_diff(goal_h, travel))
                 self.shot_armed = reversal >= config.deg_to_rad(
                     config.GOAL_SHOT_MIN_REVERSAL_DEG
                 )
@@ -141,14 +141,16 @@ class AstarSearchEngine:
             if parent is None or parent.heading is None:
                 return False
             seg = math.dist(parent.waypoint, current.waypoint)
-            bearing = su.angle_to_heading(parent.waypoint, current.waypoint)
-            turn_at_prev = abs(su.angle_diff(bearing, parent.heading))
+            bearing = spatial.angle_to_heading(parent.waypoint, current.waypoint)
+            turn_at_prev = abs(spatial.angle_diff(bearing, parent.heading))
             return seg - self.turn_radius * math.tan(turn_at_prev / 2.0) >= self.dss
 
         goal_heading = self.goal_state.heading
         if goal_heading is None or current.heading is None:
             return False
-        return abs(su.angle_diff(goal_heading, current.heading)) <= self.alpha_build
+        return (
+            abs(spatial.angle_diff(goal_heading, current.heading)) <= self.alpha_build
+        )
 
     def reconstruct_path(self, state: State) -> list[PlannerState]:
         """Truy vết ngược các con trỏ parent về xuất phát để tạo chuỗi waypoint.

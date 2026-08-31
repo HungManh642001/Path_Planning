@@ -26,9 +26,9 @@ import random
 import time
 
 from path_planning import config
-from path_planning.geometry import spatial as su
-from path_planning.scenario import generator as mg, preprocessing as prep
-from path_planning.trajectory import mission as mission
+from path_planning.geometry import spatial
+from path_planning.scenario import generator, preprocessing
+from path_planning.trajectory import mission_path
 
 
 logger = logging.getLogger(__name__)
@@ -48,9 +48,9 @@ def make_scenario(seed, mode="free"):
             random.uniform(width * 0.1, width * 0.9),
             random.uniform(height * 0.1, height * 0.9),
         )
-        if 200000 < su.distance(start, goal) < 280000:
+        if 200000 < spatial.distance(start, goal) < 280000:
             break
-    heading_start_to_goal = su.angle_to_heading(start, goal)
+    heading_start_to_goal = spatial.angle_to_heading(start, goal)
     topology = random.choices(
         ["random", "center_cluster", "wall_block"], weights=[0.2, 0.3, 0.5]
     )[0]
@@ -71,7 +71,7 @@ def make_scenario(seed, mode="free"):
         cfg["goal_heading"] = heading_start_to_goal + random.Random(
             seed + 1000000
         ).uniform(-math.pi / 2, math.pi / 2)
-    return mg.create_scenario(cfg)
+    return generator.create_scenario(cfg)
 
 
 def _load_planner(name):
@@ -83,7 +83,7 @@ def _load_planner(name):
 
 
 def _full_length(module, path, pre):
-    full = mission.full_mission_path(path, pre)
+    full = mission_path.full_mission_path(path, pre)
     return sum(math.dist(full[i][0], full[i + 1][0]) for i in range(len(full) - 1))
 
 
@@ -128,7 +128,7 @@ def run(args):
     results = {}
     t_all = time.perf_counter()
     for seed in seeds:
-        pre = prep.prepare_scenario(make_scenario(seed, mode=args.mode))
+        pre = preprocessing.prepare_scenario(make_scenario(seed, mode=args.mode))
         t0 = time.perf_counter()
         res = module.plan_trajectory(pre)
         dt = time.perf_counter() - t0

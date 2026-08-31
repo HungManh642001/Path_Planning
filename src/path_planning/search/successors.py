@@ -6,7 +6,7 @@ import math
 from typing import TYPE_CHECKING
 
 from path_planning import config
-from path_planning.geometry import spatial as su
+from path_planning.geometry import spatial
 from path_planning.geometry.goal_shot import two_corner_candidates
 from path_planning.search.state import State
 
@@ -203,7 +203,7 @@ class SuccessorGenerator:
         candidates: list[Point] = []
         for center, radius in self.scenario["circle_obstacles"]:
             candidates.extend(
-                su.circle_tangent_points(
+                spatial.circle_tangent_points(
                     position, center, radius + self.construct_delta
                 )
             )
@@ -253,7 +253,7 @@ class SuccessorGenerator:
             )
             next_heading = heading + heading_offset
             near_reserve = math.tan(abs(heading_offset) / 2.0) * self.turn_radius
-            turn = abs(su.angle_diff(next_heading, heading))
+            turn = abs(spatial.angle_diff(next_heading, heading))
             cos_next = math.cos(next_heading)
             sin_next = math.sin(next_heading)
             for rung in self.fan_rungs:
@@ -322,8 +322,8 @@ class SuccessorGenerator:
         if dx * ux + dy * uy < self.turn_cos_guard * seg_len:
             self.last_reject = "turn"
             return None
-        heading_to_node = su.angle_to_heading(pivot, node)
-        turn = abs(su.angle_diff(heading_to_node, heading))
+        heading_to_node = spatial.angle_to_heading(pivot, node)
+        turn = abs(spatial.angle_diff(heading_to_node, heading))
         if turn > self.alpha_build:
             self.last_reject = "turn"
             return None
@@ -337,7 +337,7 @@ class SuccessorGenerator:
             else:
                 goal_heading = self.goal_state.heading
                 if goal_heading is not None:
-                    final_turn = abs(su.angle_diff(goal_heading, heading_to_node))
+                    final_turn = abs(spatial.angle_diff(goal_heading, heading_to_node))
                     if final_turn > self.alpha_build:
                         self.last_reject = "goal"
                         return None
@@ -502,7 +502,7 @@ class SuccessorGenerator:
 
             corner_state = State(corner, leg1_heading)
             corner_state.parent = current
-            turn_1 = abs(su.angle_diff(leg1_heading, heading))
+            turn_1 = abs(spatial.angle_diff(leg1_heading, heading))
             corner_state.g_cost = (
                 base_g
                 + math.dist(current.waypoint, corner)
@@ -512,7 +512,7 @@ class SuccessorGenerator:
 
             goal_state = State(goal_wp, arrival_heading)
             goal_state.parent = corner_state
-            turn_2 = abs(su.angle_diff(arrival_heading, leg1_heading))
+            turn_2 = abs(spatial.angle_diff(arrival_heading, leg1_heading))
             goal_state.g_cost = (
                 corner_state.g_cost
                 + math.dist(corner, goal_wp)
