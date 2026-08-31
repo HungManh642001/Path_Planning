@@ -103,6 +103,7 @@ class AstarSearchEngine:
         self.nodes_expanded = 0
         self.is_budget_bound = False
         self.is_search_failed = False
+        self.leg2_memo: dict[float, list[float]] = {}
 
         self.shot_armed = False
         if not self.is_goal_heading_free:
@@ -235,7 +236,7 @@ class AstarSearchEngine:
                 and self.shot_armed
                 and (self.iteration_count % config.GOAL_SHOT_EVERY_N) == 0
             ):
-                shot = self.successors.try_goal_shot(current, {}, {})
+                shot = self.successors.try_goal_shot(current, {}, self.leg2_memo)
                 if shot is not None and shot.g_cost < self.g_scores.get(
                     shot, float("inf")
                 ):
