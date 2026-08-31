@@ -7,6 +7,7 @@ import math
 import pytest
 
 from path_planning import config
+from path_planning.geometry import spatial
 from path_planning.planner import plan_trajectory
 from path_planning.scenario.preprocessing import prepare_scenario
 from path_planning.scenario.presets import get_all_scenarios
@@ -96,9 +97,8 @@ def test_adapter_is_transparent_and_bit_identical(name: str) -> None:
             math_rad_to_bearing_deg(heading), abs=1e-9
         )
 
-    expected_length = sum(
-        math.dist(expected_full[i][0], expected_full[i + 1][0])
-        for i in range(len(expected_full) - 1)
+    expected_length = spatial.calculate_dubins_path_length(
+        expected_full, request.limits.turn_radius_m
     )
     assert reply.path_length_m == pytest.approx(expected_length, rel=0.0, abs=1e-9)
     assert reply.stats.iterations == result["stats"]["iterations"]

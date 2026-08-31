@@ -134,3 +134,57 @@ def circle_tangent_points(point: Point, center: Point, radius: float) -> list[Po
         (cx + radius * math.cos(theta + alpha), cy + radius * math.sin(theta + alpha)),
         (cx + radius * math.cos(theta - alpha), cy + radius * math.sin(theta - alpha)),
     ]
+
+
+def calculate_polyline_length(
+    path: Sequence[PlannerState] | Sequence[Point],
+) -> float:
+    """Tính tổng chiều dài đoạn thẳng đa giác qua các waypoints.
+
+    Args:
+        path: Danh sách điểm dạng [(x, y), ...] hoặc [((x, y), heading), ...].
+
+    Returns:
+        Tổng khoảng cách Euclid giữa các waypoint liên tiếp (m).
+    """
+    if len(path) < 2:
+        return 0.0
+    pts: list[Point] = [p[0] if isinstance(p[0], tuple) else p for p in path]  # type: ignore[misc]
+    return sum(distance(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+
+
+def calculate_dubins_path_length(
+    path: Sequence[PlannerState] | Sequence[Point], turn_radius: float
+) -> float:
+    """Tính tổng chiều dài quỹ đạo bay thực tế gồm các đoạn thẳng và cung lượn Dubins.
+
+    Tại mỗi góc rẽ W_i (i=1..n-1) giữa 2 đoạn thẳng, đoạn thẳng đi qua đỉnh được thay
+    bằng cung tròn bán kính R, làm chiều dài tại góc rẽ rút ngắn đi một khoảng:
+    Delta L_i = 2 * R * tan(|alpha_i| / 2) - R * |alpha_i|.
+
+    Args:
+        path: Danh sách điểm dạng [(x, y), ...] hoặc [((x, y), heading), ...].
+        turn_radius: Bán kính quay tối thiểu R (m).
+
+    Returns:
+        Tổng chiều dài quỹ đạo bay thực tế (m).
+    """
+    if len(path) < 2:
+        return 0.0
+    pts: list[Point] = [p[0] if isinstance(p[0], tuple) else p for p in path]  # type: ignore[misc]
+    if len(pts) == 2:
+        return distance(pts[0], pts[1])
+
+    poly_len = sum(distance(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+    shortening = 0.0
+    for i in range(1, len(pts) - 1):
+        p_prev, p_curr, p_next = pts[i - 1], pts[i], pts[i + 1]
+        h_in = angle_to_heading(p_prev, p_curr)
+        h_out = angle_to_heading(p_curr, p_next)
+        alpha = abs(angle_diff(h_out, h_in))
+        if alpha > 1e-9:
+            shortening += (
+                2.0 * turn_radius * math.tan(alpha / 2.0) - turn_radius * alpha
+            )
+
+    return max(0.0, poly_len - shortening)

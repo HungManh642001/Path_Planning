@@ -8,6 +8,8 @@ from path_planning import config
 from path_planning.geometry.spatial import (
     angle_diff,
     angle_to_heading,
+    calculate_dubins_path_length,
+    calculate_polyline_length,
     circle_tangent_points,
     distance,
     inflate_polygon,
@@ -182,3 +184,53 @@ def test_state_to_tuple_quantization_is_deterministic_and_matches_quantum() -> N
     expected_y = int(waypoint[1] // config.STATE_POS_QUANTUM)
     assert key1[0] == expected_x
     assert key1[1] == expected_y
+
+
+def test_calculate_polyline_length_with_straight_segments() -> None:
+    """Kiểm tra tính tổng chiều dài đoạn thẳng qua chuỗi điểm."""
+    # Arrange
+    path: list[Point] = [(0.0, 0.0), (3000.0, 4000.0), (3000.0, 9000.0)]
+
+    # Act
+    length = calculate_polyline_length(path)
+
+    # Assert: 5000 + 5000 = 10000
+    assert math.isclose(length, 10000.0, abs_tol=1e-7)
+
+
+def test_calculate_dubins_path_length_with_single_right_angle_turn() -> None:
+    """Kiểm tra tính chiều dài quỹ đạo Dubins với 1 góc rẽ vuông 90 độ."""
+    # Arrange
+    w0: Point = (0.0, 0.0)
+    w1: Point = (1000.0, 0.0)
+    w2: Point = (1000.0, 1000.0)
+    path = [w0, w1, w2]
+    turn_radius = 100.0
+
+    # Act
+    dubins_len = calculate_dubins_path_length(path, turn_radius)
+    poly_len = calculate_polyline_length(path)
+
+    # Assert
+    # Chiều dài thẳng = 2000 m
+    # Góc rẽ alpha = pi/2 -> t = R * tan(pi/4) = 100 m
+    # 2 đoạn thẳng: 900 + 900 = 1800 m, cung tròn: 100 * (pi/2) = 50 * pi m
+    expected_dubins = 1800.0 + 50.0 * math.pi
+    assert math.isclose(dubins_len, expected_dubins, abs_tol=1e-7)
+    # Chiều dài cung lượn thực tế phải ngắn hơn chiều dài qua đỉnh
+    assert dubins_len < poly_len
+
+
+def test_calculate_dubins_path_length_with_collinear_path_equals_polyline() -> None:
+    """Kiểm tra đường bay thẳng hoàn toàn (không đổi hướng) có chiều dài Dubins bằng polyline."""
+    # Arrange
+    path: list[Point] = [(0.0, 0.0), (500.0, 0.0), (1200.0, 0.0)]
+    turn_radius = 100.0
+
+    # Act
+    dubins_len = calculate_dubins_path_length(path, turn_radius)
+    poly_len = calculate_polyline_length(path)
+
+    # Assert
+    assert math.isclose(dubins_len, poly_len, abs_tol=1e-7)
+    assert math.isclose(dubins_len, 1200.0, abs_tol=1e-7)

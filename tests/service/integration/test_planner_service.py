@@ -190,4 +190,4 @@ def test_preloaded_map_changes_planned_trajectory(tmp_path: Path) -> None:
 def test_shipped_planner_is_canonical_module() -> None:
     """Kiểm tra service liên kết trực tiếp với module path_planning.planner chuẩn."""
     # Arrange & Act & Assert
-    assert service_planner_module.astar is path_planning_planner
+    assert service_planner_module.planner is path_planning_planner

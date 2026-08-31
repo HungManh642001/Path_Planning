@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 from path_planning import planner
+from path_planning.geometry import spatial
 from path_planning.scenario import preprocessing
 from path_planning.trajectory import mission_path
 from service.vtx_service.angles import math_rad_to_bearing_deg
@@ -48,7 +49,7 @@ def plan(request: PlanRequest, preloaded: PreloadedMap | None = None) -> PlanRep
     if request.idl_version != IDL_VERSION:
         return _refusal(
             request,
-            f"sai phiên bản IDL (nhận {request.idl_version}, cần {IDL_VERSION})",
+            f"sai phiên bản idl_version (nhận {request.idl_version}, cần {IDL_VERSION})",
             started,
         )
 
@@ -121,13 +122,10 @@ def _waypoints_out(
 
 
 def _planar_length(result: dict[str, Any], preprocessed: dict[str, Any]) -> float:
-    """Tổng chiều dài các dây cung.
-
-    Cùng công thức ``scripts/ab_planners.py`` dùng, nên số liệu so sánh được với
-    các benchmark đã ghi.
-    """
+    """Tổng chiều dài quỹ đạo bay thực tế gồm các đoạn thẳng và cung lượn Dubins."""
     full = _full_path(result, preprocessed)
-    return sum(math.dist(full[i][0], full[i + 1][0]) for i in range(len(full) - 1))
+    turn_radius = float(preprocessed.get("turn_radius", 0.0))
+    return spatial.calculate_dubins_path_length(full, turn_radius)
 
 
 def _stats_out(result: dict[str, Any]) -> SearchStats:

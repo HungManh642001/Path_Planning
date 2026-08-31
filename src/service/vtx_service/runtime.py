@@ -15,7 +15,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from path_planning import config, planner as astar
+from path_planning import config, planner
 
 
 _log = logging.getLogger("vtx-planner")
@@ -41,7 +41,7 @@ def planner_config_snapshot() -> dict[str, object]:
     import path_planning.trajectory.mission_path as _tm
     import path_planning.trajectory.smoothing as _ts
 
-    modules = [astar, _cd, _sa, _sh, _ss, _sg, _tm, _ts]
+    modules = [planner, _cd, _sa, _sh, _ss, _sg, _tm, _ts]
     all_source = "\n".join(inspect.getsource(m) for m in modules)
     names = sorted(set(_CONFIG_REF.findall(all_source)))
     return {name: getattr(config, name) for name in names if hasattr(config, name)}
