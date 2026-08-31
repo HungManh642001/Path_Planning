@@ -6,7 +6,6 @@ import pytest
 
 from path_planning import config
 from path_planning.planner import plan_trajectory
-from path_planning.render.sampling import build_full_path
 from path_planning.scenario.preprocessing import prepare_scenario
 from path_planning.scenario.presets import get_all_scenarios
 from path_planning.validation.oracle import path_is_valid

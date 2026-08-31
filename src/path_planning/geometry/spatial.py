@@ -11,12 +11,13 @@ giãn nở đa giác, rời rạc hóa trạng thái ô lưới và tìm tiếp 
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 
 from shapely.geometry import MultiPolygon, Polygon
 
 from path_planning import config
 from path_planning.search.state import state_to_tuple as state_to_tuple
-from path_planning.types import Point, PolygonCoords
+from path_planning.types import PlannerState, Point, PolygonCoords
 
 
 def distance(p1: Point, p2: Point) -> float:

@@ -48,7 +48,10 @@ def plan(request: PlanRequest, preloaded: PreloadedMap | None = None) -> PlanRep
     if request.idl_version != IDL_VERSION:
         return _refusal(
             request,
-            f"sai phiên bản idl_version (nhận {request.idl_version}, cần {IDL_VERSION})",
+            (
+                f"sai phiên bản idl_version (nhận {request.idl_version}, "
+                f"cần {IDL_VERSION})"
+            ),
             started,
         )
 
