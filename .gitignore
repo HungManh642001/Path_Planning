@@ -18,7 +18,5 @@ __pycache__/
 *.pyd
 
 # ---- Scratch tests ----
-# `*_test.py` is the committed convention and IS tracked; `test_*.py` is the
-# throwaway prefix. `/tests/` used to be ignored wholesale, which left a third
-# of the suite untracked and invisible in a fresh clone.
-test_*.py
+# Only ignore scratch test_*.py files in the root directory.
+/test_*.py
