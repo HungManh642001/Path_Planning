@@ -72,7 +72,7 @@ def test_segments_clear_detects_obstacle_collision() -> None:
 
     # Assert
     assert res.is_ok is False
-    assert "intersects circle" in res.detail
+    assert "blocked" in res.detail
 
 
 def test_turn_angles_ok_detects_excessive_corner_turn() -> None:
@@ -89,7 +89,7 @@ def test_turn_angles_ok_detects_excessive_corner_turn() -> None:
 
     # Assert
     assert res.is_ok is False
-    assert "exceeds maximum" in res.detail
+    assert "turn angle" in res.detail
 
 
 def test_straight_segments_ok_detects_insufficient_takeoff_length() -> None:
@@ -111,7 +111,7 @@ def test_straight_segments_ok_detects_insufficient_takeoff_length() -> None:
 
     # Assert
     assert res.is_ok is False
-    assert "shorter than required" in res.detail
+    assert "< L0=" in res.detail
 
 
 def test_arcs_clear_detects_fillet_arc_obstacle_collision() -> None:
@@ -135,4 +135,4 @@ def test_arcs_clear_detects_fillet_arc_obstacle_collision() -> None:
 
     # Assert
     assert res.is_ok is False
-    assert "intersects" in res.detail
+    assert "blocked" in res.detail

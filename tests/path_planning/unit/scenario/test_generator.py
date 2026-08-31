@@ -15,11 +15,15 @@ def test_generate_random_islands_creates_requested_count_within_bounds() -> None
     """Kiểm tra sinh đúng số lượng đảo đa giác ngẫu nhiên trong biên bản đồ."""
     # Arrange
     map_bounds = (config.MAP_WIDTH, config.MAP_HEIGHT)
+    start: Point = (50000.0, 50000.0)
+    goal: Point = (450000.0, 450000.0)
     count = 3
     seed = 42
 
     # Act
-    islands = generate_random_islands(map_bounds, count, seed=seed)
+    islands = generate_random_islands(
+        count, map_bounds, start=start, goal=goal, seed=seed
+    )
 
     # Assert
     assert len(islands) == count
@@ -41,7 +45,7 @@ def test_generate_dynamic_obstacles_avoids_start_and_goal_clearance() -> None:
 
     # Act
     circles = generate_dynamic_obstacles(
-        map_bounds, count, seed=seed, start=start, goal=goal
+        count, map_bounds, start=start, goal=goal, seed=seed
     )
 
     # Assert

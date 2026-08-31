@@ -11,7 +11,7 @@ from path_planning.scenario.preprocessing import (
     inflate_obstacles,
     prepare_scenario,
 )
-from path_planning.types import Point, Scenario
+from path_planning.types import Obstacle, Point, Scenario
 
 
 def test_calculate_start_state_offsets_takeoff_along_heading_ray() -> None:
@@ -60,24 +60,29 @@ def test_calculate_end_state_with_none_heading_returns_target_directly() -> None
     assert end_state["heading"] is None
 
 
-def test_inflate_obstacles_expands_circles_and_polygons(
-    sample_clean_scenario: Scenario,
-) -> None:
+def test_inflate_obstacles_expands_circles_and_polygons() -> None:
     """Kiểm tra mở rộng bán kính hình tròn và đa giác theo khoảng cách an toàn safe_margin."""
     # Arrange
+    raw_obstacles: list[Obstacle] = [
+        {"type": "circle", "center": (100000.0, 100000.0), "radius": 20000.0},
+        {
+            "type": "polygon",
+            "polygon": [
+                (200000.0, 100000.0),
+                (230000.0, 100000.0),
+                (230000.0, 130000.0),
+                (200000.0, 130000.0),
+            ],
+        },
+    ]
     safe_margin = 1000.0
 
     # Act
-    inflated_circles, inflated_polys = inflate_obstacles(
-        sample_clean_scenario, safe_margin
-    )
+    inflated = inflate_obstacles(raw_obstacles, safe_margin=safe_margin)
 
     # Assert
-    assert len(inflated_circles) == len(
-        sample_clean_scenario.get("dynamic_obstacles", [])
-    )
-    for (cx, cy), r in inflated_circles:
-        assert r > 20000.0
+    assert len(inflated) == len(raw_obstacles)
+    assert inflated[0]["radius"] == 21000.0
 
 
 def test_prepare_scenario_packages_all_preprocessed_fields(
@@ -94,5 +99,5 @@ def test_prepare_scenario_packages_all_preprocessed_fields(
     assert "goal_state" in prep
     assert "circle_obstacles" in prep
     assert "polygon_obstacles" in prep
-    assert "all_obstacles" in prep
+    assert "obstacles" in prep
     assert prep["alpha_max_rad"] == config.ALPHA_MAX_RAD
