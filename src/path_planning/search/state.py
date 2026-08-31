@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
 
 from path_planning import config
 from path_planning.types import LatticeKey, Point

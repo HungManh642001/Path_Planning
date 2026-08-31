@@ -15,7 +15,8 @@ import math
 from shapely.geometry import MultiPolygon, Polygon
 
 from path_planning import config
-from path_planning.types import LatticeKey, Point, PolygonCoords
+from path_planning.search.state import state_to_tuple as state_to_tuple
+from path_planning.types import Point, PolygonCoords
 
 
 def distance(p1: Point, p2: Point) -> float:
@@ -107,9 +108,6 @@ def inflate_polygon(polygon_coords: PolygonCoords, inflation: float) -> PolygonC
         largest = max(expanded.geoms, key=lambda p: p.area)
         return _exterior_coords(largest)
     return polygon_coords
-
-
-from path_planning.search.state import state_to_tuple as state_to_tuple
 
 
 def circle_tangent_points(point: Point, center: Point, radius: float) -> list[Point]:

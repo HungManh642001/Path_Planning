@@ -8,7 +8,6 @@ Quy ước chiều quay: +1 là ngược chiều (CCW), -1 là thuận chiều (
 from __future__ import annotations
 
 import math
-
 from collections.abc import Sequence
 
 from path_planning.geometry import spatial as su

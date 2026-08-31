@@ -11,9 +11,9 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from path_planning import config
-
 from shapely.geometry import LineString, Polygon
+
+from path_planning import config
 
 
 if TYPE_CHECKING:
@@ -461,6 +461,8 @@ def path_is_valid(
 
     straight_res = straight_segments_ok(path, turn_radius, l0, dss)
     if not straight_res.is_ok:
-        return ValidationResult(False, f"straight segments invalid: {straight_res.detail}")
+        return ValidationResult(
+            False, f"straight segments invalid: {straight_res.detail}"
+        )
 
     return ValidationResult.ok()
