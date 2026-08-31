@@ -9,26 +9,26 @@ from path_planning.render.sampling import (
     sample_trajectory,
     turn_markers,
 )
-from path_planning.types import PlannerState, Point
+from path_planning.types import PlannerState, Point, PreprocessedScenario
 
 
-def test_build_full_path_joins_origin_waypoints_and_target() -> None:
+def test_build_full_path_joins_origin_waypoints_and_target(
+    sample_preprocessed_scenario: PreprocessedScenario,
+) -> None:
     """Kiểm tra nối điểm cất cánh O và đích T vào chuỗi waypoint nội bộ."""
     # Arrange
-    origin: Point = (0.0, 0.0)
-    target: Point = (100000.0, 100000.0)
     interior: list[PlannerState] = [
-        ((20000.0, 0.0), 0.0),
-        ((80000.0, 100000.0), math.pi / 2),
+        ((100000.0, 100000.0), 0.785),
+        ((350000.0, 350000.0), 0.785),
     ]
 
     # Act
-    full = build_full_path(interior, origin, target)
+    full = build_full_path(interior, sample_preprocessed_scenario)
 
     # Assert
     assert len(full) == 4
-    assert full[0][0] == origin
-    assert full[-1][0] == target
+    assert full[0][0] == sample_preprocessed_scenario["start_pos"]
+    assert full[-1][0] == sample_preprocessed_scenario["goal_pos"]
 
 
 def test_sample_trajectory_straight_mode_returns_discrete_polyline() -> None:
@@ -39,9 +39,10 @@ def test_sample_trajectory_straight_mode_returns_discrete_polyline() -> None:
         ((10000.0, 0.0), 0.0),
         ((10000.0, 10000.0), math.pi / 2),
     ]
+    turn_radius = 8000.0
 
     # Act
-    samples = sample_trajectory(path, render_mode="straight")
+    samples = sample_trajectory(path, turn_radius=turn_radius, mode="straight")
 
     # Assert
     assert len(samples) >= 3
@@ -57,10 +58,15 @@ def test_sample_trajectory_dubins_mode_inserts_curved_fillet_points() -> None:
         ((20000.0, 0.0), 0.0),
         ((20000.0, 20000.0), math.pi / 2),
     ]
+    turn_radius = 8000.0
 
     # Act
-    samples_straight = sample_trajectory(path, render_mode="straight")
-    samples_dubins = sample_trajectory(path, render_mode="dubins")
+    samples_straight = sample_trajectory(
+        path, turn_radius=turn_radius, mode="straight"
+    )
+    samples_dubins = sample_trajectory(
+        path, turn_radius=turn_radius, mode="dubins"
+    )
 
     # Assert
     assert len(samples_dubins) > len(samples_straight)
@@ -74,10 +80,11 @@ def test_turn_markers_extracts_arc_bisector_points() -> None:
         ((20000.0, 0.0), 0.0),
         ((20000.0, 20000.0), math.pi / 2),
     ]
+    turn_radius = 8000.0
 
     # Act
-    markers = turn_markers(path)
+    markers = turn_markers(path, turn_radius=turn_radius)
 
     # Assert
     assert len(markers) == 1
-    assert markers[0]["turn_deg"] > 0.0
+    assert markers[0]["angle_deg"] > 0.0
