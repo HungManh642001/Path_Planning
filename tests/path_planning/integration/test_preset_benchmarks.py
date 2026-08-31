@@ -6,6 +6,7 @@ import pytest
 
 from path_planning import config
 from path_planning.planner import plan_trajectory
+from path_planning.render.sampling import build_full_path
 from path_planning.scenario.preprocessing import prepare_scenario
 from path_planning.scenario.presets import get_all_scenarios
 from path_planning.validation.oracle import path_is_valid
@@ -36,8 +37,9 @@ def test_preset_scenario_produces_oracle_valid_trajectory(
     )
     assert result["path"] is not None, f"Kịch bản {scenario_name} trả về path rỗng"
 
+    full_path = build_full_path(result["path"], prep)
     validation = path_is_valid(
-        result["path"],
+        full_path,
         circle_obstacles=prep["circle_obstacles"],
         polygon_obstacles=prep["polygon_obstacles"],
         turn_radius=config.R,

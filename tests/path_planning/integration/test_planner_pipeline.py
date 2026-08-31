@@ -6,6 +6,7 @@ import math
 
 from path_planning import config
 from path_planning.planner import KinodynamicAstar, plan_trajectory
+from path_planning.render.sampling import build_full_path
 from path_planning.scenario.preprocessing import prepare_scenario
 from path_planning.types import Scenario
 from path_planning.validation.oracle import path_is_valid
@@ -38,8 +39,9 @@ def test_plan_trajectory_with_fixed_goal_heading_produces_oracle_valid_path() ->
     assert result["is_success"] is True
     assert result["path"] is not None
     assert len(result["path"]) >= 2
+    full_path = build_full_path(result["path"], prep)
     validation = path_is_valid(
-        result["path"],
+        full_path,
         circle_obstacles=prep["circle_obstacles"],
         polygon_obstacles=prep["polygon_obstacles"],
         turn_radius=config.R,
@@ -76,8 +78,9 @@ def test_plan_trajectory_with_free_goal_heading_produces_oracle_valid_path() -> 
     # Assert
     assert result["is_success"] is True
     assert result["path"] is not None
+    full_path = build_full_path(result["path"], prep)
     validation = path_is_valid(
-        result["path"],
+        full_path,
         circle_obstacles=prep["circle_obstacles"],
         polygon_obstacles=prep["polygon_obstacles"],
         turn_radius=config.R,
@@ -134,9 +137,10 @@ def test_kinodynamic_astar_class_facade_matches_module_function() -> None:
 
     # Act
     planner = KinodynamicAstar(prep)
-    path, stats = planner.plan()
+    result = planner.plan()
 
     # Assert
-    assert path is not None
-    assert len(path) >= 2
-    assert stats["is_search_failed"] is False
+    assert result["is_success"] is True
+    assert result["path"] is not None
+    assert len(result["path"]) >= 2
+    assert result["stats"]["is_search_failed"] is False
