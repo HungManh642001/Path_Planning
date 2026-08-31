@@ -56,9 +56,7 @@ class NatsTransport:
         self._shutdown_event: asyncio.Event | None = None
         self._executor = ThreadPoolExecutor(thread_name_prefix="nats-worker")
 
-    async def start(
-        self, handler: Callable[[msg.PlanRequest], msg.PlanReply]
-    ) -> None:
+    async def start(self, handler: Callable[[msg.PlanRequest], msg.PlanReply]) -> None:
         """Kết nối NATS và đăng ký lắng nghe request với Queue Group.
 
         Args:
@@ -102,9 +100,7 @@ class NatsTransport:
 
             # Chạy handler CPU-bound trong executor để không block asyncio loop
             try:
-                reply = await loop.run_in_executor(
-                    self._executor, handler, request
-                )
+                reply = await loop.run_in_executor(self._executor, handler, request)
             except Exception as exc:
                 logger.exception("lỗi ngoại lệ trong quá trình xử lý: %s", exc)
                 reply = msg.PlanReply(
@@ -165,9 +161,7 @@ class NatsTransport:
         if self._shutdown_event is not None:
             self._shutdown_event.set()
 
-    def serve(
-        self, handler: Callable[[msg.PlanRequest], msg.PlanReply]
-    ) -> None:
+    def serve(self, handler: Callable[[msg.PlanRequest], msg.PlanReply]) -> None:
         """Hàm đồng bộ chạy service vòng lặp vô tận."""
         asyncio.run(self.run_forever(handler))
 
@@ -220,18 +214,18 @@ class NatsClient:
         """
         if self.nc is None or self.nc.is_closed:
             await self.connect()
-        assert self.nc is not None
+        if self.nc is None:
+            raise RuntimeError("Chưa thể kết nối tới NATS server")
 
         encoded_req = codec.encode_request(request)
-        msg_reply = await self.nc.request(
-            self.subject, encoded_req, timeout=timeout_s
-        )
+        msg_reply = await self.nc.request(self.subject, encoded_req, timeout=timeout_s)
         return codec.decode_reply(msg_reply.data)
 
     def request_plan_sync(
         self, request: msg.PlanRequest, timeout_s: float = 6.0
     ) -> msg.PlanReply:
         """Wrapper đồng bộ của request_plan."""
+
         async def _run() -> msg.PlanReply:
             await self.connect()
             try:

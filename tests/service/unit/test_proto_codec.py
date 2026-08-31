@@ -140,17 +140,10 @@ def test_plan_status_enum_values_match_proto_definition() -> None:
         == PlanStatus.START_LEG_BLOCKED.value
     )
     assert (
-        pb.PlanStatus.PLAN_STATUS_GOAL_LEG_BLOCKED
-        == PlanStatus.GOAL_LEG_BLOCKED.value
+        pb.PlanStatus.PLAN_STATUS_GOAL_LEG_BLOCKED == PlanStatus.GOAL_LEG_BLOCKED.value
     )
-    assert (
-        pb.PlanStatus.PLAN_STATUS_ORACLE_REJECTED
-        == PlanStatus.ORACLE_REJECTED.value
-    )
-    assert (
-        pb.PlanStatus.PLAN_STATUS_INVALID_REQUEST
-        == PlanStatus.INVALID_REQUEST.value
-    )
+    assert pb.PlanStatus.PLAN_STATUS_ORACLE_REJECTED == PlanStatus.ORACLE_REJECTED.value
+    assert pb.PlanStatus.PLAN_STATUS_INVALID_REQUEST == PlanStatus.INVALID_REQUEST.value
     assert pb.PlanStatus.PLAN_STATUS_TIMEOUT == PlanStatus.TIMEOUT.value
     assert pb.PlanStatus.PLAN_STATUS_INTERNAL_ERROR == PlanStatus.INTERNAL_ERROR.value
     assert pb.PlanStatus.PLAN_STATUS_BUSY == PlanStatus.BUSY.value

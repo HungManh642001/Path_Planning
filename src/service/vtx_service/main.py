@@ -2,8 +2,9 @@
 
 THỨ TỰ Ở ĐÂY LÀ MỘT RÀNG BUỘC, KHÔNG PHẢI SỞ THÍCH. `PlanRunner.start()` phải
 chạy trước khi khởi tạo network: nó ép tiến trình forkserver ra đời trong lúc tiến
-trình này còn sạch thread. Nếu để networking lên trước, forkserver sẽ ra đời từ một
-tiến trình đang chạy thread nền, và mọi tiến trình con sau đó thừa hưởng rủi ro deadlock.
+trình này còn sạch thread. Nếu để networking lên trước, forkserver sẽ ra đời từ
+một tiến trình đang chạy thread nền, và mọi tiến trình con sau đó thừa hưởng rủi
+ro deadlock.
 """
 
 from __future__ import annotations
@@ -41,9 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         int: Mã exit của tiến trình.
     """
-    parser = argparse.ArgumentParser(
-        description="VTX path planning NATS microservice"
-    )
+    parser = argparse.ArgumentParser(description="VTX path planning NATS microservice")
     parser.add_argument(
         "--nats-server",
         type=str,

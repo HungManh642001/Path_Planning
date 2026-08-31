@@ -35,9 +35,7 @@ def encode_request(request: msg.PlanRequest) -> bytes:
     )
 
     for island in request.islands:
-        poly = pb.PolygonObstacle(
-            vertices=[pb.Point2D(x=p[0], y=p[1]) for p in island]
-        )
+        poly = pb.PolygonObstacle(vertices=[pb.Point2D(x=p[0], y=p[1]) for p in island])
         pb_req.islands.append(poly)
 
     for circle in request.dynamic_obstacles:
@@ -48,9 +46,7 @@ def encode_request(request: msg.PlanRequest) -> bytes:
         pb_req.dynamic_obstacles.append(c)
 
     for safezone in request.safezones:
-        sz = pb.PolygonObstacle(
-            vertices=[pb.Point2D(x=p[0], y=p[1]) for p in safezone]
-        )
+        sz = pb.PolygonObstacle(vertices=[pb.Point2D(x=p[0], y=p[1]) for p in safezone])
         pb_req.safezones.append(sz)
 
     return pb_req.SerializeToString()
@@ -82,8 +78,7 @@ def decode_request(data: bytes) -> msg.PlanRequest:
     )
 
     safezones = tuple(
-        tuple((float(v.x), float(v.y)) for v in sz.vertices)
-        for sz in pb_req.safezones
+        tuple((float(v.x), float(v.y)) for v in sz.vertices) for sz in pb_req.safezones
     )
 
     limits = msg.VehicleLimits(

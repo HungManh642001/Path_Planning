@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from unittest.mock import AsyncMock, MagicMock
 
@@ -11,7 +10,6 @@ import pytest
 from service.vtx_service import codec
 from service.vtx_service.messages import (
     IDL_VERSION,
-    Circle,
     PlanReply,
     PlanRequest,
     PlanStatus,
@@ -135,6 +133,7 @@ async def test_transport_message_handling_normal_flow() -> None:
     mock_nc.subscribe.side_effect = fake_subscribe
 
     import nats
+
     original_connect = nats.connect
     nats.connect = AsyncMock(return_value=mock_nc)
 
@@ -180,6 +179,7 @@ async def test_transport_message_handling_decode_error_returns_invalid_request()
     mock_nc.subscribe.side_effect = fake_subscribe
 
     import nats
+
     original_connect = nats.connect
     nats.connect = AsyncMock(return_value=mock_nc)
 
@@ -228,6 +228,7 @@ async def test_transport_message_handling_handler_exception_returns_internal_err
     mock_nc.subscribe.side_effect = fake_subscribe
 
     import nats
+
     original_connect = nats.connect
     nats.connect = AsyncMock(return_value=mock_nc)
 

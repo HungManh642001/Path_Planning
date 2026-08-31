@@ -34,6 +34,7 @@ extend-exclude = [
     "dist",
     "docs",
     "src/service/idl",
+    "src/service/vtx_service/proto",
 ]
 
 [tool.ruff.format]
@@ -83,6 +84,7 @@ exclude = [
     "dist",
     "build",
     "src/service/idl",
+    "src/service/vtx_service/proto",
 ]
 pythonVersion = "3.10"
 pythonPlatform = "All"
