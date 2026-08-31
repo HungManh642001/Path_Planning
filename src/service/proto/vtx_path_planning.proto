@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package vtx.algorithms.path_planning;
+
+enum PlanStatus {
+  PLAN_STATUS_OK = 0;
+  PLAN_STATUS_NO_PATH = 1;
+  PLAN_STATUS_START_LEG_BLOCKED = 2;
+  PLAN_STATUS_GOAL_LEG_BLOCKED = 3;
+  PLAN_STATUS_ORACLE_REJECTED = 4;
+  PLAN_STATUS_INVALID_REQUEST = 5;
+  PLAN_STATUS_TIMEOUT = 6;
+  PLAN_STATUS_INTERNAL_ERROR = 7;
+  PLAN_STATUS_BUSY = 8;
+}
+
+message Point2D {
+  double x = 1;
+  double y = 2;
+}
+
+message Waypoint {
+  Point2D position = 1;
+  double heading_deg = 2;
+}
+
+message PolygonObstacle {
+  repeated Point2D vertices = 1;
+}
+
+message CircleObstacle {
+  Point2D center = 1;
+  double radius_m = 2;
+}
+
+message VehicleLimits {
+  double turn_radius_m = 1;
+  double l0_m = 2;
+  double dss_m = 3;
+  double safe_margin_m = 4;
+  double alpha_max_deg = 5;
+}
+
+message SearchBudget {
+  double time_budget_s = 1;
+}
+
+message PathPlanRequest {
+  bytes request_id = 1;          // 16-byte UUID
+  uint32 idl_version = 2;
+  Point2D takeoff = 3;
+  double takeoff_heading_deg = 4;
+  Point2D target = 5;
+  double target_heading_deg = 6;
+  bool is_target_heading_free = 7;
+
+  repeated PolygonObstacle islands = 8;
+  repeated CircleObstacle dynamic_obstacles = 9;
+  repeated PolygonObstacle safezones = 10;
+  bool use_preloaded_map = 11;
+
+  VehicleLimits limits = 12;
+  SearchBudget budget = 13;
+}
+
+message SearchStats {
+  uint32 iterations = 1;
+  uint32 open_set_size = 2;
+  bool is_search_failed = 3;
+  bool is_budget_bound = 4;
+}
+
+message PathPlanReply {
+  bytes request_id = 1;
+  uint32 idl_version = 2;
+  PlanStatus status = 3;
+  string detail = 4;
+
+  repeated Waypoint waypoints = 5;
+  double path_length_m = 6;
+  double plan_wall_time_s = 7;
+  double applied_time_budget_s = 8;
+  SearchStats stats = 9;
+
+  string planner_version = 10;
+  string config_hash = 11;
+}
