@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
+from path_planning import config
 from path_planning.planner import plan_trajectory
 from path_planning.scenario.preprocessing import prepare_scenario
 from path_planning.scenario.presets import get_all_scenarios
-from path_planning.types import CircleGeometry, PolygonCoords
 from path_planning.validation.oracle import path_is_valid
 
 _SCENARIO_BUILDERS = get_all_scenarios()
@@ -36,22 +36,14 @@ def test_preset_scenario_produces_oracle_valid_trajectory(
     )
     assert result["path"] is not None, f"Kịch bản {scenario_name} trả về path rỗng"
 
-    # Trích xuất hình học vật cản để kiểm định độc lập
-    circles: list[CircleGeometry] = [
-        (c["center"], c["radius"])
-        for c in scenario.get("obstacles", [])
-        if c["type"] == "circle"
-    ]
-    polygons: list[PolygonCoords] = [
-        p["polygon"]
-        for p in scenario.get("obstacles", [])
-        if p["type"] == "polygon"
-    ]
-
     validation = path_is_valid(
         result["path"],
-        circle_obstacles=circles,
-        polygon_obstacles=polygons,
+        circle_obstacles=prep["circle_obstacles"],
+        polygon_obstacles=prep["polygon_obstacles"],
+        turn_radius=config.R,
+        alpha_max_rad=config.ALPHA_MAX_RAD,
+        l0=config.L0,
+        dss=config.DSS,
     )
     assert validation.is_ok is True, (
         f"Kịch bản {scenario_name} vi phạm tiêu chuẩn Oracle: {validation.detail}"

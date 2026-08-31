@@ -40,8 +40,12 @@ def test_plan_trajectory_with_fixed_goal_heading_produces_oracle_valid_path() ->
     assert len(result["path"]) >= 2
     validation = path_is_valid(
         result["path"],
-        circle_obstacles=[((250000.0, 250000.0), 30000.0)],
-        polygon_obstacles=[],
+        circle_obstacles=prep["circle_obstacles"],
+        polygon_obstacles=prep["polygon_obstacles"],
+        turn_radius=config.R,
+        alpha_max_rad=config.ALPHA_MAX_RAD,
+        l0=config.L0,
+        dss=config.DSS,
     )
     assert validation.is_ok is True
 
@@ -74,8 +78,12 @@ def test_plan_trajectory_with_free_goal_heading_produces_oracle_valid_path() -> 
     assert result["path"] is not None
     validation = path_is_valid(
         result["path"],
-        circle_obstacles=[((200000.0, 150000.0), 25000.0)],
-        polygon_obstacles=[],
+        circle_obstacles=prep["circle_obstacles"],
+        polygon_obstacles=prep["polygon_obstacles"],
+        turn_radius=config.R,
+        alpha_max_rad=config.ALPHA_MAX_RAD,
+        l0=config.L0,
+        dss=config.DSS,
     )
     assert validation.is_ok is True
 
