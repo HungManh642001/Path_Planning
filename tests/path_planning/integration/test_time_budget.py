@@ -49,7 +49,7 @@ def test_invalid_or_non_positive_budget_raises_value_error(
 ) -> None:
     """Kiểm tra các giá trị hạn mức thời gian không hợp lệ (<= 0, inf, nan) bị từ chối với ValueError."""
     # Arrange & Act & Assert
-    with pytest.raises(ValueError, match="positive finite number"):
+    with pytest.raises(ValueError, match="time budget must be"):
         KinodynamicAstar(
             sample_preprocessed_scenario, time_budget_s=invalid_budget
         )

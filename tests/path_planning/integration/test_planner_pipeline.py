@@ -6,6 +6,7 @@ import math
 
 from path_planning import config
 from path_planning.planner import KinodynamicAstar, plan_trajectory
+from path_planning.scenario.preprocessing import prepare_scenario
 from path_planning.types import Scenario
 from path_planning.validation.oracle import path_is_valid
 
@@ -28,9 +29,10 @@ def test_plan_trajectory_with_fixed_goal_heading_produces_oracle_valid_path() ->
             {"type": "circle", "center": (250000.0, 250000.0), "radius": 30000.0}
         ],
     }
+    prep = prepare_scenario(scenario)
 
     # Act
-    result = plan_trajectory(scenario, time_budget_s=15.0)
+    result = plan_trajectory(prep, time_budget_s=15.0)
 
     # Assert
     assert result["is_success"] is True
@@ -62,9 +64,10 @@ def test_plan_trajectory_with_free_goal_heading_produces_oracle_valid_path() -> 
             {"type": "circle", "center": (200000.0, 150000.0), "radius": 25000.0}
         ],
     }
+    prep = prepare_scenario(scenario)
 
     # Act
-    result = plan_trajectory(scenario, time_budget_s=15.0)
+    result = plan_trajectory(prep, time_budget_s=15.0)
 
     # Assert
     assert result["is_success"] is True
@@ -95,9 +98,10 @@ def test_plan_trajectory_with_blocked_takeoff_detects_failure_cleanly() -> None:
             {"type": "circle", "center": (52000.0, 50000.0), "radius": 5000.0}
         ],
     }
+    prep = prepare_scenario(scenario)
 
     # Act
-    result = plan_trajectory(scenario, time_budget_s=5.0)
+    result = plan_trajectory(prep, time_budget_s=5.0)
 
     # Assert
     assert result["is_success"] is False
@@ -118,9 +122,10 @@ def test_kinodynamic_astar_class_facade_matches_module_function() -> None:
         "dynamic_obstacles": [],
         "obstacles": [],
     }
+    prep = prepare_scenario(scenario)
 
     # Act
-    planner = KinodynamicAstar(scenario)
+    planner = KinodynamicAstar(prep)
     path, stats = planner.plan()
 
     # Assert

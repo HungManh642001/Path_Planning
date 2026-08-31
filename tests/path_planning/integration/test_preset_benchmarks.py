@@ -1,10 +1,11 @@
-"""Kiểm thử tích hợp trên toàn bộ 16 kịch bản chuẩn benchmark và nghiệm thu qua Oracle."""
+"""Kiểm thử tích hợp trên toàn bộ các kịch bản chuẩn benchmark và nghiệm thu qua Oracle."""
 
 from __future__ import annotations
 
 import pytest
 
 from path_planning.planner import plan_trajectory
+from path_planning.scenario.preprocessing import prepare_scenario
 from path_planning.scenario.presets import get_all_scenarios
 from path_planning.types import CircleGeometry, PolygonCoords
 from path_planning.validation.oracle import path_is_valid
@@ -24,9 +25,10 @@ def test_preset_scenario_produces_oracle_valid_trajectory(
     # Arrange (Chuẩn bị kịch bản)
     builder = _SCENARIO_BUILDERS[scenario_name]
     scenario = builder()
+    prep = prepare_scenario(scenario)
 
     # Act (Thực thi thuật toán tìm kiếm đường bay)
-    result = plan_trajectory(scenario, time_budget_s=25.0)
+    result = plan_trajectory(prep, time_budget_s=25.0)
 
     # Assert (Kiểm chứng kết quả và nghiệm thu độc lập)
     assert result["is_success"] is True, (
