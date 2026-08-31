@@ -30,7 +30,9 @@ def test_two_corner_candidate_dataclass_attributes() -> None:
     assert cand.total_length == 1100.0
 
 
-def test_two_corner_candidates_with_aligned_headings_generates_feasible_corners() -> None:
+def test_two_corner_candidates_with_aligned_headings_generates_feasible_corners() -> (
+    None
+):
     """Kiểm tra sinh ứng viên giải tích 2 góc rẽ khi góc hướng xuất phát và đích cùng chiều."""
     # Arrange
     p1: Point = (50000.0, 50000.0)
@@ -68,7 +70,9 @@ def test_two_corner_candidates_with_aligned_headings_generates_feasible_corners(
         assert cand.budget_goal >= min_straight
 
 
-def test_two_corner_candidates_with_insufficient_straight_budget_returns_empty() -> None:
+def test_two_corner_candidates_with_insufficient_straight_budget_returns_empty() -> (
+    None
+):
     """Kiểm tra khi ngân sách đoạn thẳng không đủ bù đắp góc rẽ ban đầu thì không sinh ứng viên."""
     # Arrange
     p1: Point = (50000.0, 50000.0)

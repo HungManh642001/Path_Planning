@@ -85,7 +85,9 @@ def test_point_to_line_distance_with_perpendicular_projection_returns_offset() -
     assert math.isclose(dist, 10.0, abs_tol=1e-9)
 
 
-def test_point_to_line_distance_with_point_beyond_endpoint_returns_endpoint_distance() -> None:
+def test_point_to_line_distance_with_point_beyond_endpoint_returns_endpoint_distance() -> (
+    None
+):
     """Kiểm tra khoảng cách khi điểm nằm ngoài phạm vi đoạn thẳng lấy khoảng cách tới đầu mút."""
     # Arrange
     point: Point = (15.0, 0.0)

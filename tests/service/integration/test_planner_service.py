@@ -5,10 +5,8 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from path_planning import config
-from path_planning import planner as path_planning_planner
-from service.vtx_service import plan
-from service.vtx_service import planner as service_planner_module
+from path_planning import config, planner as path_planning_planner
+from service.vtx_service import plan, planner as service_planner_module
 from service.vtx_service.map_file import PreloadedMap
 from service.vtx_service.messages import (
     IDL_VERSION,
@@ -18,6 +16,7 @@ from service.vtx_service.messages import (
     SearchBudget,
     VehicleLimits,
 )
+
 
 LIMITS = VehicleLimits(8000.0, 8000.0, 15000.0, 500.0, 90.0)
 

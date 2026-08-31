@@ -17,6 +17,7 @@ from service.vtx_service.runtime import (
     planner_version,
 )
 
+
 _TRUE_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -79,9 +80,12 @@ def test_planner_version_does_not_call_subprocess_at_call_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Kiểm tra planner_version không gọi lại subprocess lúc thực thi (được cache import-time)."""
+
     # Arrange
     def _boom(*args: object, **kwargs: object) -> object:
-        raise AssertionError("planner_version() không được gọi lại subprocess lúc runtime")
+        raise AssertionError(
+            "planner_version() không được gọi lại subprocess lúc runtime"
+        )
 
     monkeypatch.setattr(runtime.subprocess, "run", _boom)
 

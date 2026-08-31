@@ -92,7 +92,9 @@ def sample_clean_scenario(
 
 
 @pytest.fixture
-def sample_preprocessed_scenario(sample_clean_scenario: Scenario) -> PreprocessedScenario:
+def sample_preprocessed_scenario(
+    sample_clean_scenario: Scenario,
+) -> PreprocessedScenario:
     """Cung cấp kịch bản đã tiền xử lý hoàn chỉnh sẵn sàng cho thuật toán tìm kiếm.
 
     Args:

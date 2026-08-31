@@ -19,6 +19,7 @@ from service.vtx_service.messages import (
 )
 from service.vtx_service.runner import PlanRunner
 
+
 LIMITS = VehicleLimits(8000.0, 8000.0, 15000.0, 500.0, 90.0)
 
 

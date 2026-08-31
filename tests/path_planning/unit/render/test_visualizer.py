@@ -6,8 +6,13 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 from path_planning import config
-from path_planning.render.visualizer import _content_extents, _plot_extents, plot_scenario
+from path_planning.render.visualizer import (
+    _content_extents,
+    _plot_extents,
+    plot_scenario,
+)
 from path_planning.types import PreprocessedScenario, Scenario
+
 
 # Chạy backend không tương tác để test trên CI/headless
 matplotlib.use("Agg")

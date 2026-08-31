@@ -16,7 +16,9 @@ def test_collision_detector_initialization_with_preprocessed_scenario(
     detector = CollisionDetector(sample_preprocessed_scenario)
 
     # Assert
-    assert len(detector.circles) == len(sample_preprocessed_scenario["circle_obstacles"])
+    assert len(detector.circles) == len(
+        sample_preprocessed_scenario["circle_obstacles"]
+    )
     assert len(detector.polygons) == len(
         sample_preprocessed_scenario["polygon_obstacles"]
     )

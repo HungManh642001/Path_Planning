@@ -11,6 +11,7 @@ from path_planning.scenario.preprocessing import prepare_scenario
 from path_planning.scenario.presets import get_all_scenarios
 from path_planning.validation.oracle import path_is_valid
 
+
 _SCENARIO_BUILDERS = get_all_scenarios()
 
 

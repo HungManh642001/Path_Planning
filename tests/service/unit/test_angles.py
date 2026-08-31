@@ -8,6 +8,7 @@ import pytest
 
 from service.vtx_service.angles import bearing_deg_to_math_rad, math_rad_to_bearing_deg
 
+
 KNOWN_DIRECTIONS = [
     (0.0, math.pi / 2),  # Bắc (+y)
     (90.0, 0.0),  # Đông (+x)

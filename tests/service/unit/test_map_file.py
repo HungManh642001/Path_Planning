@@ -15,6 +15,7 @@ from service.vtx_service.messages import (
     VehicleLimits,
 )
 
+
 MAP_XML = """<vtx-map version="1">
   <safezones>
     <polygon>

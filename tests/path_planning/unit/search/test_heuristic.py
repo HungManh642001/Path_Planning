@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 from path_planning.geometry.spatial import distance
 from path_planning.search.heuristic import euclidean_heuristic
 from path_planning.search.state import State

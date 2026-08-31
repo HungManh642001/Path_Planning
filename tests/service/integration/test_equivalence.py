@@ -24,6 +24,7 @@ from service.vtx_service.messages import (
 )
 from service.vtx_service.scenario_builder import build_scenario
 
+
 LIMITS = VehicleLimits(
     turn_radius_m=config.R,
     l0_m=config.L0,
@@ -72,11 +73,7 @@ def _direct_plan(request: PlanRequest) -> tuple[dict, list]:
         alpha_max_rad=math.radians(request.limits.alpha_max_deg),
     )
     result = plan_trajectory(preprocessed)
-    full = (
-        full_mission_path(result["path"], preprocessed)
-        if result["path"]
-        else []
-    )
+    full = full_mission_path(result["path"], preprocessed) if result["path"] else []
     return result, full
 
 

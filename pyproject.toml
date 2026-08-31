@@ -114,6 +114,26 @@ reportOptionalMemberAccess = false
 reportReturnType = false
 reportUnnecessaryTypeIgnoreComment = false
 
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+extraPaths = ["src", "tests"]
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportArgumentType = false
+reportGeneralTypeIssues = false
+reportUntypedBaseClass = false
+reportMissingTypeArgument = false
+reportIndexIssue = false
+reportAttributeAccessIssue = false
+reportOptionalMemberAccess = false
+reportReturnType = false
+reportUnnecessaryTypeIgnoreComment = false
+reportPrivateUsage = false
+reportTypedDictNotRequiredAccess = false
+reportAssignmentType = false
+reportUnknownParameterType = false
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]

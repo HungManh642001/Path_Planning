@@ -22,9 +22,8 @@ from service.vtx_service.messages import (
     Waypoint,
 )
 
-pytest.importorskip(
-    "cyclonedds", reason="Chưa cài đặt thư viện cyclonedds binding"
-)
+
+pytest.importorskip("cyclonedds", reason="Chưa cài đặt thư viện cyclonedds binding")
 
 from cyclonedds.idl.types import uint32
 
@@ -32,6 +31,7 @@ from service.vtx_service.transport import (
     DdsTransport,
     WireReply,
 )
+
 
 IDL_PATH = (
     Path(__file__).resolve().parents[3]
@@ -144,6 +144,7 @@ def test_request_survives_dds_round_trip() -> None:
 
 def test_correlated_replies_match_correct_request_id() -> None:
     """Kiểm tra cơ chế tương quan ánh xạ đúng request_id khi có nhiều yêu cầu gửi liên tiếp."""
+
     # Arrange
     def handler(incoming: PlanRequest) -> PlanReply:
         return _build_reply(incoming)
@@ -158,7 +159,9 @@ def test_correlated_replies_match_correct_request_id() -> None:
         first = uuid.uuid4().bytes
         second = uuid.uuid4().bytes
         assert client.request(_build_request(first), timeout_s=30.0).request_id == first
-        assert client.request(_build_request(second), timeout_s=30.0).request_id == second
+        assert (
+            client.request(_build_request(second), timeout_s=30.0).request_id == second
+        )
     finally:
         service.close()
         client.close()

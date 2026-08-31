@@ -9,7 +9,7 @@ from path_planning.render.sampling import (
     sample_trajectory,
     turn_markers,
 )
-from path_planning.types import PlannerState, Point, PreprocessedScenario
+from path_planning.types import PlannerState, PreprocessedScenario
 
 
 def test_build_full_path_joins_origin_waypoints_and_target(
@@ -61,12 +61,8 @@ def test_sample_trajectory_dubins_mode_inserts_curved_fillet_points() -> None:
     turn_radius = 8000.0
 
     # Act
-    samples_straight = sample_trajectory(
-        path, turn_radius=turn_radius, mode="straight"
-    )
-    samples_dubins = sample_trajectory(
-        path, turn_radius=turn_radius, mode="dubins"
-    )
+    samples_straight = sample_trajectory(path, turn_radius=turn_radius, mode="straight")
+    samples_dubins = sample_trajectory(path, turn_radius=turn_radius, mode="dubins")
 
     # Assert
     assert len(samples_dubins) > len(samples_straight)

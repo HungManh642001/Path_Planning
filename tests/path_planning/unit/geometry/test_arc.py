@@ -120,9 +120,7 @@ def test_arc_waypoints_generates_circumscribed_polygon_points() -> None:
     theta_max_rad = math.radians(30.0)
 
     # Act
-    waypoints = arc_waypoints(
-        center, radius, start_pt, dphi, sense, theta_max_rad
-    )
+    waypoints = arc_waypoints(center, radius, start_pt, dphi, sense, theta_max_rad)
 
     # Assert
     assert len(waypoints) >= 2

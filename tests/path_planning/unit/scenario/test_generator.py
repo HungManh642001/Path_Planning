@@ -50,7 +50,7 @@ def test_generate_dynamic_obstacles_avoids_start_and_goal_clearance() -> None:
 
     # Assert
     assert len(circles) == count
-    for (cx, cy), r in circles:
+    for (_cx, _cy), r in circles:
         assert r > 0.0
 
 

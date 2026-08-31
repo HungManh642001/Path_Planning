@@ -18,6 +18,7 @@ from service.vtx_service.messages import (
 )
 from service.vtx_service.scenario_builder import build_scenario
 
+
 LIMITS = VehicleLimits(8000.0, 8000.0, 15000.0, 500.0, 90.0)
 
 
@@ -31,7 +32,9 @@ def _build_request(**overrides: object) -> PlanRequest:
         "goal": (300000.0, 200000.0),
         "goal_heading_deg": 45.0,
         "is_goal_heading_free": False,
-        "islands": (((100000.0, 100000.0), (120000.0, 100000.0), (110000.0, 130000.0)),),
+        "islands": (
+            ((100000.0, 100000.0), (120000.0, 100000.0), (110000.0, 130000.0)),
+        ),
         "dynamic_obstacles": (Circle(center=(200000.0, 150000.0), radius_m=12000.0),),
         "safezones": (),
         "use_preloaded_map": False,
