@@ -39,9 +39,10 @@ def test_plan_trajectory_with_fixed_goal_heading_produces_oracle_valid_path() ->
     assert result["is_success"] is True
     assert result["path"] is not None
     assert len(result["path"]) >= 2
-    full_path = build_full_path(result["path"], prep)
+    assert result["path"][0][0] == scenario["start"]
+    assert result["path"][-1][0] == scenario["goal"]
     validation = path_is_valid(
-        full_path,
+        result["path"],
         circle_obstacles=prep["circle_obstacles"],
         polygon_obstacles=prep["polygon_obstacles"],
         turn_radius=config.R,
@@ -78,9 +79,10 @@ def test_plan_trajectory_with_free_goal_heading_produces_oracle_valid_path() -> 
     # Assert
     assert result["is_success"] is True
     assert result["path"] is not None
-    full_path = build_full_path(result["path"], prep)
+    assert result["path"][0][0] == scenario["start"]
+    assert result["path"][-1][0] == scenario["goal"]
     validation = path_is_valid(
-        full_path,
+        result["path"],
         circle_obstacles=prep["circle_obstacles"],
         polygon_obstacles=prep["polygon_obstacles"],
         turn_radius=config.R,

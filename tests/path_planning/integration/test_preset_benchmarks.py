@@ -37,10 +37,11 @@ def test_preset_scenario_produces_oracle_valid_trajectory(
         f"Kịch bản {scenario_name} không tìm thấy đường bay hợp lệ"
     )
     assert result["path"] is not None, f"Kịch bản {scenario_name} trả về path rỗng"
+    assert result["path"][0][0] == scenario["start"]
+    assert result["path"][-1][0] == scenario["goal"]
 
-    full_path = build_full_path(result["path"], prep)
     validation = path_is_valid(
-        full_path,
+        result["path"],
         circle_obstacles=prep["circle_obstacles"],
         polygon_obstacles=prep["polygon_obstacles"],
         turn_radius=config.R,

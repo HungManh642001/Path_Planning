@@ -15,7 +15,6 @@ from typing import Any
 from path_planning import planner
 from path_planning.geometry import spatial
 from path_planning.scenario import preprocessing
-from path_planning.trajectory import mission_path
 from service.vtx_service.angles import math_rad_to_bearing_deg
 from service.vtx_service.map_file import PreloadedMap
 from service.vtx_service.messages import (
@@ -108,7 +107,7 @@ def _full_path(result: dict[str, Any], preprocessed: dict[str, Any]) -> list[Any
     """Đường bay đầy đủ ``O..T``, hoặc rỗng khi không có đường nào."""
     if not result["path"]:
         return []
-    return mission_path.full_mission_path(result["path"], preprocessed)
+    return list(result["path"])
 
 
 def _waypoints_out(

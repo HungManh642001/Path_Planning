@@ -459,11 +459,11 @@ class KinodynamicAstar:
             dss=self._dss,
         )
         if not res.is_ok:
-            return self._result(path, False, res.detail)
+            return self._result(full, False, res.detail)
 
         if verbose:
-            logger.info(f"Path found with {len(path)} waypoints")
-        return self._result(path, True, None)
+            logger.info(f"Path found with {len(full)} waypoints")
+        return self._result(full, True, None)
 
     def _result(
         self, path: list[PlannerState] | None, is_success: bool, reason: str | None
