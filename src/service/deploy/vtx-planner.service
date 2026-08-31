@@ -1,6 +1,6 @@
 [Unit]
-Description=VTX path planning service (DDS)
-Documentation=file:/opt/vtx/path_planning/docs/superpowers/specs/2026-08-22-dds-path-planning-service-design.md
+Description=VTX path planning service (NATS)
+Documentation=file:/opt/vtx/path_planning/docs/superpowers/specs/2026-08-31-nats-service-redesign.md
 After=network.target
 
 [Service]
@@ -9,17 +9,16 @@ User=vtx
 Group=vtx
 WorkingDirectory=/opt/vtx/path_planning
 
-# Worker import core.* THẲNG từ cây mã nguồn, không qua wheel. Đó là cơ chế
-# cập nhật tự động ở mức triển khai: git pull && systemctl restart.
-Environment=PYTHONPATH=/opt/vtx/path_planning:/opt/vtx/path_planning/service
+# Worker import path_planning và service THẲNG từ cây mã nguồn
+Environment=PYTHONPATH=/opt/vtx/path_planning/src
 Environment=PYTHONUNBUFFERED=1
 
-ExecStart=/opt/vtx/venv/bin/python -m vtx_service.main \
-    --domain-id 0 \
+ExecStart=/opt/vtx/venv/bin/python -m service.vtx_service.main \
+    --nats-server nats://localhost:4222 \
+    --subject vtx.algorithms.path_planning.plan \
+    --queue vtx.algorithms.path_planning \
     --grace-seconds 2.0
 # Thêm --preloaded-map /opt/vtx/basemap.xml nếu triển khai này dùng bản đồ nền.
-# Mặc định KHÔNG có: request tự chứa thì replay được và chẩn đoán được, còn
-# state ẩn trong service thì không.
 
 Restart=on-failure
 RestartSec=5

@@ -8,6 +8,8 @@ dependencies = [
     "numpy",
     "shapely",
     "matplotlib",
+    "nats-py>=2.12.0",
+    "protobuf>=5.0.0",
     "typing_extensions>=4.0; python_version < '3.11'",
 ]
 

@@ -1,10 +1,9 @@
-"""Vòng đời service: nạp bản đồ, khởi động runner, rồi mới lên DDS.
+"""Vòng đời service: nạp bản đồ, khởi động runner, rồi mới kết nối NATS.
 
 THỨ TỰ Ở ĐÂY LÀ MỘT RÀNG BUỘC, KHÔNG PHẢI SỞ THÍCH. `PlanRunner.start()` phải
-chạy trước khi khởi tạo DDS: nó ép tiến trình forkserver ra đời trong lúc tiến
-trình này còn sạch thread. Nếu để DDS lên trước, forkserver sẽ ra đời từ một
-tiến trình đang chạy thread nền của DDS, và mọi tiến trình con sau đó thừa
-hưởng rủi ro deadlock đúng như mục 3 của spec mô tả.
+chạy trước khi khởi tạo network: nó ép tiến trình forkserver ra đời trong lúc tiến
+trình này còn sạch thread. Nếu để networking lên trước, forkserver sẽ ra đời từ một
+tiến trình đang chạy thread nền, và mọi tiến trình con sau đó thừa hưởng rủi ro deadlock.
 """
 
 from __future__ import annotations
@@ -25,10 +24,16 @@ from service.vtx_service.runtime import (
     effective_time_budget_s,
     planner_version,
 )
+from service.vtx_service.transport import (
+    DEFAULT_NATS_SERVER,
+    DEFAULT_QUEUE_GROUP,
+    DEFAULT_SUBJECT,
+    NatsTransport,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Chạy service lập lịch đường bay DDS.
+    """Chạy service lập lịch đường bay NATS.
 
     Args:
         argv: Danh sách tham số dòng lệnh. Nếu None, dùng sys.argv.
@@ -36,8 +41,27 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         int: Mã exit của tiến trình.
     """
-    parser = argparse.ArgumentParser(description="VTX path planning DDS service")
-    parser.add_argument("--domain-id", type=int, default=0)
+    parser = argparse.ArgumentParser(
+        description="VTX path planning NATS microservice"
+    )
+    parser.add_argument(
+        "--nats-server",
+        type=str,
+        default=DEFAULT_NATS_SERVER,
+        help=f"URL NATS server (mặc định: {DEFAULT_NATS_SERVER})",
+    )
+    parser.add_argument(
+        "--subject",
+        type=str,
+        default=DEFAULT_SUBJECT,
+        help=f"NATS subject lắng nghe yêu cầu (mặc định: {DEFAULT_SUBJECT})",
+    )
+    parser.add_argument(
+        "--queue",
+        type=str,
+        default=DEFAULT_QUEUE_GROUP,
+        help=f"Tên Queue Group cân bằng tải (mặc định: {DEFAULT_QUEUE_GROUP})",
+    )
     parser.add_argument(
         "--preloaded-map",
         type=Path,
@@ -67,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
         log.info("không có bản đồ nền; mọi request phải tự chứa")
 
     runner = PlanRunner(preloaded=preloaded, grace_s=args.grace_seconds)
-    runner.start()  # PHẢI trước DDS - xem docstring của module
+    runner.start()  # PHẢI trước transport - xem docstring của module
     log.info(
         "planner %s, config %s, ngân sách mặc định %.1f s, trần theo request %.1f s",
         planner_version(),
@@ -76,13 +100,14 @@ def main(argv: list[str] | None = None) -> int:
         MAX_REQUEST_TIME_BUDGET_S,
     )
 
-    from service.vtx_service.transport import DdsTransport  # lazy import
-
-    transport = DdsTransport(domain_id=args.domain_id)
-    log.info("sẵn sàng trên domain %d", args.domain_id)
+    transport = NatsTransport(
+        server_url=args.nats_server,
+        subject=args.subject,
+        queue=args.queue,
+    )
 
     def handle(request: PlanRequest) -> PlanReply:
-        """Xử lý một request lập lịch từ DDS.
+        """Xử lý một request lập lịch từ NATS.
 
         Args:
             request: Yêu cầu lập lịch nhận được.
@@ -99,9 +124,6 @@ def main(argv: list[str] | None = None) -> int:
             reply.plan_wall_time_s,
         )
         if reply.status is not PlanStatus.OK:
-            # F4: reply.detail (traceback bao gồm, khi runner._failed trả về
-            # từ một tiến trình con NÉM LỖI) tới được CLIENT nhưng chưa từng
-            # tới journal - toán tử đọc `journalctl` không thấy gì hữu ích.
             log.warning(
                 "request %s detail: %s", request.request_id.hex()[:8], reply.detail
             )
@@ -115,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
             frame: Khung thực thi hiện tại.
         """
         log.info("nhận tín hiệu %s, đang dừng", signal.Signals(signum).name)
-        transport.close()
+        transport.stop()
 
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
@@ -123,7 +145,6 @@ def main(argv: list[str] | None = None) -> int:
     try:
         transport.serve(handle)
     finally:
-        transport.close()
         runner.stop()
         log.info("đã dừng")
     return 0
