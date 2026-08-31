@@ -21,7 +21,7 @@ from path_planning import config, planner as astar
 _log = logging.getLogger("vtx-planner")
 
 _CONFIG_REF = re.compile(r"\bconfig\.([A-Z][A-Z0-9_]*)\b")
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def planner_config_snapshot() -> dict[str, object]:
