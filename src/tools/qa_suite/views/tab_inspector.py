@@ -871,12 +871,15 @@ def render_tab_inspector() -> None:
                             circle_radius = float(
                                 st.session_state.get("circle_radius", 25000.0)
                             )
+                            st.session_state["circle_input_x"] = click_coord[0]
+                            st.session_state["circle_input_y"] = click_coord[1]
                             st.session_state["active_scenario"] = add_circle_obstacle(
                                 st.session_state["active_scenario"],
                                 click_coord,
                                 circle_radius,
                             )
                             st.rerun()
+
                         elif studio_mode == "📐 Add Polygon (Click Vertices)":
                             curr_draft = list(
                                 st.session_state.get("draft_polygon_vertices", [])

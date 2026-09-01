@@ -453,3 +453,80 @@ def test_render_tab_inspector_delete_obstacle_by_index() -> None:
         assert mock_rerun.called
         active = fake_state["active_scenario"]
         assert len(active["obstacles"]) < len(scen["obstacles"])
+
+
+def test_render_tab_inspector_dual_input_polygon() -> None:
+    """Kiểm thử thêm đỉnh và hoàn thành polygon bằng nút bấm thủ công."""
+    fake_state = FakeSessionState(
+        {
+            "active_scenario": get_all_scenarios()["scenario_01_open_ocean"](),
+            "studio_mode": "📐 Add Polygon (Click Vertices)",
+            "draft_polygon_vertices": [
+                (100000.0, 100000.0),
+                (200000.0, 100000.0),
+            ],
+            "last_selected_base_preset": "scenario_01_open_ocean",
+        }
+    )
+
+    def mock_radio(label: str, *args: Any, **kwargs: Any) -> str:
+        if "Scenario Source" in label:
+            return "🎨 Interactive Studio (GUI Drawing)"
+        if "Studio Mode" in label:
+            return "📐 Add Polygon (Click Vertices)"
+        return "Local Python Core"
+
+    def mock_button_add_vertex(label: str, *args: Any, **kwargs: Any) -> bool:
+        return "Add Vertex" in label
+
+    with (
+        patch("streamlit.session_state", fake_state),
+        patch("streamlit.radio", side_effect=mock_radio),
+        patch("streamlit.selectbox", return_value="scenario_01_open_ocean"),
+        patch("streamlit.number_input", return_value=50000.0),
+        patch("streamlit.checkbox", return_value=True),
+        patch("streamlit.button", side_effect=mock_button_add_vertex),
+        patch("streamlit.columns", side_effect=_mock_columns),
+        patch("streamlit.expander", return_value=MagicMock()),
+        patch("streamlit.plotly_chart", return_value=None),
+        patch("streamlit.rerun") as mock_rerun,
+    ):
+        render_tab_inspector()
+        assert mock_rerun.called
+        assert len(fake_state["draft_polygon_vertices"]) == 3
+
+
+def test_render_tab_inspector_modebar_config() -> None:
+    """Kiểm thử cấu hình ModeBar Plotly không chứa drawline."""
+    fake_state = FakeSessionState(
+        {
+            "active_scenario": get_all_scenarios()["scenario_01_open_ocean"](),
+            "studio_mode": "🔍 Pan / Inspect",
+        }
+    )
+
+    captured_config: dict[str, Any] = {}
+
+    def mock_plotly_chart(fig: Any, *args: Any, **kwargs: Any) -> Any:
+        nonlocal captured_config
+        captured_config = kwargs.get("config", {})
+        return None
+
+    with (
+        patch("streamlit.session_state", fake_state),
+        patch("streamlit.radio", return_value="Preset Scenarios (18 Cases)"),
+        patch("streamlit.selectbox", return_value="scenario_01_open_ocean"),
+        patch("streamlit.number_input", return_value=20000.0),
+        patch("streamlit.checkbox", return_value=True),
+        patch("streamlit.button", return_value=False),
+        patch("streamlit.columns", side_effect=_mock_columns),
+        patch("streamlit.expander", return_value=MagicMock()),
+        patch("streamlit.plotly_chart", side_effect=mock_plotly_chart),
+        patch("streamlit.rerun"),
+    ):
+        render_tab_inspector()
+        buttons = captured_config.get("modeBarButtonsToAdd", [])
+        assert "drawcircle" in buttons
+        assert "drawclosedpath" in buttons
+        assert "eraseshape" in buttons
+        assert "drawline" not in buttons
