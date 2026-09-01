@@ -316,3 +316,62 @@ def test_render_tab_inspector_studio_quick_actions() -> None:
         render_tab_inspector()
         assert mock_rerun3.called
         assert len(fake_state["active_scenario"]["obstacles"]) == 0
+
+
+def test_parse_svg_path() -> None:
+    """Kiểm thử hàm parse SVG path thành tọa độ đỉnh đa giác."""
+    from tools.qa_suite.views.tab_inspector import _parse_svg_path
+
+    path_svg = "M 100000,100000 L 200000,100000 L 200000,200000 Z"
+    pts = _parse_svg_path(path_svg)
+    assert len(pts) == 3
+    assert pts[0] == (100000.0, 100000.0)
+    assert pts[1] == (200000.0, 100000.0)
+    assert pts[2] == (200000.0, 200000.0)
+
+
+def test_render_tab_inspector_studio_shapes_handling() -> None:
+    """Kiểm thử bắt sự kiện vẽ hình tự do từ ModeBar Plotly (shapes)."""
+    fake_state = FakeSessionState(
+        {
+            "active_scenario": get_all_scenarios()["scenario_01_open_ocean"](),
+            "studio_mode": "🔍 Pan / Inspect",
+            "last_processed_shape": None,
+        }
+    )
+
+    def mock_radio(label: str, *args: Any, **kwargs: Any) -> str:
+        if "Scenario Source" in label:
+            return "🎨 Interactive Studio (GUI Drawing)"
+        return "Local Python Core"
+
+    mock_selection_circle = {
+        "shapes": [
+            {
+                "type": "circle",
+                "x0": 100000.0,
+                "x1": 150000.0,
+                "y0": 100000.0,
+                "y1": 150000.0,
+            }
+        ]
+    }
+
+    with (
+        patch("streamlit.session_state", fake_state),
+        patch("streamlit.radio", side_effect=mock_radio),
+        patch("streamlit.selectbox", return_value="scenario_01_open_ocean"),
+        patch("streamlit.number_input", return_value=20000.0),
+        patch("streamlit.checkbox", return_value=True),
+        patch("streamlit.button", return_value=False),
+        patch("streamlit.columns", side_effect=_mock_columns),
+        patch("streamlit.expander", return_value=MagicMock()),
+        patch("streamlit.plotly_chart", return_value=mock_selection_circle),
+        patch("streamlit.rerun") as mock_rerun,
+    ):
+        render_tab_inspector()
+        assert mock_rerun.called
+        active = fake_state["active_scenario"]
+        assert len(active["dynamic_obstacles"]) >= 1
+        assert active["dynamic_obstacles"][-1][0] == (125000.0, 125000.0)
+        assert active["dynamic_obstacles"][-1][1] == 25000.0

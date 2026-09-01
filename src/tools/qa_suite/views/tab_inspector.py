@@ -82,6 +82,27 @@ def _compute_waypoint_table_data(
     return table_data
 
 
+def _parse_svg_path(path_str: str) -> list[tuple[float, float]]:
+    """Phân tích chuỗi SVG path (vd: 'M 10 20 L 30 40 Z') thành danh sách (x, y)."""
+    clean_str = (
+        path_str.replace("M", " ")
+        .replace("L", " ")
+        .replace("Z", " ")
+        .replace("z", " ")
+        .replace(",", " ")
+    )
+    tokens = clean_str.split()
+    coords: list[tuple[float, float]] = []
+    i = 0
+    while i < len(tokens) - 1:
+        with contextlib.suppress(ValueError):
+            x = float(tokens[i])
+            y = float(tokens[i + 1])
+            coords.append((x, y))
+        i += 2
+    return coords
+
+
 def render_tab_inspector() -> None:
     """Hiển thị toàn bộ giao diện Visual Scenario Inspector & Interactive Studio."""
     st.subheader("🔍 Visual Scenario Inspector & Interactive Studio")
@@ -264,10 +285,13 @@ def render_tab_inspector() -> None:
                     )
                     if free_goal_cb:
                         if not is_free_goal:
-                            new_s = dict(scenario)
-                            new_s["goal_heading"] = None
-                            st.session_state["active_scenario"] = new_s
+                            st.session_state["active_scenario"] = update_goal_position(
+                                st.session_state["active_scenario"],
+                                scenario["goal"],
+                                clear_heading=True,
+                            )
                             st.rerun()
+
                     else:
                         gh = scenario.get("goal_heading")
                         curr_g_deg = math.degrees(gh) if gh is not None else 0.0
@@ -600,12 +624,24 @@ def render_tab_inspector() -> None:
             dragmode="pan",
         )
 
+        plotly_config = {
+            "modeBarButtonsToAdd": [
+                "drawcircle",
+                "drawclosedpath",
+                "drawline",
+                "eraseshape",
+            ],
+            "displaylogo": False,
+            "responsive": True,
+        }
+
         selection = st.plotly_chart(
             fig,
             use_container_width=True,
             on_select="rerun",
             selection_mode=["points", "box"],
             key="inspector_map",
+            config=plotly_config,
         )
 
         # Xử lý sự kiện click / selection từ Plotly
@@ -614,6 +650,48 @@ def render_tab_inspector() -> None:
             and selection
             and isinstance(selection, dict)
         ):
+            # 1. Xử lý các hình vẽ tự do từ Plotly ModeBar (shapes)
+            shapes = selection.get("shapes", [])
+            if shapes and isinstance(shapes, list):
+                last_shape = shapes[-1]
+                if isinstance(last_shape, dict):
+                    shape_type = str(last_shape.get("type", ""))
+                    shape_sig = (
+                        f"{shape_type}_{last_shape.get('x0')}_{last_shape.get('y0')}_"
+                        f"{last_shape.get('x1')}_{last_shape.get('y1')}_"
+                        f"{last_shape.get('path')}"
+                    )
+                    if st.session_state.get("last_processed_shape") != shape_sig:
+                        st.session_state["last_processed_shape"] = shape_sig
+                        if shape_type == "circle":
+                            x0 = float(last_shape.get("x0", 0.0))
+                            x1 = float(last_shape.get("x1", 0.0))
+                            y0 = float(last_shape.get("y0", 0.0))
+                            y1 = float(last_shape.get("y1", 0.0))
+                            cx = (x0 + x1) / 2.0
+                            cy = (y0 + y1) / 2.0
+                            r = abs(x1 - x0) / 2.0
+                            if r > 10.0:
+                                st.session_state["active_scenario"] = (
+                                    add_circle_obstacle(
+                                        st.session_state["active_scenario"],
+                                        (cx, cy),
+                                        r,
+                                    )
+                                )
+                                st.rerun()
+                        elif shape_type == "path" and "path" in last_shape:
+                            poly_pts = _parse_svg_path(str(last_shape["path"]))
+                            if len(poly_pts) >= 3:
+                                st.session_state["active_scenario"] = (
+                                    add_polygon_obstacle(
+                                        st.session_state["active_scenario"],
+                                        poly_pts,
+                                    )
+                                )
+                                st.rerun()
+
+            # 2. Xử lý sự kiện click điểm (points)
             pts = selection.get("points", [])
             if pts and isinstance(pts, list):
                 last_pt = pts[-1]
@@ -642,9 +720,11 @@ def render_tab_inspector() -> None:
                             )
                             st.rerun()
                         elif studio_mode == "📐 Add Polygon (Click Vertices)":
-                            st.session_state.setdefault(
-                                "draft_polygon_vertices", []
-                            ).append(click_coord)
+                            curr_draft = list(
+                                st.session_state.get("draft_polygon_vertices", [])
+                            )
+                            curr_draft.append(click_coord)
+                            st.session_state["draft_polygon_vertices"] = curr_draft
                             st.rerun()
                         elif studio_mode == "🚀 Move Start (O)":
                             st.session_state["active_scenario"] = update_start_position(

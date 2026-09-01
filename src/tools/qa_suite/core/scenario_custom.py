@@ -326,6 +326,7 @@ def update_start_position(
     scenario: Scenario,
     start: tuple[float, float],
     heading_rad: float | None = None,
+    clear_heading: bool = False,
 ) -> Scenario:
     """Cập nhật tọa độ điểm xuất phát và hướng cất cánh (tùy chọn).
 
@@ -333,13 +334,16 @@ def update_start_position(
         scenario: Kịch bản gốc.
         start: Tọa độ điểm cất cánh mới (x, y) (m).
         heading_rad: Hướng cất cánh mới (rad), hoặc None để giữ nguyên hướng hiện tại.
+        clear_heading: Nếu True, đặt hướng cất cánh về 0.0.
 
     Returns:
         Scenario mới với tọa độ và hướng xuất phát đã cập nhật.
     """
     new_scenario = _clone_scenario(scenario)
     new_scenario["start"] = (float(start[0]), float(start[1]))
-    if heading_rad is not None:
+    if clear_heading:
+        new_scenario["start_heading"] = 0.0
+    elif heading_rad is not None:
         new_scenario["start_heading"] = float(heading_rad)
     return new_scenario
 
@@ -348,6 +352,7 @@ def update_goal_position(
     scenario: Scenario,
     goal: tuple[float, float],
     heading_rad: float | None = None,
+    clear_heading: bool = False,
 ) -> Scenario:
     """Cập nhật tọa độ điểm mục tiêu đích và hướng tiếp cận (tùy chọn).
 
@@ -355,12 +360,15 @@ def update_goal_position(
         scenario: Kịch bản gốc.
         goal: Tọa độ điểm đích mới (x, y) (m).
         heading_rad: Hướng tiếp cận mới (rad), hoặc None để giữ nguyên hướng hiện tại.
+        clear_heading: Nếu True, xóa bỏ ràng buộc hướng đích (đặt goal_heading = None).
 
     Returns:
         Scenario mới với tọa độ và hướng mục tiêu đã cập nhật.
     """
     new_scenario = _clone_scenario(scenario)
     new_scenario["goal"] = (float(goal[0]), float(goal[1]))
-    if heading_rad is not None:
+    if clear_heading:
+        new_scenario["goal_heading"] = None
+    elif heading_rad is not None:
         new_scenario["goal_heading"] = float(heading_rad)
     return new_scenario

@@ -128,6 +128,12 @@ def test_scenario_mutation_helpers() -> None:
     s7 = update_goal_position(s6, goal=(85000.0, 88000.0), heading_rad=0.0)
     assert s7["goal"] == (85000.0, 88000.0)
     assert s7["goal_heading"] == 0.0
+
+    # Test clear_heading
+    s8 = update_goal_position(s7, goal=(85000.0, 88000.0), clear_heading=True)
+    assert s8["goal_heading"] is None
+    assert s7["goal_heading"] == 0.0  # Immutability check
+
     assert s6["goal"] == (90000.0, 90000.0)  # Immutability check
 
 
