@@ -10,10 +10,12 @@ from tools.qa_suite.core.scenario_custom import (
     build_custom_scenario,
     clear_all_obstacles,
     remove_last_obstacle,
+    remove_obstacle_by_index,
     scenario_from_dict,
     scenario_from_json,
     scenario_to_dict,
     scenario_to_json,
+    simplify_polygon_rdp,
     update_goal_position,
     update_start_position,
 )
@@ -172,3 +174,126 @@ def test_update_positions_preserve_heading_when_none() -> None:
     s_goal = update_goal_position(scenario, goal=(6000.0, 6000.0))
     assert s_goal["goal"] == (6000.0, 6000.0)
     assert s_goal["goal_heading"] == 2.34
+
+
+def test_simplify_polygon_rdp_reduces_collinear_and_noisy_vertices() -> None:
+    """Kiểm thử thuật toán RDP loại bỏ các đỉnh thẳng hàng hoặc nhiễu nhỏ."""
+    # A straight line with noisy intermediate points
+    raw_poly = [
+        (0.0, 0.0),
+        (100.0, 50.0),
+        (200.0, -30.0),
+        (1000.0, 0.0),
+        (1000.0, 1000.0),
+        (0.0, 1000.0),
+    ]
+    simplified = simplify_polygon_rdp(raw_poly, epsilon=100.0)
+    assert len(simplified) < len(raw_poly)
+    assert len(simplified) == 4
+    assert simplified == [(0.0, 0.0), (1000.0, 0.0), (1000.0, 1000.0), (0.0, 1000.0)]
+
+
+def test_simplify_polygon_rdp_edge_cases() -> None:
+    """Kiểm thử các trường hợp biên của simplify_polygon_rdp."""
+    # Fewer than 3 vertices returned unchanged
+    assert simplify_polygon_rdp([]) == []
+    assert simplify_polygon_rdp([(10.0, 20.0)]) == [(10.0, 20.0)]
+    assert simplify_polygon_rdp([(10.0, 20.0), (30.0, 40.0)]) == [
+        (10.0, 20.0),
+        (30.0, 40.0),
+    ]
+
+    # Exactly 3 vertices preserved even with large epsilon
+    triangle = [(0.0, 0.0), (50.0, 50.0), (100.0, 0.0)]
+    assert len(simplify_polygon_rdp(triangle, epsilon=50000.0)) == 3
+
+    # Large polygon with massive epsilon collapses to at least 3 vertices
+    quad = [(0.0, 0.0), (10.0, 1.0), (20.0, 1.0), (30.0, 0.0), (15.0, 20.0)]
+    simplified_huge_eps = simplify_polygon_rdp(quad, epsilon=100000.0)
+    assert len(simplified_huge_eps) >= 3
+
+    # Collinear intermediate vertices removed with zero/small epsilon
+    collinear_poly = [
+        (0.0, 0.0),
+        (25.0, 0.0),
+        (50.0, 0.0),
+        (75.0, 0.0),
+        (100.0, 0.0),
+        (100.0, 100.0),
+        (0.0, 100.0),
+    ]
+    simplified_collinear = simplify_polygon_rdp(collinear_poly, epsilon=1.0)
+    assert len(simplified_collinear) == 4
+    assert simplified_collinear == [
+        (0.0, 0.0),
+        (100.0, 0.0),
+        (100.0, 100.0),
+        (0.0, 100.0),
+    ]
+
+
+def test_remove_obstacle_by_index_removes_correct_obstacle() -> None:
+    """Kiểm thử xóa đúng obstacle chỉ định và đồng bộ dynamic_obstacles và islands."""
+    s = build_custom_scenario(
+        start=(0.0, 0.0),
+        start_heading=0.0,
+        goal=(100.0, 100.0),
+        goal_heading=None,
+    )
+    s = add_circle_obstacle(s, (10.0, 10.0), 5.0)
+    s = add_circle_obstacle(s, (20.0, 20.0), 6.0)
+    s = add_polygon_obstacle(s, [(30.0, 30.0), (40.0, 30.0), (35.0, 40.0)])
+    assert len(s["obstacles"]) == 3
+    assert len(s["dynamic_obstacles"]) == 2
+    assert len(s["islands"]) == 1
+
+    # Remove index 1 (the second circle)
+    s_new = remove_obstacle_by_index(s, 1)
+    assert len(s_new["obstacles"]) == 2
+    assert len(s_new["dynamic_obstacles"]) == 1
+    assert len(s_new["islands"]) == 1
+    assert s_new["obstacles"][0]["center"] == (10.0, 10.0)
+    assert s_new["obstacles"][1]["type"] == "polygon"
+    assert s_new["dynamic_obstacles"][0] == ((10.0, 10.0), 5.0)
+
+    # Remove index 1 from s_new (which is the polygon)
+    s_poly_removed = remove_obstacle_by_index(s_new, 1)
+    assert len(s_poly_removed["obstacles"]) == 1
+    assert len(s_poly_removed["dynamic_obstacles"]) == 1
+    assert len(s_poly_removed["islands"]) == 0
+    assert s_poly_removed["obstacles"][0]["type"] == "circle"
+
+
+def test_remove_obstacle_by_index_edge_cases_and_immutability() -> None:
+    """Kiểm thử tính bất biến, chỉ mục âm và xử lý index ngoài phạm vi."""
+    s = build_custom_scenario(
+        start=(0.0, 0.0),
+        start_heading=0.0,
+        goal=(100.0, 100.0),
+    )
+    # Empty scenario returns unchanged
+    s_empty = remove_obstacle_by_index(s, 0)
+    assert len(s_empty["obstacles"]) == 0
+
+    s = add_circle_obstacle(s, (10.0, 10.0), 5.0)
+    s = add_polygon_obstacle(s, [(20.0, 20.0), (30.0, 20.0), (25.0, 30.0)])
+    s = add_circle_obstacle(s, (40.0, 40.0), 8.0)
+
+    # Test negative indexing (-1 removes last obstacle, which is second circle)
+    s_neg = remove_obstacle_by_index(s, -1)
+    assert len(s_neg["obstacles"]) == 2
+    assert len(s_neg["dynamic_obstacles"]) == 1
+    assert len(s_neg["islands"]) == 1
+    assert s_neg["dynamic_obstacles"][0] == ((10.0, 10.0), 5.0)
+
+    # Immutability check on original s
+    assert len(s["obstacles"]) == 3
+    assert len(s["dynamic_obstacles"]) == 2
+    assert len(s["islands"]) == 1
+
+    # Out of range indices return unchanged
+    s_out1 = remove_obstacle_by_index(s, 99)
+    assert len(s_out1["obstacles"]) == 3
+
+    s_out2 = remove_obstacle_by_index(s, -10)
+    assert len(s_out2["obstacles"]) == 3
