@@ -356,48 +356,45 @@ def simplify_polygon_rdp(
         epsilon: Ngưỡng khoảng cách dung sai (m).
 
     Returns:
-        Danh sách các đỉnh đã được rút gọn (tối thiểu 3 đỉnh nếu input >= 3).
+        Danh sách đỉnh đã rút gọn (tối thiểu 3 đỉnh nếu input >= 3).
     """
     if len(vertices) < 3:
         return [(float(p[0]), float(p[1])) for p in vertices]
 
     pts = [(float(p[0]), float(p[1])) for p in vertices]
-    is_explicitly_closed = (
+    is_closed = False
+    if (
         len(pts) > 3
         and math.hypot(pts[0][0] - pts[-1][0], pts[0][1] - pts[-1][1]) < 1e-6
-    )
-    if is_explicitly_closed:
-        pts = pts[:-1]
+    ):
+        is_closed = True
 
-    if len(pts) < 3:
-        return [(float(p[0]), float(p[1])) for p in vertices]
+    if is_closed:
+        # For a closed loop, find point farthest from pts[0] to split into 2 chains
+        dmax = -1.0
+        split_idx = 1
+        for i in range(1, len(pts) - 1):
+            d = math.hypot(pts[i][0] - pts[0][0], pts[i][1] - pts[0][1])
+            if d > dmax:
+                dmax = d
+                split_idx = i
 
-    ring = [*pts, pts[0]]
-    dmax = -1.0
-    split_idx = 1
-    for i in range(1, len(pts)):
-        d = math.hypot(pts[i][0] - pts[0][0], pts[i][1] - pts[0][1])
-        if d > dmax:
-            dmax = d
-            split_idx = i
+        part1 = _rdp_recursive(pts[: split_idx + 1], epsilon)
+        part2 = _rdp_recursive(pts[split_idx:], epsilon)
+        simplified = part1[:-1] + part2
+    else:
+        simplified = _rdp_recursive(pts, epsilon)
 
-    part1 = _rdp_recursive(ring[: split_idx + 1], epsilon)
-    part2 = _rdp_recursive(ring[split_idx:], epsilon)
-    simplified = part1[:-1] + part2[:-1]
-
-    # Đảm bảo tối thiểu 3 đỉnh nếu input >= 3
+    # Ensure at least 3 vertices if input had >= 3 vertices
     if len(simplified) < 3 and len(pts) >= 3:
         dmax = -1.0
         best_idx = 1
-        for i in range(1, len(pts)):
-            d = _point_line_distance(pts[i], pts[0], pts[split_idx])
+        for i in range(1, len(pts) - 1):
+            d = _point_line_distance(pts[i], pts[0], pts[-1])
             if d > dmax:
                 dmax = d
                 best_idx = i
-        simplified = [pts[0], pts[split_idx], pts[best_idx]]
-
-    if is_explicitly_closed and len(simplified) >= 3:
-        simplified.append(simplified[0])
+        simplified = [pts[0], pts[best_idx], pts[-1]]
 
     return [(float(p[0]), float(p[1])) for p in simplified]
 
