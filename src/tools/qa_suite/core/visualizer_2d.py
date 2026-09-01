@@ -60,7 +60,7 @@ class PlotlyVisualizer2D:
         # 0. Lưới tương tác bắt sự kiện click trên nền bản đồ (Interactive Click Mesh)
         if enable_click_grid:
             map_w, map_h = scenario["map_bounds"]
-            step = 25000.0
+            step = 10000.0
             grid_xs: list[float] = []
             grid_ys: list[float] = []
             grid_hover: list[str] = []
@@ -84,7 +84,7 @@ class PlotlyVisualizer2D:
                     x=grid_xs,
                     y=grid_ys,
                     mode="markers",
-                    marker={"size": 12, "color": "rgba(0, 0, 0, 0.001)"},
+                    marker={"size": 16, "color": "rgba(0, 0, 0, 0.001)"},
                     name="Map Canvas Grid",
                     hoverinfo="text",
                     hovertext=grid_hover,

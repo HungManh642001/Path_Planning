@@ -331,28 +331,27 @@ def test_parse_svg_path() -> None:
 
 
 def test_render_tab_inspector_studio_shapes_handling() -> None:
-    """Kiểm thử bắt sự kiện vẽ hình tự do từ ModeBar Plotly (shapes)."""
+    """Kiểm thử bắt sự kiện kéo thả vùng chọn trên bản đồ (box selection)."""
     fake_state = FakeSessionState(
         {
             "active_scenario": get_all_scenarios()["scenario_01_open_ocean"](),
-            "studio_mode": "🔍 Pan / Inspect",
-            "last_processed_shape": None,
+            "studio_mode": "⭕ Add Circle Obstacle",
+            "last_studio_interaction": None,
         }
     )
 
     def mock_radio(label: str, *args: Any, **kwargs: Any) -> str:
         if "Scenario Source" in label:
             return "🎨 Interactive Studio (GUI Drawing)"
+        if "Studio Mode" in label:
+            return "⭕ Add Circle Obstacle"
         return "Local Python Core"
 
-    mock_selection_circle = {
-        "shapes": [
+    mock_selection_box = {
+        "box": [
             {
-                "type": "circle",
-                "x0": 100000.0,
-                "x1": 150000.0,
-                "y0": 100000.0,
-                "y1": 150000.0,
+                "x": [100000.0, 150000.0],
+                "y": [100000.0, 150000.0],
             }
         ]
     }
@@ -366,7 +365,7 @@ def test_render_tab_inspector_studio_shapes_handling() -> None:
         patch("streamlit.button", return_value=False),
         patch("streamlit.columns", side_effect=_mock_columns),
         patch("streamlit.expander", return_value=MagicMock()),
-        patch("streamlit.plotly_chart", return_value=mock_selection_circle),
+        patch("streamlit.plotly_chart", return_value=mock_selection_box),
         patch("streamlit.rerun") as mock_rerun,
     ):
         render_tab_inspector()
@@ -497,7 +496,7 @@ def test_render_tab_inspector_dual_input_polygon() -> None:
 
 
 def test_render_tab_inspector_modebar_config() -> None:
-    """Kiểm thử cấu hình ModeBar Plotly không chứa drawline."""
+    """Kiểm thử cấu hình ModeBar Plotly xóa các công cụ vẽ client-side thừa."""
     fake_state = FakeSessionState(
         {
             "active_scenario": get_all_scenarios()["scenario_01_open_ocean"](),
@@ -525,8 +524,11 @@ def test_render_tab_inspector_modebar_config() -> None:
         patch("streamlit.rerun"),
     ):
         render_tab_inspector()
-        buttons = captured_config.get("modeBarButtonsToAdd", [])
-        assert "drawcircle" in buttons
-        assert "drawclosedpath" in buttons
-        assert "eraseshape" in buttons
-        assert "drawline" not in buttons
+        add_buttons = captured_config.get("modeBarButtonsToAdd", [])
+        assert "select2d" in add_buttons
+        assert "lasso2d" in add_buttons
+        assert "eraseshape" in add_buttons
+        remove_buttons = captured_config.get("modeBarButtonsToRemove", [])
+        assert "drawline" in remove_buttons
+        assert "drawcircle" in remove_buttons
+        assert "drawclosedpath" in remove_buttons

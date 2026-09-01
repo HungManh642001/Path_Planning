@@ -768,6 +768,15 @@ def render_tab_inspector() -> None:
             list[tuple[float, float]],
             st.session_state.get("draft_polygon_vertices", []),
         )
+        current_studio_mode = st.session_state.get("studio_mode", "🔍 Pan / Inspect")
+        if scenario_source == "🎨 Interactive Studio (GUI Drawing)":
+            if current_studio_mode == "🔍 Pan / Inspect":
+                effective_dragmode = "pan"
+            else:
+                effective_dragmode = "select"
+        else:
+            effective_dragmode = "pan"
+
         fig = PlotlyVisualizer2D.create_scenario_figure(
             scenario=scenario,
             result=result,
@@ -776,15 +785,22 @@ def render_tab_inspector() -> None:
             safe_margin=safe_margin,
             show_buffer=show_buffer,
             draft_polygon_vertices=draft_vertices if draft_vertices else None,
-            dragmode="pan",
+            dragmode=effective_dragmode,
             enable_click_grid=True,
         )
 
         plotly_config = {
             "modeBarButtonsToAdd": [
+                "select2d",
+                "lasso2d",
+                "eraseshape",
+            ],
+            "modeBarButtonsToRemove": [
                 "drawcircle",
                 "drawclosedpath",
-                "eraseshape",
+                "drawline",
+                "drawopenpath",
+                "drawrect",
             ],
             "displaylogo": False,
             "responsive": True,
@@ -794,7 +810,7 @@ def render_tab_inspector() -> None:
             fig,
             use_container_width=True,
             on_select="rerun",
-            selection_mode=["points", "box"],
+            selection_mode=["points", "box", "lasso"],
             key="inspector_map",
             config=plotly_config,
         )
@@ -805,98 +821,88 @@ def render_tab_inspector() -> None:
             and selection
             and isinstance(selection, dict)
         ):
-            # 1. Xử lý các hình vẽ tự do từ Plotly ModeBar (shapes)
-            shapes = selection.get("shapes", [])
-            if shapes and isinstance(shapes, list):
-                last_shape = shapes[-1]
-                if isinstance(last_shape, dict):
-                    shape_type = str(last_shape.get("type", ""))
-                    shape_sig = (
-                        f"{shape_type}_{last_shape.get('x0')}_{last_shape.get('y0')}_"
-                        f"{last_shape.get('x1')}_{last_shape.get('y1')}_"
-                        f"{last_shape.get('path')}"
-                    )
-                    if st.session_state.get("last_processed_shape") != shape_sig:
-                        st.session_state["last_processed_shape"] = shape_sig
-                        if shape_type == "circle":
-                            x0 = float(last_shape.get("x0", 0.0))
-                            x1 = float(last_shape.get("x1", 0.0))
-                            y0 = float(last_shape.get("y0", 0.0))
-                            y1 = float(last_shape.get("y1", 0.0))
-                            cx = (x0 + x1) / 2.0
-                            cy = (y0 + y1) / 2.0
-                            r = max(abs(x1 - x0), abs(y1 - y0)) / 2.0
-                            if r > 10.0:
-                                st.session_state["active_scenario"] = (
-                                    add_circle_obstacle(
-                                        st.session_state["active_scenario"],
-                                        (cx, cy),
-                                        r,
-                                    )
-                                )
-                                st.rerun()
-                        elif shape_type == "path" and "path" in last_shape:
-                            poly_pts = _parse_svg_path(str(last_shape["path"]))
-                            if len(poly_pts) >= 3:
-                                simplified = simplify_polygon_rdp(
-                                    poly_pts, epsilon=3000.0
-                                )
-                                st.session_state["active_scenario"] = (
-                                    add_polygon_obstacle(
-                                        st.session_state["active_scenario"],
-                                        simplified,
-                                    )
-                                )
-                                st.rerun()
+            # 1. Trích xuất tọa độ từ box selection hoặc point click
+            click_coord: tuple[float, float] | None = None
+            drag_radius: float | None = None
 
-            # 2. Xử lý sự kiện click điểm (points)
-            pts = selection.get("points", [])
-            if pts and isinstance(pts, list):
-                last_pt = pts[-1]
-                if (
-                    isinstance(last_pt, dict)
-                    and "x" in last_pt
-                    and "y" in last_pt
-                    and last_pt["x"] is not None
-                    and last_pt["y"] is not None
-                ):
-                    click_coord = (float(last_pt["x"]), float(last_pt["y"]))
-                    if st.session_state.get("last_clicked_point") != click_coord:
-                        st.session_state["last_clicked_point"] = click_coord
-                        studio_mode = st.session_state.get(
-                            "studio_mode", "🔍 Pan / Inspect"
+            # A. Kiểm tra box selection (khi kéo thả vùng chọn trên bản đồ)
+            boxes = selection.get("box", [])
+            if boxes and isinstance(boxes, list) and len(boxes) > 0:
+                b = boxes[-1]
+                if isinstance(b, dict) and "x" in b and "y" in b:
+                    xs = b["x"]
+                    ys = b["y"]
+                    if (
+                        isinstance(xs, (list, tuple))
+                        and isinstance(ys, (list, tuple))
+                        and len(xs) >= 2
+                        and len(ys) >= 2
+                    ):
+                        x0, x1 = float(xs[0]), float(xs[1])
+                        y0, y1 = float(ys[0]), float(ys[1])
+                        cx = (x0 + x1) / 2.0
+                        cy = (y0 + y1) / 2.0
+                        dx = abs(x1 - x0)
+                        dy = abs(y1 - y0)
+                        click_coord = (cx, cy)
+                        if dx > 1000.0 or dy > 1000.0:
+                            drag_radius = max(dx, dy) / 2.0
+
+            # B. Kiểm tra point click nếu không có box selection
+            if click_coord is None:
+                pts = selection.get("points", [])
+                if pts and isinstance(pts, list) and len(pts) > 0:
+                    last_pt = pts[-1]
+                    if (
+                        isinstance(last_pt, dict)
+                        and "x" in last_pt
+                        and "y" in last_pt
+                        and last_pt["x"] is not None
+                        and last_pt["y"] is not None
+                    ):
+                        click_coord = (float(last_pt["x"]), float(last_pt["y"]))
+
+            # C. Thực hiện cập nhật kịch bản dựa theo Studio Mode
+            if click_coord is not None:
+                coord_sig = f"{current_studio_mode}_{click_coord[0]:.1f}_{click_coord[1]:.1f}_{drag_radius}"  # noqa: E501
+                if st.session_state.get("last_studio_interaction") != coord_sig:
+                    st.session_state["last_studio_interaction"] = coord_sig
+
+                    if current_studio_mode == "⭕ Add Circle Obstacle":
+                        circle_radius = (
+                            drag_radius
+                            if drag_radius is not None
+                            else float(st.session_state.get("circle_radius", 25000.0))
                         )
+                        st.session_state["circle_input_x"] = click_coord[0]
+                        st.session_state["circle_input_y"] = click_coord[1]
+                        st.session_state["circle_radius"] = circle_radius
+                        st.session_state["active_scenario"] = add_circle_obstacle(
+                            st.session_state["active_scenario"],
+                            click_coord,
+                            circle_radius,
+                        )
+                        st.rerun()
 
-                        if studio_mode == "⭕ Add Circle Obstacle":
-                            circle_radius = float(
-                                st.session_state.get("circle_radius", 25000.0)
-                            )
-                            st.session_state["circle_input_x"] = click_coord[0]
-                            st.session_state["circle_input_y"] = click_coord[1]
-                            st.session_state["active_scenario"] = add_circle_obstacle(
-                                st.session_state["active_scenario"],
-                                click_coord,
-                                circle_radius,
-                            )
-                            st.rerun()
+                    elif current_studio_mode == "📐 Add Polygon (Click Vertices)":
+                        curr_draft = list(
+                            st.session_state.get("draft_polygon_vertices", [])
+                        )
+                        curr_draft.append(click_coord)
+                        st.session_state["draft_polygon_vertices"] = curr_draft
+                        st.rerun()
 
-                        elif studio_mode == "📐 Add Polygon (Click Vertices)":
-                            curr_draft = list(
-                                st.session_state.get("draft_polygon_vertices", [])
-                            )
-                            curr_draft.append(click_coord)
-                            st.session_state["draft_polygon_vertices"] = curr_draft
-                            st.rerun()
-                        elif studio_mode == "🚀 Move Start (O)":
-                            st.session_state["active_scenario"] = update_start_position(
-                                st.session_state["active_scenario"], click_coord
-                            )
-                            st.rerun()
-                        elif studio_mode == "🎯 Move Goal (T)":
-                            st.session_state["active_scenario"] = update_goal_position(
-                                st.session_state["active_scenario"], click_coord
-                            )
-                            st.rerun()
+                    elif current_studio_mode == "🚀 Move Start (O)":
+                        st.session_state["active_scenario"] = update_start_position(
+                            st.session_state["active_scenario"], click_coord
+                        )
+                        st.rerun()
+
+                    elif current_studio_mode == "🎯 Move Goal (T)":
+                        st.session_state["active_scenario"] = update_goal_position(
+                            st.session_state["active_scenario"], click_coord
+                        )
+                        st.rerun()
 
         # Waypoint Details Table
         if result.waypoints:
