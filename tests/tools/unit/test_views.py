@@ -27,8 +27,15 @@ class FakeSessionState(dict[str, Any]):
 
 def _mock_columns(spec: Any, **kwargs: Any) -> list[MagicMock]:
     """Tạo danh sách Mock columns tương ứng với spec truyền vào."""
+    import streamlit as st
+
     count = spec if isinstance(spec, int) else len(spec)
-    return [MagicMock() for _ in range(count)]
+    cols: list[MagicMock] = []
+    for _ in range(count):
+        col = MagicMock()
+        col.button.side_effect = lambda *a, **kw: st.button(*a, **kw)
+        cols.append(col)
+    return cols
 
 
 def test_compute_waypoint_table_data() -> None:
