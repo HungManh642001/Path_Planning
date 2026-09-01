@@ -29,6 +29,7 @@ from tools.qa_suite.core.scenario_custom import (
     clear_all_obstacles,
     remove_last_obstacle,
     scenario_from_dict,
+    scenario_to_dict,
     scenario_to_json,
     update_goal_position,
     update_start_position,
@@ -88,24 +89,27 @@ def render_tab_inspector() -> None:
     presets = get_all_scenarios()
     preset_names = list(presets.keys())
 
-    # Khởi tạo trạng thái Session State mặc định
-    if "active_scenario" not in st.session_state:
-        st.session_state["active_scenario"] = presets["scenario_01_open_ocean"]()
-    if "draft_polygon_vertices" not in st.session_state:
-        st.session_state["draft_polygon_vertices"] = []
-    if "studio_mode" not in st.session_state:
-        st.session_state["studio_mode"] = "🔍 Pan / Inspect"
-    if "studio_circle_radius" not in st.session_state:
-        st.session_state["studio_circle_radius"] = 25000.0
-    if "last_clicked_point" not in st.session_state:
-        st.session_state["last_clicked_point"] = None
-
     # Kiểm tra kịch bản chuyển từ Tab 2 sang
     default_scenario = st.session_state.get("selected_scenario_name", preset_names[0])
     if default_scenario not in preset_names:
         default_index = 0
     else:
         default_index = preset_names.index(str(default_scenario))
+
+    # Khởi tạo trạng thái Session State an toàn cho Interactive Studio
+    if (
+        "active_scenario" not in st.session_state
+        or st.session_state.get("active_scenario") is None
+    ):
+        st.session_state["active_scenario"] = presets[preset_names[default_index]]()
+    if "draft_polygon_vertices" not in st.session_state:
+        st.session_state["draft_polygon_vertices"] = []
+    if "studio_mode" not in st.session_state:
+        st.session_state["studio_mode"] = "🔍 Pan / Inspect"
+    if "circle_radius" not in st.session_state:
+        st.session_state["circle_radius"] = 25000.0
+    if "last_clicked_point" not in st.session_state:
+        st.session_state["last_clicked_point"] = None
 
     col_ctrl, col_map = st.columns([1.1, 2.4], gap="medium")
 
@@ -142,60 +146,97 @@ def render_tab_inspector() -> None:
 
         elif scenario_source == "🎨 Interactive Studio (GUI Drawing)":
             scenario_display_name = "interactive_studio_scenario"
-            scenario = cast(Scenario, st.session_state["active_scenario"])
+            scenario = cast(
+                Scenario,
+                st.session_state.get("active_scenario")
+                or presets[preset_names[default_index]](),
+            )
 
-            with st.expander("🎨 Studio Toolbar & Tools", expanded=True):
+            with st.expander("🎨 Studio Toolbar & Controls", expanded=True):
+                base_preset_name = str(
+                    st.selectbox(
+                        "Base Preset Template",
+                        options=preset_names,
+                        index=default_index,
+                        help="Chọn kịch bản mẫu làm nền tảng",
+                    )
+                )
+
+                studio_mode_options = [
+                    "🔍 Pan / Inspect",
+                    "⭕ Add Circle Obstacle",
+                    "📐 Add Polygon (Click Vertices)",
+                    "🚀 Move Start (O)",
+                    "🎯 Move Goal (T)",
+                ]
+                current_studio_mode = st.session_state.get(
+                    "studio_mode", studio_mode_options[0]
+                )
+                mode_index = (
+                    studio_mode_options.index(current_studio_mode)
+                    if current_studio_mode in studio_mode_options
+                    else 0
+                )
                 studio_mode = st.radio(
-                    "Interactive Tool Mode",
-                    options=[
-                        "🔍 Pan / Inspect",
-                        "⭕ Add Circle Obstacle",
-                        "📐 Add Polygon (Click Vertices)",
-                        "🚀 Move Start (O)",
-                        "🎯 Move Goal (T)",
-                    ],
-                    index=0,
+                    "Studio Mode",
+                    options=studio_mode_options,
+                    index=mode_index,
+                    help="Chọn chế độ thao tác trên bản đồ",
                 )
                 st.session_state["studio_mode"] = studio_mode
 
                 if studio_mode == "⭕ Add Circle Obstacle":
-                    circle_r = st.number_input(
-                        "Circle Radius (m)",
-                        value=float(st.session_state["studio_circle_radius"]),
-                        min_value=500.0,
-                        max_value=100000.0,
-                        step=5000.0,
-                        help="Click vào bản đồ để tạo vòng tròn với bán kính này",
+                    circle_radius = float(
+                        st.number_input(
+                            "Circle Radius (m)",
+                            value=float(st.session_state.get("circle_radius", 25000.0)),
+                            min_value=500.0,
+                            max_value=200000.0,
+                            step=5000.0,
+                            help="Click vào bản đồ để tạo vòng tròn với bán kính này",
+                        )
                     )
-                    st.session_state["studio_circle_radius"] = circle_r
+                    st.session_state["circle_radius"] = circle_radius
+                    st.info("👉 Click vào bản đồ để thêm vòng tròn chướng ngại vật.")
 
                 elif studio_mode == "📐 Add Polygon (Click Vertices)":
-                    draft_pts = cast(
+                    draft_vertices = cast(
                         list[tuple[float, float]],
                         st.session_state.get("draft_polygon_vertices", []),
                     )
                     st.info(
-                        f"Đang có **{len(draft_pts)}** đỉnh nháp. "
-                        "Click lên bản đồ để thêm đỉnh mới (cần $\\ge 3$ đỉnh)."
+                        f"👉 Click vào bản đồ để thêm đỉnh đa giác. "
+                        f"(Hiện có: {len(draft_vertices)} đỉnh)"
                     )
-                    c_p1, c_p2 = st.columns(2)
-                    if c_p1.button(
-                        "✅ Complete Polygon",
-                        disabled=len(draft_pts) < 3,
-                        use_container_width=True,
-                    ):
-                        st.session_state["active_scenario"] = add_polygon_obstacle(
-                            st.session_state["active_scenario"], draft_pts
+                    if draft_vertices:
+                        st.caption(
+                            "Đỉnh nháp: "
+                            + ", ".join(
+                                f"({x:,.0f}, {y:,.0f})" for x, y in draft_vertices
+                            )
                         )
-                        st.session_state["draft_polygon_vertices"] = []
-                        st.rerun()
-
-                    if c_p2.button(
+                    c_poly1, c_poly2 = st.columns(2)
+                    if c_poly1.button(
+                        "✅ Complete Polygon",
+                        disabled=len(draft_vertices) < 3,
+                        use_container_width=True,
+                    ):
+                        if len(draft_vertices) >= 3:
+                            st.session_state["active_scenario"] = add_polygon_obstacle(
+                                st.session_state["active_scenario"], draft_vertices
+                            )
+                            st.session_state["draft_polygon_vertices"] = []
+                            st.session_state["last_clicked_point"] = None
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Đa giác cần tối thiểu 3 đỉnh.")
+                    if c_poly2.button(
                         "❌ Cancel Draft",
-                        disabled=len(draft_pts) == 0,
+                        disabled=len(draft_vertices) == 0,
                         use_container_width=True,
                     ):
                         st.session_state["draft_polygon_vertices"] = []
+                        st.session_state["last_clicked_point"] = None
                         st.rerun()
 
                 elif studio_mode == "🚀 Move Start (O)":
@@ -214,6 +255,7 @@ def render_tab_inspector() -> None:
                             heading_rad=math.radians(new_start_h_deg),
                         )
                         st.rerun()
+                    st.info("👉 Click vào bản đồ để đặt vị trí xuất phát mới.")
 
                 elif studio_mode == "🎯 Move Goal (T)":
                     is_free_goal = scenario.get("goal_heading") is None
@@ -229,7 +271,6 @@ def render_tab_inspector() -> None:
                     else:
                         gh = scenario.get("goal_heading")
                         curr_g_deg = math.degrees(gh) if gh is not None else 0.0
-
                         new_goal_h_deg = st.number_input(
                             "Goal Heading (deg)",
                             value=curr_g_deg,
@@ -247,39 +288,33 @@ def render_tab_inspector() -> None:
                                 heading_rad=math.radians(new_goal_h_deg),
                             )
                             st.rerun()
+                    st.info("👉 Click vào bản đồ để đặt vị trí mục tiêu mới.")
 
-                # Action buttons
-                st.markdown("---")
-                c_act1, c_act2, c_act3 = st.columns(3)
-                if c_act1.button("↩️ Undo", use_container_width=True, help="Hoàn tác"):
+                else:
+                    st.info("💡 Chế độ xem & dịch chuyển bản đồ bình thường.")
+
+                st.markdown("##### ⚡ Quick Actions")
+                qa_c1, qa_c2 = st.columns(2)
+                if qa_c1.button("↩️ Undo Last Obstacle", use_container_width=True):
                     st.session_state["active_scenario"] = remove_last_obstacle(
                         st.session_state["active_scenario"]
                     )
+                    st.session_state["last_clicked_point"] = None
                     st.rerun()
-                if c_act2.button(
-                    "🗑️ Clear", use_container_width=True, help="Xóa hết vật cản"
-                ):
+
+                if qa_c2.button("🗑️ Clear All Obstacles", use_container_width=True):
                     st.session_state["active_scenario"] = clear_all_obstacles(
                         st.session_state["active_scenario"]
                     )
-                    st.rerun()
-                if c_act3.button(
-                    "🔄 Reset", use_container_width=True, help="Khôi phục mặc định"
-                ):
-                    st.session_state["active_scenario"] = presets[
-                        "scenario_01_open_ocean"
-                    ]()
                     st.session_state["draft_polygon_vertices"] = []
+                    st.session_state["last_clicked_point"] = None
                     st.rerun()
 
-            # Obstacles inventory caption
-            n_circ = len(scenario.get("dynamic_obstacles") or [])
-            n_isl = len(scenario.get("islands") or [])
-            n_tot = len(scenario.get("obstacles") or [])
-            st.caption(
-                f"🗺️ **Vật cản hiện hành**: {n_circ} hình tròn, {n_isl} đảo đa giác "
-                f"(Tổng: {n_tot})"
-            )
+                if st.button("🔄 Reset to Preset", use_container_width=True):
+                    st.session_state["active_scenario"] = presets[base_preset_name]()
+                    st.session_state["draft_polygon_vertices"] = []
+                    st.session_state["last_clicked_point"] = None
+                    st.rerun()
 
         elif scenario_source == "Custom Scenario (Manual Form)":
             scenario_display_name = "custom_form_scenario"
@@ -395,6 +430,16 @@ def render_tab_inspector() -> None:
                 scenario = presets["scenario_01_open_ocean"]()
                 st.session_state["active_scenario"] = scenario
 
+        # Hiển thị tóm tắt số lượng vật cản hiện tại
+        circles = scenario.get("dynamic_obstacles") or []
+        islands = scenario.get("islands") or []
+        obstacles = scenario.get("obstacles") or []
+        total_obs = len(obstacles) if obstacles else (len(circles) + len(islands))
+        st.caption(
+            f"Obstacles: {len(circles)} circles, {len(islands)} islands | "
+            f"Total: {total_obs}"
+        )
+
         exec_mode_str = st.radio(
             "Execution Mode",
             options=["Local Python Core", "NATS Microservice"],
@@ -483,16 +528,22 @@ def render_tab_inspector() -> None:
 
     alpha_max_rad = math.radians(alpha_max_deg)
 
+    scenario_dict_repr = json.dumps(scenario_to_dict(scenario), sort_keys=True)
     cached_result = cast(QAResult | None, st.session_state.get("inspector_result"))
     current_scenario_in_state = cast(
         str | None, st.session_state.get("inspector_scenario_name")
+    )
+    current_dict_in_state = cast(
+        str | None, st.session_state.get("inspector_scenario_dict")
     )
     current_margin_in_state = cast(
         float | None, st.session_state.get("inspector_safe_margin")
     )
 
-    state_changed = (current_scenario_in_state != scenario_display_name) or (
-        current_margin_in_state != safe_margin
+    state_changed = (
+        (current_scenario_in_state != scenario_display_name)
+        or (current_dict_in_state != scenario_dict_repr)
+        or (current_margin_in_state != safe_margin)
     )
 
     if run_clicked or (cached_result is None) or state_changed:
@@ -511,6 +562,7 @@ def render_tab_inspector() -> None:
             )
             st.session_state["inspector_result"] = result
             st.session_state["inspector_scenario_name"] = scenario_display_name
+            st.session_state["inspector_scenario_dict"] = scenario_dict_repr
             st.session_state["inspector_safe_margin"] = safe_margin
     else:
         result = cached_result
@@ -575,27 +627,31 @@ def render_tab_inspector() -> None:
                     click_coord = (float(last_pt["x"]), float(last_pt["y"]))
                     if st.session_state.get("last_clicked_point") != click_coord:
                         st.session_state["last_clicked_point"] = click_coord
-                        mode = st.session_state.get("studio_mode", "🔍 Pan / Inspect")
+                        studio_mode = st.session_state.get(
+                            "studio_mode", "🔍 Pan / Inspect"
+                        )
 
-                        if mode == "⭕ Add Circle Obstacle":
-                            r = float(
-                                st.session_state.get("studio_circle_radius", 25000.0)
+                        if studio_mode == "⭕ Add Circle Obstacle":
+                            circle_radius = float(
+                                st.session_state.get("circle_radius", 25000.0)
                             )
                             st.session_state["active_scenario"] = add_circle_obstacle(
-                                st.session_state["active_scenario"], click_coord, r
+                                st.session_state["active_scenario"],
+                                click_coord,
+                                circle_radius,
                             )
                             st.rerun()
-                        elif mode == "📐 Add Polygon (Click Vertices)":
+                        elif studio_mode == "📐 Add Polygon (Click Vertices)":
                             st.session_state.setdefault(
                                 "draft_polygon_vertices", []
                             ).append(click_coord)
                             st.rerun()
-                        elif mode == "🚀 Move Start (O)":
+                        elif studio_mode == "🚀 Move Start (O)":
                             st.session_state["active_scenario"] = update_start_position(
                                 st.session_state["active_scenario"], click_coord
                             )
                             st.rerun()
-                        elif mode == "🎯 Move Goal (T)":
+                        elif studio_mode == "🎯 Move Goal (T)":
                             st.session_state["active_scenario"] = update_goal_position(
                                 st.session_state["active_scenario"], click_coord
                             )

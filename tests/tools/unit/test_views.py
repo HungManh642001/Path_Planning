@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from path_planning.scenario.presets import get_all_scenarios
 from tools.qa_suite.app import main as app_main
 from tools.qa_suite.core.stress_tester import StressTestSummary
 from tools.qa_suite.views.tab_batch import render_tab_batch
@@ -16,6 +17,12 @@ from tools.qa_suite.views.tab_stress import (
     _create_latency_histogram,
     render_tab_stress,
 )
+
+
+class FakeSessionState(dict[str, Any]):
+    """Giả lập an toàn cho st.session_state trong unit test."""
+
+    pass
 
 
 def _mock_columns(spec: Any, **kwargs: Any) -> list[MagicMock]:
@@ -67,7 +74,9 @@ def test_create_latency_histogram() -> None:
 
 def test_render_views_smoke() -> None:
     """Smoke test gọi render các view Streamlit với mock streamlit."""
+    fake_state = FakeSessionState()
     with (
+        patch("streamlit.session_state", fake_state),
         patch("streamlit.selectbox", return_value="scenario_01_open_ocean"),
         patch("streamlit.radio", return_value="Local Python Core"),
         patch("streamlit.number_input", return_value=100.0),
@@ -97,36 +106,30 @@ def test_app_main_smoke() -> None:
         app_main()
 
 
-def test_render_tab_inspector_interactive_studio_mode() -> None:
-    """Kiểm thử render Tab 1 ở chế độ Interactive Studio (GUI Drawing) và các sự kiện click."""
-    import streamlit as st
+def test_render_tab_inspector_interactive_studio_circle_mode() -> None:
+    """Kiểm thử render Tab 1 ở chế độ Interactive Studio: thêm Circle Obstacle."""
+    fake_state = FakeSessionState(
+        {
+            "active_scenario": get_all_scenarios()["scenario_01_open_ocean"](),
+            "studio_mode": "⭕ Add Circle Obstacle",
+            "circle_radius": 20000.0,
+            "draft_polygon_vertices": [],
+            "last_clicked_point": None,
+        }
+    )
 
-    from path_planning.scenario.presets import get_all_scenarios
-
-    # Khởi tạo session state
-    st.session_state["active_scenario"] = get_all_scenarios()[
-        "scenario_01_open_ocean"
-    ]()
-    st.session_state["studio_mode"] = "⭕ Add Circle Obstacle"
-    st.session_state["studio_circle_radius"] = 20000.0
-    st.session_state["draft_polygon_vertices"] = []
-    st.session_state["last_clicked_point"] = None
+    def mock_radio(label: str, *args: Any, **kwargs: Any) -> str:
+        if "Scenario Source" in label:
+            return "🎨 Interactive Studio (GUI Drawing)"
+        if "Studio Mode" in label:
+            return "⭕ Add Circle Obstacle"
+        return "Local Python Core"
 
     mock_selection = {"points": [{"x": 150000.0, "y": 250000.0}]}
 
     with (
-        patch(
-            "streamlit.radio",
-            side_effect=lambda label, *args, **kwargs: (
-                "🎨 Interactive Studio (GUI Drawing)"
-                if "Scenario Source" in label
-                else (
-                    "⭕ Add Circle Obstacle"
-                    if "Interactive Tool Mode" in label
-                    else "Local Python Core"
-                )
-            ),
-        ),
+        patch("streamlit.session_state", fake_state),
+        patch("streamlit.radio", side_effect=mock_radio),
         patch("streamlit.selectbox", return_value="scenario_01_open_ocean"),
         patch("streamlit.number_input", return_value=20000.0),
         patch("streamlit.checkbox", return_value=True),
@@ -138,7 +141,171 @@ def test_render_tab_inspector_interactive_studio_mode() -> None:
     ):
         render_tab_inspector()
         assert mock_rerun.called
-        # Check that a circle obstacle was added to active_scenario
-        active = st.session_state["active_scenario"]
+        active = fake_state["active_scenario"]
         assert len(active["dynamic_obstacles"]) >= 1
         assert active["dynamic_obstacles"][-1][0] == (150000.0, 250000.0)
+
+
+def test_render_tab_inspector_studio_polygon_mode() -> None:
+    """Kiểm thử chế độ vẽ đa giác (Add Polygon) và click thêm đỉnh."""
+    fake_state = FakeSessionState(
+        {
+            "active_scenario": get_all_scenarios()["scenario_01_open_ocean"](),
+            "studio_mode": "📐 Add Polygon (Click Vertices)",
+            "draft_polygon_vertices": [(100000.0, 100000.0)],
+            "last_clicked_point": None,
+        }
+    )
+
+    def mock_radio(label: str, *args: Any, **kwargs: Any) -> str:
+        if "Scenario Source" in label:
+            return "🎨 Interactive Studio (GUI Drawing)"
+        if "Studio Mode" in label:
+            return "📐 Add Polygon (Click Vertices)"
+        return "Local Python Core"
+
+    mock_selection = {"points": [{"x": 200000.0, "y": 200000.0}]}
+
+    with (
+        patch("streamlit.session_state", fake_state),
+        patch("streamlit.radio", side_effect=mock_radio),
+        patch("streamlit.selectbox", return_value="scenario_01_open_ocean"),
+        patch("streamlit.number_input", return_value=20000.0),
+        patch("streamlit.checkbox", return_value=True),
+        patch("streamlit.button", return_value=False),
+        patch("streamlit.columns", side_effect=_mock_columns),
+        patch("streamlit.expander", return_value=MagicMock()),
+        patch("streamlit.plotly_chart", return_value=mock_selection),
+        patch("streamlit.rerun") as mock_rerun,
+    ):
+        render_tab_inspector()
+        assert mock_rerun.called
+        assert (200000.0, 200000.0) in fake_state["draft_polygon_vertices"]
+        assert len(fake_state["draft_polygon_vertices"]) == 2
+
+
+def test_render_tab_inspector_studio_move_start_and_goal() -> None:
+    """Kiểm thử thao tác di chuyển Start và Goal qua click bản đồ."""
+    fake_state = FakeSessionState(
+        {
+            "active_scenario": get_all_scenarios()["scenario_01_open_ocean"](),
+            "studio_mode": "🚀 Move Start (O)",
+            "last_clicked_point": None,
+        }
+    )
+
+    def mock_radio_start(label: str, *args: Any, **kwargs: Any) -> str:
+        if "Scenario Source" in label:
+            return "🎨 Interactive Studio (GUI Drawing)"
+        if "Studio Mode" in label:
+            return "🚀 Move Start (O)"
+        return "Local Python Core"
+
+    mock_selection_start = {"points": [{"x": 80000.0, "y": 90000.0}]}
+
+    with (
+        patch("streamlit.session_state", fake_state),
+        patch("streamlit.radio", side_effect=mock_radio_start),
+        patch("streamlit.selectbox", return_value="scenario_01_open_ocean"),
+        patch("streamlit.number_input", return_value=45.0),
+        patch("streamlit.checkbox", return_value=True),
+        patch("streamlit.button", return_value=False),
+        patch("streamlit.columns", side_effect=_mock_columns),
+        patch("streamlit.expander", return_value=MagicMock()),
+        patch("streamlit.plotly_chart", return_value=mock_selection_start),
+        patch("streamlit.rerun") as mock_rerun,
+    ):
+        render_tab_inspector()
+        assert mock_rerun.called
+        assert fake_state["active_scenario"]["start"] == (80000.0, 90000.0)
+
+    # Test Move Goal
+    fake_state["studio_mode"] = "🎯 Move Goal (T)"
+    fake_state["last_clicked_point"] = None
+
+    def mock_radio_goal(label: str, *args: Any, **kwargs: Any) -> str:
+        if "Scenario Source" in label:
+            return "🎨 Interactive Studio (GUI Drawing)"
+        if "Studio Mode" in label:
+            return "🎯 Move Goal (T)"
+        return "Local Python Core"
+
+    mock_selection_goal = {"points": [{"x": 400000.0, "y": 420000.0}]}
+
+    with (
+        patch("streamlit.session_state", fake_state),
+        patch("streamlit.radio", side_effect=mock_radio_goal),
+        patch("streamlit.selectbox", return_value="scenario_01_open_ocean"),
+        patch("streamlit.number_input", return_value=45.0),
+        patch("streamlit.checkbox", return_value=True),
+        patch("streamlit.button", return_value=False),
+        patch("streamlit.columns", side_effect=_mock_columns),
+        patch("streamlit.expander", return_value=MagicMock()),
+        patch("streamlit.plotly_chart", return_value=mock_selection_goal),
+        patch("streamlit.rerun") as mock_rerun2,
+    ):
+        render_tab_inspector()
+        assert mock_rerun2.called
+        assert fake_state["active_scenario"]["goal"] == (400000.0, 420000.0)
+
+
+def test_render_tab_inspector_studio_quick_actions() -> None:
+    """Kiểm thử các nút thao tác nhanh (Undo, Clear, Reset, Complete Polygon)."""
+    fake_state = FakeSessionState(
+        {
+            "active_scenario": get_all_scenarios()["scenario_01_open_ocean"](),
+            "draft_polygon_vertices": [
+                (100000.0, 100000.0),
+                (200000.0, 100000.0),
+                (200000.0, 200000.0),
+            ],
+            "studio_mode": "📐 Add Polygon (Click Vertices)",
+        }
+    )
+
+    def mock_radio(label: str, *args: Any, **kwargs: Any) -> str:
+        if "Scenario Source" in label:
+            return "🎨 Interactive Studio (GUI Drawing)"
+        if "Studio Mode" in label:
+            return "📐 Add Polygon (Click Vertices)"
+        return "Local Python Core"
+
+    def mock_button_complete(label: str, *args: Any, **kwargs: Any) -> bool:
+        return "Complete Polygon" in label
+
+    with (
+        patch("streamlit.session_state", fake_state),
+        patch("streamlit.radio", side_effect=mock_radio),
+        patch("streamlit.selectbox", return_value="scenario_01_open_ocean"),
+        patch("streamlit.number_input", return_value=20000.0),
+        patch("streamlit.checkbox", return_value=True),
+        patch("streamlit.button", side_effect=mock_button_complete),
+        patch("streamlit.columns", side_effect=_mock_columns),
+        patch("streamlit.expander", return_value=MagicMock()),
+        patch("streamlit.plotly_chart", return_value=None),
+        patch("streamlit.rerun") as mock_rerun,
+    ):
+        render_tab_inspector()
+        assert mock_rerun.called
+        assert len(fake_state["active_scenario"]["islands"]) >= 1
+        assert fake_state["draft_polygon_vertices"] == []
+
+    # Test Clear
+    def mock_button_clear(label: str, *args: Any, **kwargs: Any) -> bool:
+        return "Clear All Obstacles" in label
+
+    with (
+        patch("streamlit.session_state", fake_state),
+        patch("streamlit.radio", side_effect=mock_radio),
+        patch("streamlit.selectbox", return_value="scenario_01_open_ocean"),
+        patch("streamlit.number_input", return_value=20000.0),
+        patch("streamlit.checkbox", return_value=True),
+        patch("streamlit.button", side_effect=mock_button_clear),
+        patch("streamlit.columns", side_effect=_mock_columns),
+        patch("streamlit.expander", return_value=MagicMock()),
+        patch("streamlit.plotly_chart", return_value=None),
+        patch("streamlit.rerun") as mock_rerun3,
+    ):
+        render_tab_inspector()
+        assert mock_rerun3.called
+        assert len(fake_state["active_scenario"]["obstacles"]) == 0
