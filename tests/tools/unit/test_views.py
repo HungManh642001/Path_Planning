@@ -95,3 +95,50 @@ def test_app_main_smoke() -> None:
         patch("tools.qa_suite.app.render_tab_stress"),
     ):
         app_main()
+
+
+def test_render_tab_inspector_interactive_studio_mode() -> None:
+    """Kiểm thử render Tab 1 ở chế độ Interactive Studio (GUI Drawing) và các sự kiện click."""
+    import streamlit as st
+
+    from path_planning.scenario.presets import get_all_scenarios
+
+    # Khởi tạo session state
+    st.session_state["active_scenario"] = get_all_scenarios()[
+        "scenario_01_open_ocean"
+    ]()
+    st.session_state["studio_mode"] = "⭕ Add Circle Obstacle"
+    st.session_state["studio_circle_radius"] = 20000.0
+    st.session_state["draft_polygon_vertices"] = []
+    st.session_state["last_clicked_point"] = None
+
+    mock_selection = {"points": [{"x": 150000.0, "y": 250000.0}]}
+
+    with (
+        patch(
+            "streamlit.radio",
+            side_effect=lambda label, *args, **kwargs: (
+                "🎨 Interactive Studio (GUI Drawing)"
+                if "Scenario Source" in label
+                else (
+                    "⭕ Add Circle Obstacle"
+                    if "Interactive Tool Mode" in label
+                    else "Local Python Core"
+                )
+            ),
+        ),
+        patch("streamlit.selectbox", return_value="scenario_01_open_ocean"),
+        patch("streamlit.number_input", return_value=20000.0),
+        patch("streamlit.checkbox", return_value=True),
+        patch("streamlit.button", return_value=False),
+        patch("streamlit.columns", side_effect=_mock_columns),
+        patch("streamlit.expander", return_value=MagicMock()),
+        patch("streamlit.plotly_chart", return_value=mock_selection),
+        patch("streamlit.rerun") as mock_rerun,
+    ):
+        render_tab_inspector()
+        assert mock_rerun.called
+        # Check that a circle obstacle was added to active_scenario
+        active = st.session_state["active_scenario"]
+        assert len(active["dynamic_obstacles"]) >= 1
+        assert active["dynamic_obstacles"][-1][0] == (150000.0, 250000.0)

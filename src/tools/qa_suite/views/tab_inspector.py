@@ -1,9 +1,10 @@
 # pyright: reportMissingTypeArgument=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownParameterType=false
 """Giao diện Tab 1: Visual Scenario Inspector & Single-Test Runner (Streamlit).
 
-Cho phép trực quan hóa bản đồ 2D nhiệm vụ, cấu hình kịch bản tự do (Custom Scenario),
-tải lên file JSON kịch bản, tùy chỉnh các tham số giới hạn động học & safe margin,
-thực thi thuật toán lập lịch (Local hoặc NATS) và phân tích thẩm định Validation Oracle.
+Cho phép trực quan hóa bản đồ 2D nhiệm vụ, thao tác kịch bản trực tiếp trên bản đồ
+(Interactive Scenario Studio), cấu hình kịch bản tự do (Custom Scenario), tải lên
+file JSON kịch bản, tùy chỉnh các tham số giới hạn động học & safe margin, thực thi
+thuật toán lập lịch (Local hoặc NATS) và phân tích thẩm định Validation Oracle.
 """
 
 from __future__ import annotations
@@ -22,9 +23,15 @@ from path_planning.types import Scenario
 from service.vtx_service.transport import DEFAULT_NATS_SERVER, DEFAULT_SUBJECT
 from tools.qa_suite.core.runner import ExecutionDriver, ExecutionMode, QAResult
 from tools.qa_suite.core.scenario_custom import (
+    add_circle_obstacle,
+    add_polygon_obstacle,
     build_custom_scenario,
+    clear_all_obstacles,
+    remove_last_obstacle,
     scenario_from_dict,
     scenario_to_json,
+    update_goal_position,
+    update_start_position,
 )
 from tools.qa_suite.core.visualizer_2d import PlotlyVisualizer2D
 
@@ -75,11 +82,23 @@ def _compute_waypoint_table_data(
 
 
 def render_tab_inspector() -> None:
-    """Hiển thị toàn bộ giao diện Visual Scenario Inspector."""
-    st.subheader("🔍 Visual Scenario Inspector & Single-Test Runner")
+    """Hiển thị toàn bộ giao diện Visual Scenario Inspector & Interactive Studio."""
+    st.subheader("🔍 Visual Scenario Inspector & Interactive Studio")
 
     presets = get_all_scenarios()
     preset_names = list(presets.keys())
+
+    # Khởi tạo trạng thái Session State mặc định
+    if "active_scenario" not in st.session_state:
+        st.session_state["active_scenario"] = presets["scenario_01_open_ocean"]()
+    if "draft_polygon_vertices" not in st.session_state:
+        st.session_state["draft_polygon_vertices"] = []
+    if "studio_mode" not in st.session_state:
+        st.session_state["studio_mode"] = "🔍 Pan / Inspect"
+    if "studio_circle_radius" not in st.session_state:
+        st.session_state["studio_circle_radius"] = 25000.0
+    if "last_clicked_point" not in st.session_state:
+        st.session_state["last_clicked_point"] = None
 
     # Kiểm tra kịch bản chuyển từ Tab 2 sang
     default_scenario = st.session_state.get("selected_scenario_name", preset_names[0])
@@ -97,6 +116,7 @@ def render_tab_inspector() -> None:
             "Scenario Source",
             options=[
                 "Preset Scenarios (18 Cases)",
+                "🎨 Interactive Studio (GUI Drawing)",
                 "Custom Scenario (Manual Form)",
                 "Import Scenario (JSON)",
             ],
@@ -117,7 +137,151 @@ def render_tab_inspector() -> None:
                 )
             )
             scenario = presets[selected_name]()
+            st.session_state["active_scenario"] = scenario
             scenario_display_name = selected_name
+
+        elif scenario_source == "🎨 Interactive Studio (GUI Drawing)":
+            scenario_display_name = "interactive_studio_scenario"
+            scenario = cast(Scenario, st.session_state["active_scenario"])
+
+            with st.expander("🎨 Studio Toolbar & Tools", expanded=True):
+                studio_mode = st.radio(
+                    "Interactive Tool Mode",
+                    options=[
+                        "🔍 Pan / Inspect",
+                        "⭕ Add Circle Obstacle",
+                        "📐 Add Polygon (Click Vertices)",
+                        "🚀 Move Start (O)",
+                        "🎯 Move Goal (T)",
+                    ],
+                    index=0,
+                )
+                st.session_state["studio_mode"] = studio_mode
+
+                if studio_mode == "⭕ Add Circle Obstacle":
+                    circle_r = st.number_input(
+                        "Circle Radius (m)",
+                        value=float(st.session_state["studio_circle_radius"]),
+                        min_value=500.0,
+                        max_value=100000.0,
+                        step=5000.0,
+                        help="Click vào bản đồ để tạo vòng tròn với bán kính này",
+                    )
+                    st.session_state["studio_circle_radius"] = circle_r
+
+                elif studio_mode == "📐 Add Polygon (Click Vertices)":
+                    draft_pts = cast(
+                        list[tuple[float, float]],
+                        st.session_state.get("draft_polygon_vertices", []),
+                    )
+                    st.info(
+                        f"Đang có **{len(draft_pts)}** đỉnh nháp. "
+                        "Click lên bản đồ để thêm đỉnh mới (cần $\\ge 3$ đỉnh)."
+                    )
+                    c_p1, c_p2 = st.columns(2)
+                    if c_p1.button(
+                        "✅ Complete Polygon",
+                        disabled=len(draft_pts) < 3,
+                        use_container_width=True,
+                    ):
+                        st.session_state["active_scenario"] = add_polygon_obstacle(
+                            st.session_state["active_scenario"], draft_pts
+                        )
+                        st.session_state["draft_polygon_vertices"] = []
+                        st.rerun()
+
+                    if c_p2.button(
+                        "❌ Cancel Draft",
+                        disabled=len(draft_pts) == 0,
+                        use_container_width=True,
+                    ):
+                        st.session_state["draft_polygon_vertices"] = []
+                        st.rerun()
+
+                elif studio_mode == "🚀 Move Start (O)":
+                    curr_heading_deg = math.degrees(scenario["start_heading"])
+                    new_start_h_deg = st.number_input(
+                        "Start Heading (deg)",
+                        value=curr_heading_deg,
+                        min_value=-180.0,
+                        max_value=360.0,
+                        step=5.0,
+                    )
+                    if abs(new_start_h_deg - curr_heading_deg) > 1e-4:
+                        st.session_state["active_scenario"] = update_start_position(
+                            st.session_state["active_scenario"],
+                            scenario["start"],
+                            heading_rad=math.radians(new_start_h_deg),
+                        )
+                        st.rerun()
+
+                elif studio_mode == "🎯 Move Goal (T)":
+                    is_free_goal = scenario.get("goal_heading") is None
+                    free_goal_cb = st.checkbox(
+                        "Free Goal Heading (Tiếp cận tự do)", value=is_free_goal
+                    )
+                    if free_goal_cb:
+                        if not is_free_goal:
+                            new_s = dict(scenario)
+                            new_s["goal_heading"] = None
+                            st.session_state["active_scenario"] = new_s
+                            st.rerun()
+                    else:
+                        curr_g_deg = (
+                            math.degrees(scenario["goal_heading"])
+                            if scenario.get("goal_heading") is not None
+                            else 0.0
+                        )
+                        new_goal_h_deg = st.number_input(
+                            "Goal Heading (deg)",
+                            value=curr_g_deg,
+                            min_value=-180.0,
+                            max_value=360.0,
+                            step=5.0,
+                        )
+                        if (
+                            scenario.get("goal_heading") is None
+                            or abs(new_goal_h_deg - curr_g_deg) > 1e-4
+                        ):
+                            st.session_state["active_scenario"] = update_goal_position(
+                                st.session_state["active_scenario"],
+                                scenario["goal"],
+                                heading_rad=math.radians(new_goal_h_deg),
+                            )
+                            st.rerun()
+
+                # Action buttons
+                st.markdown("---")
+                c_act1, c_act2, c_act3 = st.columns(3)
+                if c_act1.button("↩️ Undo", use_container_width=True, help="Hoàn tác"):
+                    st.session_state["active_scenario"] = remove_last_obstacle(
+                        st.session_state["active_scenario"]
+                    )
+                    st.rerun()
+                if c_act2.button(
+                    "🗑️ Clear", use_container_width=True, help="Xóa hết vật cản"
+                ):
+                    st.session_state["active_scenario"] = clear_all_obstacles(
+                        st.session_state["active_scenario"]
+                    )
+                    st.rerun()
+                if c_act3.button(
+                    "🔄 Reset", use_container_width=True, help="Khôi phục mặc định"
+                ):
+                    st.session_state["active_scenario"] = presets[
+                        "scenario_01_open_ocean"
+                    ]()
+                    st.session_state["draft_polygon_vertices"] = []
+                    st.rerun()
+
+            # Obstacles inventory caption
+            n_circ = len(scenario.get("dynamic_obstacles") or [])
+            n_isl = len(scenario.get("islands") or [])
+            n_tot = len(scenario.get("obstacles") or [])
+            st.caption(
+                f"🗺️ **Vật cản hiện hành**: {n_circ} hình tròn, {n_isl} đảo đa giác "
+                f"(Tổng: {n_tot})"
+            )
 
         elif scenario_source == "Custom Scenario (Manual Form)":
             scenario_display_name = "custom_form_scenario"
@@ -203,6 +367,7 @@ def render_tab_inspector() -> None:
                 dynamic_obstacles=custom_circles,
                 islands=custom_islands,
             )
+            st.session_state["active_scenario"] = scenario
 
         else:  # Import Scenario (JSON)
             scenario_display_name = "imported_json_scenario"
@@ -215,6 +380,7 @@ def render_tab_inspector() -> None:
                 try:
                     data = json.load(uploaded_file)
                     scenario = scenario_from_dict(data)
+                    st.session_state["active_scenario"] = scenario
                     st.success("✅ Scenario JSON file loaded successfully!")
                 except Exception as exc:
                     st.error(f"❌ Failed to parse uploaded JSON file: {exc}")
@@ -222,13 +388,14 @@ def render_tab_inspector() -> None:
                 try:
                     data = json.loads(json_text_input)
                     scenario = scenario_from_dict(data)
+                    st.session_state["active_scenario"] = scenario
                     st.success("✅ Scenario JSON content parsed successfully!")
                 except Exception as exc:
                     st.error(f"❌ Failed to parse JSON text: {exc}")
 
             if scenario is None:
-                # Fallback to default scenario
                 scenario = presets["scenario_01_open_ocean"]()
+                st.session_state["active_scenario"] = scenario
 
         exec_mode_str = st.radio(
             "Execution Mode",
@@ -368,6 +535,10 @@ def render_tab_inspector() -> None:
             st.error(msg)
 
         # Plotly 2D Interactive Figure
+        draft_vertices = cast(
+            list[tuple[float, float]],
+            st.session_state.get("draft_polygon_vertices", []),
+        )
         fig = PlotlyVisualizer2D.create_scenario_figure(
             scenario=scenario,
             result=result,
@@ -375,8 +546,62 @@ def render_tab_inspector() -> None:
             show_fillet_arcs=show_fillets,
             safe_margin=safe_margin,
             show_buffer=show_buffer,
+            draft_polygon_vertices=draft_vertices if draft_vertices else None,
+            dragmode="pan",
         )
-        st.plotly_chart(fig, use_container_width=True)
+
+        selection = st.plotly_chart(
+            fig,
+            use_container_width=True,
+            on_select="rerun",
+            selection_mode=["points", "box"],
+            key="inspector_map",
+        )
+
+        # Xử lý sự kiện click / selection từ Plotly
+        if (
+            scenario_source == "🎨 Interactive Studio (GUI Drawing)"
+            and selection
+            and isinstance(selection, dict)
+        ):
+            pts = selection.get("points", [])
+            if pts and isinstance(pts, list):
+                last_pt = pts[-1]
+                if (
+                    isinstance(last_pt, dict)
+                    and "x" in last_pt
+                    and "y" in last_pt
+                    and last_pt["x"] is not None
+                    and last_pt["y"] is not None
+                ):
+                    click_coord = (float(last_pt["x"]), float(last_pt["y"]))
+                    if st.session_state.get("last_clicked_point") != click_coord:
+                        st.session_state["last_clicked_point"] = click_coord
+                        mode = st.session_state.get("studio_mode", "🔍 Pan / Inspect")
+
+                        if mode == "⭕ Add Circle Obstacle":
+                            r = float(
+                                st.session_state.get("studio_circle_radius", 25000.0)
+                            )
+                            st.session_state["active_scenario"] = add_circle_obstacle(
+                                st.session_state["active_scenario"], click_coord, r
+                            )
+                            st.rerun()
+                        elif mode == "📐 Add Polygon (Click Vertices)":
+                            st.session_state.setdefault(
+                                "draft_polygon_vertices", []
+                            ).append(click_coord)
+                            st.rerun()
+                        elif mode == "🚀 Move Start (O)":
+                            st.session_state["active_scenario"] = update_start_position(
+                                st.session_state["active_scenario"], click_coord
+                            )
+                            st.rerun()
+                        elif mode == "🎯 Move Goal (T)":
+                            st.session_state["active_scenario"] = update_goal_position(
+                                st.session_state["active_scenario"], click_coord
+                            )
+                            st.rerun()
 
         # Waypoint Details Table
         if result.waypoints:
