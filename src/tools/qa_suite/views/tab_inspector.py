@@ -227,11 +227,9 @@ def render_tab_inspector() -> None:
                             st.session_state["active_scenario"] = new_s
                             st.rerun()
                     else:
-                        curr_g_deg = (
-                            math.degrees(scenario["goal_heading"])
-                            if scenario.get("goal_heading") is not None
-                            else 0.0
-                        )
+                        gh = scenario.get("goal_heading")
+                        curr_g_deg = math.degrees(gh) if gh is not None else 0.0
+
                         new_goal_h_deg = st.number_input(
                             "Goal Heading (deg)",
                             value=curr_g_deg,
