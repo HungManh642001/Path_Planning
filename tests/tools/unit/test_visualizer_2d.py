@@ -151,3 +151,44 @@ def test_create_scenario_figure_with_buffer_toggle() -> None:
         trace.name for trace in fig_without_buffer.data if trace.name is not None
     ]
     assert not any("Buffer" in name for name in trace_names_without)
+
+
+def test_create_scenario_figure_with_draft_polygon_vertices() -> None:
+    """Kiểm thử tạo biểu đồ khi có danh sách đỉnh đa giác nháp (draft_polygon_vertices) và chế độ vẽ."""
+    scenario = get_all_scenarios()["scenario_01_open_ocean"]()
+    draft_vertices: list[tuple[float, float]] = [
+        (20000.0, 20000.0),
+        (30000.0, 20000.0),
+        (30000.0, 30000.0),
+        (20000.0, 30000.0),
+    ]
+
+    fig = PlotlyVisualizer2D.create_scenario_figure(
+        scenario,
+        draft_polygon_vertices=draft_vertices,
+        dragmode="drawclosedpath",
+    )
+    assert isinstance(fig, go.Figure)
+
+    # Kiểm tra dragmode và newshape trong layout
+    assert fig.layout.dragmode == "drawclosedpath"
+    assert fig.layout.newshape.line.color == "#f59e0b"
+    assert fig.layout.newshape.line.width == 2
+    assert fig.layout.newshape.fillcolor == "rgba(245, 158, 11, 0.2)"
+
+    # Tìm trace Draft Polygon
+    draft_traces = [t for t in fig.data if t.name == "Draft Polygon"]
+    assert len(draft_traces) == 1
+    draft_trace = draft_traces[0]
+
+    assert list(draft_trace.x) == [20000.0, 30000.0, 30000.0, 20000.0]
+    assert list(draft_trace.y) == [20000.0, 20000.0, 30000.0, 30000.0]
+    assert draft_trace.marker.color == "#f59e0b"
+    assert draft_trace.marker.size == 10
+    assert draft_trace.marker.symbol == "diamond"
+    assert draft_trace.line.color == "#f59e0b"
+    assert draft_trace.line.width == 2
+    assert draft_trace.line.dash == "dot"
+    assert len(draft_trace.text) == 4
+    assert list(draft_trace.text) == ["V_1", "V_2", "V_3", "V_4"]
+    assert draft_trace.hovertext[0] == "Draft Vertex 1: (20,000, 20,000)"

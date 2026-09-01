@@ -34,6 +34,8 @@ class PlotlyVisualizer2D:
         title: str | None = None,
         safe_margin: float = 500.0,
         show_buffer: bool = True,
+        draft_polygon_vertices: list[tuple[float, float]] | None = None,
+        dragmode: str = "pan",
     ) -> go.Figure:
         """Tạo biểu đồ Plotly 2D tương tác trực quan hóa kịch bản và kết quả đường bay.
 
@@ -45,6 +47,8 @@ class PlotlyVisualizer2D:
             title: Tiêu đề tùy chỉnh cho biểu đồ (nếu None sẽ tự sinh theo kết quả).
             safe_margin: Khoảng cách đệm an toàn mở rộng (m) để vẽ đường bao buffer.
             show_buffer: Cờ bật/tắt hiển thị đường bao đệm an toàn (buffer).
+            draft_polygon_vertices: Danh sách tọa độ đỉnh đa giác đang vẽ nháp.
+            dragmode: Chế độ tương tác kéo chuột Plotly (vd: "pan", "drawcircle").
 
         Returns:
             go.Figure: Đối tượng biểu đồ Plotly sẵn sàng để hiển thị.
@@ -367,7 +371,26 @@ class PlotlyVisualizer2D:
                             )
                         )
 
-        # 6. Cấu hình tiêu đề và Layout tổng thể
+        # 6. Vẽ đa giác nháp (Draft Polygon) nếu có
+        if draft_polygon_vertices:
+            fig.add_trace(
+                go.Scatter(
+                    x=[p[0] for p in draft_polygon_vertices],
+                    y=[p[1] for p in draft_polygon_vertices],
+                    mode="lines+markers+text",
+                    marker={"color": "#f59e0b", "size": 10, "symbol": "diamond"},
+                    line={"color": "#f59e0b", "width": 2, "dash": "dot"},
+                    text=[f"V_{i + 1}" for i in range(len(draft_polygon_vertices))],
+                    name="Draft Polygon",
+                    hovertext=[
+                        f"Draft Vertex {i + 1}: ({p[0]:,.0f}, {p[1]:,.0f})"
+                        for i, p in enumerate(draft_polygon_vertices)
+                    ],
+                    hoverinfo="text",
+                )
+            )
+
+        # 7. Cấu hình tiêu đề và Layout tổng thể
         if title is not None:
             fig_title = title
         elif result is not None:
@@ -396,6 +419,11 @@ class PlotlyVisualizer2D:
                 "scaleratio": 1,
             },
             hovermode="closest",
+            dragmode=dragmode,
+            newshape={
+                "line": {"color": "#f59e0b", "width": 2},
+                "fillcolor": "rgba(245, 158, 11, 0.2)",
+            },
             showlegend=True,
             legend={
                 "x": 0.01,
