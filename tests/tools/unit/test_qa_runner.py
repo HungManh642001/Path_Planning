@@ -170,3 +170,20 @@ def test_execution_driver_invalid_mode() -> None:
     scenario = get_all_scenarios()["scenario_01_open_ocean"]()
     with pytest.raises(ValueError, match="Unknown execution mode"):
         driver.run_scenario(scenario)
+
+
+def test_execution_driver_passes_custom_vehicle_limits() -> None:
+    """Kiểm thử ExecutionDriver truyền đúng custom safe_margin và limits vào planner."""
+    scenario = get_all_scenarios()["scenario_01_open_ocean"]()
+    driver = ExecutionDriver(mode=ExecutionMode.LOCAL)
+    custom_safe_margin = 1234.0
+    custom_turn_radius = 2000.0
+    result = driver.run_scenario(
+        scenario,
+        name="custom_limits_test",
+        safe_margin=custom_safe_margin,
+        turn_radius=custom_turn_radius,
+    )
+    assert isinstance(result, QAResult)
+    assert result.is_success is True
+    assert result.oracle_verdict.is_ok is True
