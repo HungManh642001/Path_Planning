@@ -7,11 +7,17 @@ from tools.qa_suite.core.batch_runner import (
 from tools.qa_suite.core.report_generator import ReportGenerator
 from tools.qa_suite.core.runner import ExecutionDriver, ExecutionMode, QAResult
 from tools.qa_suite.core.scenario_custom import (
+    add_circle_obstacle,
+    add_polygon_obstacle,
     build_custom_scenario,
+    clear_all_obstacles,
+    remove_last_obstacle,
     scenario_from_dict,
     scenario_from_json,
     scenario_to_dict,
     scenario_to_json,
+    update_goal_position,
+    update_start_position,
 )
 from tools.qa_suite.core.stress_tester import (
     NatsStressTester,
@@ -30,9 +36,15 @@ __all__ = [
     "QAResult",
     "ReportGenerator",
     "StressTestSummary",
+    "add_circle_obstacle",
+    "add_polygon_obstacle",
     "build_custom_scenario",
+    "clear_all_obstacles",
+    "remove_last_obstacle",
     "scenario_from_dict",
     "scenario_from_json",
     "scenario_to_dict",
     "scenario_to_json",
+    "update_goal_position",
+    "update_start_position",
 ]
