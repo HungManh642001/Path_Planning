@@ -9,12 +9,17 @@ thuật toán lập lịch (Local hoặc NATS) và phân tích thẩm định Va
 
 from __future__ import annotations
 
+import base64
 import contextlib
+import io
 import json
 import math
-from typing import cast
+from typing import Any, cast
 
 import streamlit as st
+import streamlit_drawable_canvas as sdc
+from PIL import Image, ImageDraw
+from streamlit_drawable_canvas import st_canvas
 
 from path_planning import config
 from path_planning.geometry import spatial
@@ -37,6 +42,161 @@ from tools.qa_suite.core.scenario_custom import (
     update_start_position,
 )
 from tools.qa_suite.core.visualizer_2d import PlotlyVisualizer2D
+
+
+def _compat_image_to_url(
+    image: Image.Image,
+    width: int,
+    clamp: bool,
+    channels: str,
+    output_format: str,
+    image_id: str,
+) -> str:
+    buffered = io.BytesIO()
+    image.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    return f"data:image/png;base64,{img_str}"
+
+
+_st_img_mod = getattr(sdc, "st_image", None)
+if _st_img_mod is not None and not hasattr(_st_img_mod, "image_to_url"):
+    _st_img_mod.image_to_url = _compat_image_to_url
+
+
+def canvas_to_map(
+    cx: float, cy: float, map_w: float, map_h: float, canvas_size: float = 600.0
+) -> tuple[float, float]:
+    """Chuyển tọa độ pixel Canvas (top-left) sang tọa độ bản đồ mét (bottom-left)."""
+    mx = (cx / canvas_size) * map_w
+    my = (1.0 - (cy / canvas_size)) * map_h
+    return (mx, my)
+
+
+def fabric_circle_to_map(
+    obj: dict[str, object],
+    map_w: float,
+    map_h: float,
+    canvas_size: float = 600.0,
+) -> tuple[tuple[float, float], float]:
+    """Chuyển đổi đối tượng Circle của Fabric.js sang tọa độ tâm và bán kính mét."""
+    left = float(cast(float, obj.get("left", 0.0)))
+    top = float(cast(float, obj.get("top", 0.0)))
+    radius = float(cast(float, obj.get("radius", 10.0)))
+    scale_x = float(cast(float, obj.get("scaleX", 1.0)))
+    scale_y = float(cast(float, obj.get("scaleY", 1.0)))
+    cx = left + radius * scale_x
+    cy = top + radius * scale_y
+    r = radius * max(scale_x, scale_y)
+    map_cx, map_cy = canvas_to_map(cx, cy, map_w, map_h, canvas_size)
+    map_r = (r / canvas_size) * max(map_w, map_h)
+    return (map_cx, map_cy), map_r
+
+
+def fabric_path_to_map(
+    obj: dict[str, object],
+    map_w: float,
+    map_h: float,
+    canvas_size: float = 600.0,
+) -> list[tuple[float, float]]:
+    """Chuyển đổi đối tượng Path / Polygon của Fabric.js sang danh sách đỉnh mét."""
+    path_data = obj.get("path", [])
+    coords: list[tuple[float, float]] = []
+    if isinstance(path_data, list):
+        for cmd in path_data:
+            if (
+                isinstance(cmd, list)
+                and len(cmd) >= 3
+                and str(cmd[0]).upper() in ["M", "L"]
+            ):
+                with contextlib.suppress(ValueError, TypeError):
+                    vx = float(cmd[1])
+                    vy = float(cmd[2])
+                    map_pt = canvas_to_map(vx, vy, map_w, map_h, canvas_size)
+                    coords.append(map_pt)
+    return coords
+
+
+def render_scenario_canvas_background(
+    scenario: Scenario, size: int = 600
+) -> Image.Image:
+    """Vẽ ảnh nền bản đồ 2D dạng raster cho Canvas tương tác."""
+    map_w, map_h = scenario["map_bounds"]
+    img = Image.new("RGB", (size, size), color=(248, 250, 252))
+    draw = ImageDraw.Draw(img)
+
+    # 1. Lưới tọa độ và nhãn
+    for x_km in range(0, int(map_w // 1000) + 1, 100):
+        px = int((x_km * 1000 / map_w) * size)
+        draw.line([(px, 0), (px, size)], fill=(226, 232, 240), width=1)
+        draw.text((px + 2, size - 16), f"{x_km}k", fill=(148, 163, 184))
+    for y_km in range(0, int(map_h // 1000) + 1, 100):
+        py = int((1.0 - (y_km * 1000 / map_h)) * size)
+        draw.line([(0, py), (size, py)], fill=(226, 232, 240), width=1)
+        draw.text((4, py - 14), f"{y_km}k", fill=(148, 163, 184))
+
+    # 2. Vùng an toàn (Safezones)
+    for sz in scenario.get("safezones") or []:
+        sz_pts: list[tuple[float, float]] = []
+        for vx, vy in sz:
+            pvx = (vx / map_w) * size
+            pvy = (1.0 - vy / map_h) * size
+            sz_pts.append((pvx, pvy))
+        if len(sz_pts) >= 3:
+            draw.polygon(sz_pts, fill=(240, 253, 244), outline=(134, 239, 172), width=2)
+
+    # 3. Chướng ngại vật hiện tại trong scenario
+    for obs in scenario.get("obstacles", []):
+        if obs["type"] == "circle":
+            cx, cy = obs["center"]
+            r = obs["radius"]
+            pcx = (cx / map_w) * size
+            pcy = (1.0 - cy / map_h) * size
+            pr = (r / max(map_w, map_h)) * size
+            draw.ellipse(
+                [(pcx - pr, pcy - pr), (pcx + pr, pcy + pr)],
+                fill=(254, 226, 226),
+                outline=(239, 68, 68),
+                width=2,
+            )
+        elif obs["type"] == "polygon":
+            poly_pts: list[tuple[float, float]] = []
+            for vx, vy in obs.get("polygon", []):
+                pvx = (vx / map_w) * size
+                pvy = (1.0 - vy / map_h) * size
+                poly_pts.append((pvx, pvy))
+            if len(poly_pts) >= 3:
+                draw.polygon(
+                    poly_pts,
+                    fill=(224, 231, 255),
+                    outline=(99, 102, 241),
+                    width=2,
+                )
+
+    # 4. Điểm xuất phát (O)
+    sx, sy = scenario["start"]
+    psx = (sx / map_w) * size
+    psy = (1.0 - sy / map_h) * size
+    draw.ellipse(
+        [(psx - 8, psy - 8), (psx + 8, psy + 8)],
+        fill=(34, 197, 94),
+        outline=(22, 163, 74),
+        width=2,
+    )
+    draw.text((psx + 10, psy - 6), "Start (O)", fill=(22, 163, 74))
+
+    # 5. Điểm đích (T)
+    gx, gy = scenario["goal"]
+    pgx = (gx / map_w) * size
+    pgy = (1.0 - gy / map_h) * size
+    draw.ellipse(
+        [(pgx - 8, pgy - 8), (pgx + 8, pgy + 8)],
+        fill=(239, 68, 68),
+        outline=(220, 38, 38),
+        width=2,
+    )
+    draw.text((pgx + 10, pgy - 6), "Goal (T)", fill=(220, 38, 38))
+
+    return img
 
 
 def _compute_waypoint_table_data(
@@ -84,7 +244,14 @@ def _compute_waypoint_table_data(
     return table_data
 
 
-__all__ = ["parse_svg_path", "render_tab_inspector"]
+__all__ = [
+    "canvas_to_map",
+    "fabric_circle_to_map",
+    "fabric_path_to_map",
+    "parse_svg_path",
+    "render_scenario_canvas_background",
+    "render_tab_inspector",
+]
 
 
 def parse_svg_path(path_str: str) -> list[tuple[float, float]]:
@@ -766,142 +933,175 @@ def render_tab_inspector() -> None:
             msg = f"❌ **Validation Oracle: REJECTED** — {result.oracle_verdict.detail}"
             st.error(msg)
 
-        # Plotly 2D Interactive Figure
-        draft_vertices = cast(
-            list[tuple[float, float]],
-            st.session_state.get("draft_polygon_vertices", []),
-        )
-        effective_dragmode = "pan"
+        if scenario_source == "🎨 Interactive Studio (GUI Drawing)":
+            tab_canvas, tab_inspect = st.tabs(
+                [
+                    "✏️ Interactive Drawing Canvas (Vẽ trực tiếp trên bản đồ)",
+                    "🔍 Trajectory Inspector (Plotly 2D)",
+                ]
+            )
 
-        fig = PlotlyVisualizer2D.create_scenario_figure(
-            scenario=scenario,
-            result=result,
-            turn_radius=turn_radius,
-            show_fillet_arcs=show_fillets,
-            safe_margin=safe_margin,
-            show_buffer=show_buffer,
-            draft_polygon_vertices=draft_vertices if draft_vertices else None,
-            dragmode=effective_dragmode,
-            enable_click_grid=True,
-        )
+            with tab_canvas:
+                bg_img = render_scenario_canvas_background(scenario, size=600)
+                canvas_mode_map = {
+                    "⭕ Add Circle Obstacle": "circle",
+                    "📐 Add Polygon (Click Vertices)": "polygon",
+                    "🚀 Move Start (O)": "point",
+                    "🎯 Move Goal (T)": "point",
+                    "🔍 Pan / Inspect": "transform",
+                }
+                draw_mode = canvas_mode_map.get(
+                    st.session_state.get("studio_mode", "⭕ Add Circle Obstacle"),
+                    "circle",
+                )
 
-        plotly_config = {
-            "modeBarButtonsToAdd": [
-                "select2d",
-                "lasso2d",
-                "eraseshape",
-            ],
-            "modeBarButtonsToRemove": [
-                "drawcircle",
-                "drawclosedpath",
-                "drawline",
-                "drawopenpath",
-                "drawrect",
-            ],
-            "displaylogo": False,
-            "responsive": True,
-        }
+                st.caption(
+                    "🎨 **Thao tác vẽ trực tiếp trên khung bản đồ bên dưới**:\n"
+                    "- **⭕ Vòng tròn**: Giữ và kéo chuột để vẽ vòng tròn.\n"
+                    "- **📐 Đa giác**: Click lần lượt các đỉnh, click đúp để đóng.\n"
+                    "- **Sau khi vẽ**: Nhấn **'💾 Nạp hình vẽ'** để nạp kịch bản."
+                )
 
-        selection = st.plotly_chart(
-            fig,
-            use_container_width=True,
-            on_select="rerun",
-            selection_mode=["points", "box", "lasso"],
-            key="inspector_map",
-            config=plotly_config,
-        )
+                canvas_result = st_canvas(
+                    fill_color="rgba(239, 68, 68, 0.35)",
+                    stroke_width=2,
+                    stroke_color="#dc2626",
+                    background_image=cast(Any, bg_img),
+                    update_streamlit=True,
+                    height=600,
+                    width=600,
+                    drawing_mode=draw_mode,
+                    key="studio_drawable_canvas",
+                )
 
-        # Xử lý sự kiện click / selection từ Plotly
-        if (
-            scenario_source == "🎨 Interactive Studio (GUI Drawing)"
-            and selection
-            and isinstance(selection, dict)
-        ):
-            # 1. Trích xuất tọa độ từ box selection hoặc point click
-            click_coord: tuple[float, float] | None = None
-            drag_radius: float | None = None
+                if (
+                    canvas_result
+                    and canvas_result.json_data
+                    and isinstance(canvas_result.json_data.get("objects"), list)
+                ):
+                    objs = cast(
+                        list[dict[str, object]],
+                        canvas_result.json_data.get("objects", []),
+                    )
+                    if len(objs) > 0:
+                        c_apply, _ = st.columns([1.5, 1.0])
+                        if c_apply.button(
+                            f"💾 Nạp {len(objs)} hình vẽ vào kịch bản (Apply Shapes)",
+                            type="primary",
+                            use_container_width=True,
+                        ):
+                            map_w, map_h = scenario["map_bounds"]
+                            updated_scen = scenario
+                            for obj in objs:
+                                obj_type = str(obj.get("type", ""))
+                                if obj_type == "circle":
+                                    center, r = fabric_circle_to_map(obj, map_w, map_h)
+                                    updated_scen = add_circle_obstacle(
+                                        updated_scen, center, r
+                                    )
+                                elif obj_type in ["path", "polygon"]:
+                                    coords = fabric_path_to_map(obj, map_w, map_h)
+                                    if len(coords) >= 3:
+                                        simplified = simplify_polygon_rdp(coords)
+                                        updated_scen = add_polygon_obstacle(
+                                            updated_scen, simplified
+                                        )
+                                elif obj_type == "point":
+                                    left_v = float(cast(float, obj.get("left", 0.0)))
+                                    top_v = float(cast(float, obj.get("top", 0.0)))
+                                    pt = canvas_to_map(left_v, top_v, map_w, map_h)
+                                    curr_mode = st.session_state.get("studio_mode")
+                                    if curr_mode == "🚀 Move Start (O)":
+                                        updated_scen = update_start_position(
+                                            updated_scen, pt
+                                        )
+                                    elif curr_mode == "🎯 Move Goal (T)":
+                                        updated_scen = update_goal_position(
+                                            updated_scen, pt
+                                        )
 
-            # A. Kiểm tra box selection (khi kéo thả vùng chọn trên bản đồ)
-            boxes = selection.get("box", [])
-            if boxes and isinstance(boxes, list) and len(boxes) > 0:
-                b = boxes[-1]
-                if isinstance(b, dict) and "x" in b and "y" in b:
-                    xs = b["x"]
-                    ys = b["y"]
-                    if (
-                        isinstance(xs, (list, tuple))
-                        and isinstance(ys, (list, tuple))
-                        and len(xs) >= 2
-                        and len(ys) >= 2
-                    ):
-                        x0, x1 = float(xs[0]), float(xs[1])
-                        y0, y1 = float(ys[0]), float(ys[1])
-                        cx = (x0 + x1) / 2.0
-                        cy = (y0 + y1) / 2.0
-                        dx = abs(x1 - x0)
-                        dy = abs(y1 - y0)
-                        click_coord = (cx, cy)
-                        if dx > 1000.0 or dy > 1000.0:
-                            drag_radius = max(dx, dy) / 2.0
+                            st.session_state["active_scenario"] = updated_scen
+                            succ_msg = f"✅ Đã nạp {len(objs)} hình vẽ vào kịch bản!"
+                            st.success(succ_msg)
+                            st.rerun()
 
-            # B. Kiểm tra point click nếu không có box selection
-            if click_coord is None:
-                pts = selection.get("points", [])
-                if pts and isinstance(pts, list) and len(pts) > 0:
-                    last_pt = pts[-1]
-                    if (
-                        isinstance(last_pt, dict)
-                        and "x" in last_pt
-                        and "y" in last_pt
-                        and last_pt["x"] is not None
-                        and last_pt["y"] is not None
-                    ):
-                        click_coord = (float(last_pt["x"]), float(last_pt["y"]))
+            plotly_config = {
+                "modeBarButtonsToAdd": [
+                    "select2d",
+                    "lasso2d",
+                    "eraseshape",
+                ],
+                "modeBarButtonsToRemove": [
+                    "drawcircle",
+                    "drawclosedpath",
+                    "drawline",
+                    "drawopenpath",
+                    "drawrect",
+                ],
+                "displaylogo": False,
+                "responsive": True,
+            }
 
-            # C. Thực hiện cập nhật kịch bản dựa theo Studio Mode
-            studio_mode = st.session_state.get("studio_mode", "🔍 Pan / Inspect")
-            if click_coord is not None:
-                coord_sig = f"{studio_mode}_{click_coord[0]:.1f}_{click_coord[1]:.1f}_{drag_radius}"  # noqa: E501
-                if st.session_state.get("last_studio_interaction") != coord_sig:
-                    st.session_state["last_studio_interaction"] = coord_sig
-
-                    if studio_mode == "⭕ Add Circle Obstacle":
-                        circle_radius = (
-                            drag_radius
-                            if drag_radius is not None
-                            else float(st.session_state.get("circle_radius", 25000.0))
-                        )
-                        st.session_state["circle_input_x"] = click_coord[0]
-                        st.session_state["circle_input_y"] = click_coord[1]
-                        st.session_state["circle_radius"] = circle_radius
-                        st.session_state["active_scenario"] = add_circle_obstacle(
-                            st.session_state["active_scenario"],
-                            click_coord,
-                            circle_radius,
-                        )
-                        st.rerun()
-
-                    elif studio_mode == "📐 Add Polygon (Click Vertices)":
-                        curr_draft = list(
-                            st.session_state.get("draft_polygon_vertices", [])
-                        )
-                        curr_draft.append(click_coord)
-                        st.session_state["draft_polygon_vertices"] = curr_draft
-                        st.rerun()
-
-                    elif studio_mode == "🚀 Move Start (O)":
-                        st.session_state["active_scenario"] = update_start_position(
-                            st.session_state["active_scenario"], click_coord
-                        )
-                        st.rerun()
-
-                    elif studio_mode == "🎯 Move Goal (T)":
-                        st.session_state["active_scenario"] = update_goal_position(
-                            st.session_state["active_scenario"], click_coord
-                        )
-                        st.rerun()
+            with tab_inspect:
+                # Plotly 2D Interactive Figure
+                draft_vertices = cast(
+                    list[tuple[float, float]],
+                    st.session_state.get("draft_polygon_vertices", []),
+                )
+                fig = PlotlyVisualizer2D.create_scenario_figure(
+                    scenario=scenario,
+                    result=result,
+                    turn_radius=turn_radius,
+                    show_fillet_arcs=show_fillets,
+                    safe_margin=safe_margin,
+                    show_buffer=show_buffer,
+                    draft_polygon_vertices=draft_vertices if draft_vertices else None,
+                    dragmode="pan",
+                    enable_click_grid=True,
+                )
+                st.plotly_chart(
+                    fig,
+                    use_container_width=True,
+                    key="inspector_map_studio",
+                    config=plotly_config,
+                )
+        else:
+            plotly_config = {
+                "modeBarButtonsToAdd": [
+                    "select2d",
+                    "lasso2d",
+                    "eraseshape",
+                ],
+                "modeBarButtonsToRemove": [
+                    "drawcircle",
+                    "drawclosedpath",
+                    "drawline",
+                    "drawopenpath",
+                    "drawrect",
+                ],
+                "displaylogo": False,
+                "responsive": True,
+            }
+            # Plotly 2D Interactive Figure for Preset/Custom/Import scenarios
+            fig = PlotlyVisualizer2D.create_scenario_figure(
+                scenario=scenario,
+                result=result,
+                turn_radius=turn_radius,
+                show_fillet_arcs=show_fillets,
+                safe_margin=safe_margin,
+                show_buffer=show_buffer,
+                dragmode="pan",
+                enable_click_grid=True,
+            )
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                key="inspector_map_default",
+                config=plotly_config,
+            )
 
         # Waypoint Details Table
+
         if result.waypoints:
             with st.expander(
                 f"📋 Trajectory Waypoints ({len(result.waypoints)} points)",
