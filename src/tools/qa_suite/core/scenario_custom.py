@@ -318,15 +318,31 @@ def _point_line_distance(
     norm = math.hypot(dx, dy)
     if norm < 1e-9:
         return math.hypot(point[0] - line_start[0], point[1] - line_start[1])
-    return (
-        abs(
-            dy * point[0]
-            - dx * point[1]
-            + line_end[0] * line_start[1]
-            - line_end[1] * line_start[0]
-        )
-        / norm
-    )
+    return abs(dx * (line_start[1] - point[1]) - dy * (line_start[0] - point[0])) / norm
+
+
+def _rdp_recursive(
+    points: list[tuple[float, float]], eps: float
+) -> list[tuple[float, float]]:
+    """Hàm đệ quy rút gọn đường gấp khúc theo thuật toán RDP."""
+    if len(points) <= 2:
+        return list(points)
+    dmax = -1.0
+    index = -1
+    start_pt = points[0]
+    end_pt = points[-1]
+    for i in range(1, len(points) - 1):
+        d = _point_line_distance(points[i], start_pt, end_pt)
+        if d > dmax:
+            index = i
+            dmax = d
+
+    if dmax > eps and index > 0:
+        rec1 = _rdp_recursive(points[: index + 1], eps)
+        rec2 = _rdp_recursive(points[index:], eps)
+        return rec1[:-1] + rec2
+    else:
+        return [start_pt, end_pt]
 
 
 def simplify_polygon_rdp(
@@ -340,52 +356,47 @@ def simplify_polygon_rdp(
         epsilon: Ngưỡng khoảng cách dung sai (m).
 
     Returns:
-        Danh sách các đỉnh đã được rút gọn, luôn đảm bảo tối thiểu 3 đỉnh.
+        Danh sách các đỉnh đã được rút gọn (tối thiểu 3 đỉnh nếu input >= 3).
     """
-    if len(vertices) <= 3:
+    if len(vertices) < 3:
         return [(float(p[0]), float(p[1])) for p in vertices]
 
     pts = [(float(p[0]), float(p[1])) for p in vertices]
-    is_closed = False
-    if (
+    is_explicitly_closed = (
         len(pts) > 3
-        and math.hypot(pts[0][0] - pts[-1][0], pts[0][1] - pts[-1][1]) < 1e-3
-    ):
-        is_closed = True
+        and math.hypot(pts[0][0] - pts[-1][0], pts[0][1] - pts[-1][1]) < 1e-6
+    )
+    if is_explicitly_closed:
         pts = pts[:-1]
 
-    def _rdp_recursive(
-        points: list[tuple[float, float]], eps: float
-    ) -> list[tuple[float, float]]:
-        if len(points) <= 2:
-            return points
-        dmax = 0.0
-        index = 0
-        start_pt = points[0]
-        end_pt = points[-1]
-        for i in range(1, len(points) - 1):
-            d = _point_line_distance(points[i], start_pt, end_pt)
-            if d > dmax:
-                index = i
-                dmax = d
+    if len(pts) < 3:
+        return [(float(p[0]), float(p[1])) for p in vertices]
 
-        if dmax > eps:
-            rec1 = _rdp_recursive(points[: index + 1], eps)
-            rec2 = _rdp_recursive(points[index:], eps)
-            return rec1[:-1] + rec2
-        else:
-            return [start_pt, end_pt]
+    ring = [*pts, pts[0]]
+    dmax = -1.0
+    split_idx = 1
+    for i in range(1, len(pts)):
+        d = math.hypot(pts[i][0] - pts[0][0], pts[i][1] - pts[0][1])
+        if d > dmax:
+            dmax = d
+            split_idx = i
 
-    mid = len(pts) // 2
-    part1 = _rdp_recursive(pts[: mid + 1], epsilon)
-    part2 = _rdp_recursive([*pts[mid:], pts[0]], epsilon)
+    part1 = _rdp_recursive(ring[: split_idx + 1], epsilon)
+    part2 = _rdp_recursive(ring[split_idx:], epsilon)
     simplified = part1[:-1] + part2[:-1]
 
-    # Đảm bảo tối thiểu 3 đỉnh
-    if len(simplified) < 3:
-        simplified = pts[:3] if len(pts) >= 3 else list(pts)
+    # Đảm bảo tối thiểu 3 đỉnh nếu input >= 3
+    if len(simplified) < 3 and len(pts) >= 3:
+        dmax = -1.0
+        best_idx = 1
+        for i in range(1, len(pts)):
+            d = _point_line_distance(pts[i], pts[0], pts[split_idx])
+            if d > dmax:
+                dmax = d
+                best_idx = i
+        simplified = [pts[0], pts[split_idx], pts[best_idx]]
 
-    if is_closed and len(simplified) >= 3:
+    if is_explicitly_closed and len(simplified) >= 3:
         simplified.append(simplified[0])
 
     return [(float(p[0]), float(p[1])) for p in simplified]
@@ -396,40 +407,33 @@ def remove_obstacle_by_index(scenario: Scenario, obstacle_index: int) -> Scenari
 
     Args:
         scenario: Kịch bản gốc.
-        obstacle_index: Chỉ số vật cản cần xóa (0-indexed).
+        obstacle_index: Chỉ số vật cản cần xóa (0-indexed, hỗ trợ chỉ mục âm).
 
     Returns:
-        Scenario mới sau khi đã loại bỏ vật cản tại chỉ mục đó.
+        Scenario mới sau khi đã loại bỏ vật cản tại chỉ mục đó. Nếu chỉ mục
+        nằm ngoài phạm vi, trả về bản sao của kịch bản gốc.
     """
     new_scenario = _clone_scenario(scenario)
     obs_list = new_scenario.get("obstacles", [])
-    if not (0 <= obstacle_index < len(obs_list)):
+    num_obstacles = len(obs_list)
+    if num_obstacles == 0:
         return new_scenario
 
-    target_obs = obs_list.pop(obstacle_index)
+    idx = obstacle_index if obstacle_index >= 0 else obstacle_index + num_obstacles
+    if not (0 <= idx < num_obstacles):
+        return new_scenario
 
+    target_obs = obs_list.pop(idx)
     if target_obs["type"] == "circle":
-        target_center = target_obs["center"]
-        target_r = target_obs["radius"]
+        circle_idx = sum(1 for i in range(idx) if obs_list[i]["type"] == "circle")
         dyn_list = new_scenario.get("dynamic_obstacles", [])
-        for i, (c, r) in enumerate(dyn_list):
-            if (
-                abs(c[0] - target_center[0]) < 1e-4
-                and abs(c[1] - target_center[1]) < 1e-4
-                and abs(r - target_r) < 1e-4
-            ):
-                dyn_list.pop(i)
-                break
+        if 0 <= circle_idx < len(dyn_list):
+            dyn_list.pop(circle_idx)
     elif target_obs["type"] == "polygon":
-        target_poly = target_obs["polygon"]
+        poly_idx = sum(1 for i in range(idx) if obs_list[i]["type"] == "polygon")
         islands_list = new_scenario.get("islands", [])
-        for i, poly in enumerate(islands_list):
-            if len(poly) == len(target_poly) and all(
-                abs(p1[0] - p2[0]) < 1e-4 and abs(p1[1] - p2[1]) < 1e-4
-                for p1, p2 in zip(poly, target_poly, strict=False)
-            ):
-                islands_list.pop(i)
-                break
+        if 0 <= poly_idx < len(islands_list):
+            islands_list.pop(poly_idx)
 
     return new_scenario
 
