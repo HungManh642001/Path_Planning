@@ -456,6 +456,8 @@ class PlotlyVisualizer2D:
                 "scaleratio": 1,
             },
             hovermode="closest",
+            hoverdistance=50,
+            clickmode="event+select",
             dragmode=dragmode,
             newshape={
                 "line": {"color": "#f59e0b", "width": 2},

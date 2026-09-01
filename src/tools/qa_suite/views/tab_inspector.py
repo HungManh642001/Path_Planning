@@ -771,14 +771,7 @@ def render_tab_inspector() -> None:
             list[tuple[float, float]],
             st.session_state.get("draft_polygon_vertices", []),
         )
-        current_studio_mode = st.session_state.get("studio_mode", "🔍 Pan / Inspect")
-        if scenario_source == "🎨 Interactive Studio (GUI Drawing)":
-            if current_studio_mode == "🔍 Pan / Inspect":
-                effective_dragmode = "pan"
-            else:
-                effective_dragmode = "select"
-        else:
-            effective_dragmode = "pan"
+        effective_dragmode = "pan"
 
         fig = PlotlyVisualizer2D.create_scenario_figure(
             scenario=scenario,
@@ -866,12 +859,13 @@ def render_tab_inspector() -> None:
                         click_coord = (float(last_pt["x"]), float(last_pt["y"]))
 
             # C. Thực hiện cập nhật kịch bản dựa theo Studio Mode
+            studio_mode = st.session_state.get("studio_mode", "🔍 Pan / Inspect")
             if click_coord is not None:
-                coord_sig = f"{current_studio_mode}_{click_coord[0]:.1f}_{click_coord[1]:.1f}_{drag_radius}"  # noqa: E501
+                coord_sig = f"{studio_mode}_{click_coord[0]:.1f}_{click_coord[1]:.1f}_{drag_radius}"  # noqa: E501
                 if st.session_state.get("last_studio_interaction") != coord_sig:
                     st.session_state["last_studio_interaction"] = coord_sig
 
-                    if current_studio_mode == "⭕ Add Circle Obstacle":
+                    if studio_mode == "⭕ Add Circle Obstacle":
                         circle_radius = (
                             drag_radius
                             if drag_radius is not None
@@ -887,7 +881,7 @@ def render_tab_inspector() -> None:
                         )
                         st.rerun()
 
-                    elif current_studio_mode == "📐 Add Polygon (Click Vertices)":
+                    elif studio_mode == "📐 Add Polygon (Click Vertices)":
                         curr_draft = list(
                             st.session_state.get("draft_polygon_vertices", [])
                         )
@@ -895,13 +889,13 @@ def render_tab_inspector() -> None:
                         st.session_state["draft_polygon_vertices"] = curr_draft
                         st.rerun()
 
-                    elif current_studio_mode == "🚀 Move Start (O)":
+                    elif studio_mode == "🚀 Move Start (O)":
                         st.session_state["active_scenario"] = update_start_position(
                             st.session_state["active_scenario"], click_coord
                         )
                         st.rerun()
 
-                    elif current_studio_mode == "🎯 Move Goal (T)":
+                    elif studio_mode == "🎯 Move Goal (T)":
                         st.session_state["active_scenario"] = update_goal_position(
                             st.session_state["active_scenario"], click_coord
                         )
