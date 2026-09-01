@@ -84,7 +84,10 @@ def _compute_waypoint_table_data(
     return table_data
 
 
-def _parse_svg_path(path_str: str) -> list[tuple[float, float]]:
+__all__ = ["parse_svg_path", "render_tab_inspector"]
+
+
+def parse_svg_path(path_str: str) -> list[tuple[float, float]]:
     """Phân tích chuỗi SVG path (vd: 'M 10 20 L 30 40 Z') thành danh sách (x, y)."""
     clean_str = (
         path_str.replace("M", " ")

@@ -320,10 +320,10 @@ def test_render_tab_inspector_studio_quick_actions() -> None:
 
 def test_parse_svg_path() -> None:
     """Kiểm thử hàm parse SVG path thành tọa độ đỉnh đa giác."""
-    from tools.qa_suite.views.tab_inspector import _parse_svg_path
+    from tools.qa_suite.views.tab_inspector import parse_svg_path
 
     path_svg = "M 100000,100000 L 200000,100000 L 200000,200000 Z"
-    pts = _parse_svg_path(path_svg)
+    pts = parse_svg_path(path_svg)
     assert len(pts) == 3
     assert pts[0] == (100000.0, 100000.0)
     assert pts[1] == (200000.0, 100000.0)
