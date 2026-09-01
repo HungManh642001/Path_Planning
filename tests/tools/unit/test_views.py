@@ -375,3 +375,81 @@ def test_render_tab_inspector_studio_shapes_handling() -> None:
         assert len(active["dynamic_obstacles"]) >= 1
         assert active["dynamic_obstacles"][-1][0] == (125000.0, 125000.0)
         assert active["dynamic_obstacles"][-1][1] == 25000.0
+
+
+def test_render_tab_inspector_dual_input_circle() -> None:
+    """Kiểm thử thêm circle bằng nút Add Circle at (X, Y)."""
+    fake_state = FakeSessionState(
+        {
+            "active_scenario": get_all_scenarios()["scenario_01_open_ocean"](),
+            "studio_mode": "⭕ Add Circle Obstacle",
+            "circle_input_x": 50000.0,
+            "circle_input_y": 60000.0,
+            "circle_radius": 15000.0,
+        }
+    )
+
+    def mock_radio(label: str, *args: Any, **kwargs: Any) -> str:
+        if "Scenario Source" in label:
+            return "🎨 Interactive Studio (GUI Drawing)"
+        if "Studio Mode" in label:
+            return "⭕ Add Circle Obstacle"
+        return "Local Python Core"
+
+    def mock_button(label: str, *args: Any, **kwargs: Any) -> bool:
+        return "Add Circle at (X, Y)" in label
+
+    with (
+        patch("streamlit.session_state", fake_state),
+        patch("streamlit.radio", side_effect=mock_radio),
+        patch("streamlit.selectbox", return_value="scenario_01_open_ocean"),
+        patch("streamlit.number_input", return_value=50000.0),
+        patch("streamlit.checkbox", return_value=True),
+        patch("streamlit.button", side_effect=mock_button),
+        patch("streamlit.columns", side_effect=_mock_columns),
+        patch("streamlit.expander", return_value=MagicMock()),
+        patch("streamlit.plotly_chart", return_value=None),
+        patch("streamlit.rerun") as mock_rerun,
+    ):
+        render_tab_inspector()
+        assert mock_rerun.called
+        active = fake_state["active_scenario"]
+        assert len(active["dynamic_obstacles"]) >= 1
+
+
+def test_render_tab_inspector_delete_obstacle_by_index() -> None:
+    """Kiểm thử xóa vật cản cụ thể từ bảng Active Obstacles Manager."""
+    scen = get_all_scenarios()["scenario_02_single_obstacle"]()
+    fake_state = FakeSessionState(
+        {
+            "active_scenario": scen,
+            "studio_mode": "🔍 Pan / Inspect",
+        }
+    )
+
+    def mock_radio(label: str, *args: Any, **kwargs: Any) -> str:
+        if "Scenario Source" in label:
+            return "🎨 Interactive Studio (GUI Drawing)"
+        return "Local Python Core"
+
+    # Click delete on the first obstacle (del_obs_0)
+    def mock_button(label: str, *args: Any, **kwargs: Any) -> bool:
+        key = kwargs.get("key", "")
+        return str(key) == "del_obs_0" or "❌" in label
+
+    with (
+        patch("streamlit.session_state", fake_state),
+        patch("streamlit.radio", side_effect=mock_radio),
+        patch("streamlit.selectbox", return_value="scenario_02_single_obstacle"),
+        patch("streamlit.number_input", return_value=20000.0),
+        patch("streamlit.checkbox", return_value=True),
+        patch("streamlit.button", side_effect=mock_button),
+        patch("streamlit.columns", side_effect=_mock_columns),
+        patch("streamlit.expander", return_value=MagicMock()),
+        patch("streamlit.plotly_chart", return_value=None),
+        patch("streamlit.rerun") as mock_rerun,
+    ):
+        render_tab_inspector()
+        assert mock_rerun.called
+        active = fake_state["active_scenario"]
+        assert len(active["obstacles"]) < len(scen["obstacles"])
