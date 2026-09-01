@@ -184,15 +184,15 @@ def render_tab_inspector() -> None:
                         help="Chọn kịch bản mẫu làm nền tảng",
                     )
                 )
-                if (
-                    st.session_state.get("last_selected_base_preset")
-                    != base_preset_name
-                ):
+                last_preset = st.session_state.get("last_selected_base_preset")
+                if last_preset is not None and last_preset != base_preset_name:
                     st.session_state["last_selected_base_preset"] = base_preset_name
                     st.session_state["active_scenario"] = presets[base_preset_name]()
                     st.session_state["draft_polygon_vertices"] = []
                     st.session_state["last_clicked_point"] = None
                     scenario = cast(Scenario, st.session_state["active_scenario"])
+                elif last_preset is None:
+                    st.session_state["last_selected_base_preset"] = base_preset_name
 
                 studio_mode_options = [
                     "🔍 Pan / Inspect",
@@ -219,15 +219,23 @@ def render_tab_inspector() -> None:
 
                 if studio_mode == "⭕ Add Circle Obstacle":
                     c_c1, c_c2 = st.columns(2)
-                    center_x = c_c1.number_input(
-                        "Center X (m)",
-                        value=float(st.session_state.get("circle_input_x", 50000.0)),
-                        step=5000.0,
+                    center_x = float(
+                        c_c1.number_input(
+                            "Center X (m)",
+                            value=float(
+                                st.session_state.get("circle_input_x", 50000.0)
+                            ),
+                            step=5000.0,
+                        )
                     )
-                    center_y = c_c2.number_input(
-                        "Center Y (m)",
-                        value=float(st.session_state.get("circle_input_y", 50000.0)),
-                        step=5000.0,
+                    center_y = float(
+                        c_c2.number_input(
+                            "Center Y (m)",
+                            value=float(
+                                st.session_state.get("circle_input_y", 50000.0)
+                            ),
+                            step=5000.0,
+                        )
                     )
                     circle_radius = float(
                         st.number_input(
@@ -262,11 +270,11 @@ def render_tab_inspector() -> None:
                         st.session_state.get("draft_polygon_vertices", []),
                     )
                     c_v1, c_v2 = st.columns(2)
-                    vert_x = c_v1.number_input(
-                        "Vertex X (m)", value=50000.0, step=5000.0
+                    vert_x = float(
+                        c_v1.number_input("Vertex X (m)", value=50000.0, step=5000.0)
                     )
-                    vert_y = c_v2.number_input(
-                        "Vertex Y (m)", value=50000.0, step=5000.0
+                    vert_y = float(
+                        c_v2.number_input("Vertex Y (m)", value=50000.0, step=5000.0)
                     )
                     if st.button("➕ Add Vertex (X, Y)", use_container_width=True):
                         curr_draft = list(
@@ -331,18 +339,24 @@ def render_tab_inspector() -> None:
                     curr_start = scenario["start"]
                     curr_heading_deg = math.degrees(scenario["start_heading"])
                     c_s1, c_s2 = st.columns(2)
-                    start_x = c_s1.number_input(
-                        "Start X (m)", value=float(curr_start[0]), step=5000.0
+                    start_x = float(
+                        c_s1.number_input(
+                            "Start X (m)", value=float(curr_start[0]), step=5000.0
+                        )
                     )
-                    start_y = c_s2.number_input(
-                        "Start Y (m)", value=float(curr_start[1]), step=5000.0
+                    start_y = float(
+                        c_s2.number_input(
+                            "Start Y (m)", value=float(curr_start[1]), step=5000.0
+                        )
                     )
-                    new_start_h_deg = st.number_input(
-                        "Start Heading (deg)",
-                        value=float(curr_heading_deg),
-                        min_value=-180.0,
-                        max_value=360.0,
-                        step=5.0,
+                    new_start_h_deg = float(
+                        st.number_input(
+                            "Start Heading (deg)",
+                            value=float(curr_heading_deg),
+                            min_value=-180.0,
+                            max_value=360.0,
+                            step=5.0,
+                        )
                     )
                     if (
                         abs(start_x - curr_start[0]) > 1e-4
@@ -363,11 +377,15 @@ def render_tab_inspector() -> None:
                     curr_goal = scenario["goal"]
                     is_free_goal = scenario.get("goal_heading") is None
                     c_g1, c_g2 = st.columns(2)
-                    goal_x = c_g1.number_input(
-                        "Goal X (m)", value=float(curr_goal[0]), step=5000.0
+                    goal_x = float(
+                        c_g1.number_input(
+                            "Goal X (m)", value=float(curr_goal[0]), step=5000.0
+                        )
                     )
-                    goal_y = c_g2.number_input(
-                        "Goal Y (m)", value=float(curr_goal[1]), step=5000.0
+                    goal_y = float(
+                        c_g2.number_input(
+                            "Goal Y (m)", value=float(curr_goal[1]), step=5000.0
+                        )
                     )
                     free_goal_cb = st.checkbox(
                         "Free Goal Heading (Tiếp cận tự do)", value=is_free_goal
@@ -387,12 +405,14 @@ def render_tab_inspector() -> None:
                     else:
                         gh = scenario.get("goal_heading")
                         curr_g_deg = math.degrees(gh) if gh is not None else 0.0
-                        new_goal_h_deg = st.number_input(
-                            "Goal Heading (deg)",
-                            value=float(curr_g_deg),
-                            min_value=-180.0,
-                            max_value=360.0,
-                            step=5.0,
+                        new_goal_h_deg = float(
+                            st.number_input(
+                                "Goal Heading (deg)",
+                                value=float(curr_g_deg),
+                                min_value=-180.0,
+                                max_value=360.0,
+                                step=5.0,
+                            )
                         )
                         if (
                             scenario.get("goal_heading") is None
