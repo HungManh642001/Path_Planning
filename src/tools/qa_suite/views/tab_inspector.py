@@ -228,7 +228,7 @@ def render_tab_inspector() -> None:
 
             if scenario is None:
                 # Fallback to default scenario
-                scenario = presets["scenario_01_open_space"]()
+                scenario = presets["scenario_01_open_ocean"]()
 
         exec_mode_str = st.radio(
             "Execution Mode",
