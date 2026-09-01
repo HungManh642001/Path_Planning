@@ -36,6 +36,7 @@ class PlotlyVisualizer2D:
         show_buffer: bool = True,
         draft_polygon_vertices: list[tuple[float, float]] | None = None,
         dragmode: str = "pan",
+        enable_click_grid: bool = True,
     ) -> go.Figure:
         """Tạo biểu đồ Plotly 2D tương tác trực quan hóa kịch bản và kết quả đường bay.
 
@@ -49,11 +50,47 @@ class PlotlyVisualizer2D:
             show_buffer: Cờ bật/tắt hiển thị đường bao đệm an toàn (buffer).
             draft_polygon_vertices: Danh sách tọa độ đỉnh đa giác đang vẽ nháp.
             dragmode: Chế độ tương tác kéo chuột Plotly (vd: "pan", "drawcircle").
+            enable_click_grid: Bật lưới tương tác bắt sự kiện click trên nền bản đồ.
 
         Returns:
             go.Figure: Đối tượng biểu đồ Plotly sẵn sàng để hiển thị.
         """
         fig = go.Figure()
+
+        # 0. Lưới tương tác bắt sự kiện click trên nền bản đồ (Interactive Click Mesh)
+        if enable_click_grid:
+            map_w, map_h = scenario["map_bounds"]
+            step = 25000.0
+            grid_xs: list[float] = []
+            grid_ys: list[float] = []
+            grid_hover: list[str] = []
+            x_vals = list(range(0, int(map_w) + 1, int(step)))
+            if int(map_w) not in x_vals:
+                x_vals.append(int(map_w))
+            y_vals = list(range(0, int(map_h) + 1, int(step)))
+            if int(map_h) not in y_vals:
+                y_vals.append(int(map_h))
+
+            for gx in x_vals:
+                for gy in y_vals:
+                    grid_xs.append(float(gx))
+                    grid_ys.append(float(gy))
+                    grid_hover.append(
+                        f"Map Coord: ({gx / 1000:,.1f} km, {gy / 1000:,.1f} km)"
+                    )
+
+            fig.add_trace(
+                go.Scatter(
+                    x=grid_xs,
+                    y=grid_ys,
+                    mode="markers",
+                    marker={"size": 12, "color": "rgba(0, 0, 0, 0.001)"},
+                    name="Map Canvas Grid",
+                    hoverinfo="text",
+                    hovertext=grid_hover,
+                    showlegend=False,
+                )
+            )
 
         # 1. Vẽ vùng an toàn (Safezones) nếu có
         safezones = scenario.get("safezones")

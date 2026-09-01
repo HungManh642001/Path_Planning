@@ -192,3 +192,23 @@ def test_create_scenario_figure_with_draft_polygon_vertices() -> None:
     assert len(draft_trace.text) == 4
     assert list(draft_trace.text) == ["V_1", "V_2", "V_3", "V_4"]
     assert draft_trace.hovertext[0] == "Draft Vertex 1: (20,000, 20,000)"
+
+
+def test_create_scenario_figure_click_grid_toggle() -> None:
+    """Kiểm thử cờ enable_click_grid bật/tắt lưới điểm tương tác."""
+    scenario = get_all_scenarios()["scenario_01_open_ocean"]()
+
+    # Mặc định bật click grid
+    fig_enabled = PlotlyVisualizer2D.create_scenario_figure(
+        scenario, enable_click_grid=True
+    )
+    grid_traces = [t for t in fig_enabled.data if t.name == "Map Canvas Grid"]
+    assert len(grid_traces) == 1
+    assert len(grid_traces[0].x) > 0
+
+    # Tắt click grid
+    fig_disabled = PlotlyVisualizer2D.create_scenario_figure(
+        scenario, enable_click_grid=False
+    )
+    grid_disabled_traces = [t for t in fig_disabled.data if t.name == "Map Canvas Grid"]
+    assert len(grid_disabled_traces) == 0
