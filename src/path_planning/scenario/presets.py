@@ -10,15 +10,15 @@ from path_planning.types import Obstacle, PolygonCoords, Scenario
 
 
 def scenario1_open_ocean() -> Scenario:
-    """Scenario 1: Open ocean - no obstacles.
+    """Kịch bản 1: Biển mở - không có chướng ngại vật.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
             "start": (2000, 2000),
-            "start_heading": math.pi / 4,  # 45 degrees
+            "start_heading": math.pi / 4,  # 45 độ
             "goal": (450000, 450000),
             "goal_heading": math.pi / 4,
             "num_islands": 0,
@@ -29,10 +29,10 @@ def scenario1_open_ocean() -> Scenario:
 
 
 def scenario2_single_obstacle() -> Scenario:
-    """Scenario 2: Single large obstacle in the way.
+    """Kịch bản 2: Một vật cản lớn duy nhất trên đường bay.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -48,10 +48,10 @@ def scenario2_single_obstacle() -> Scenario:
 
 
 def scenario3_narrow_gap() -> Scenario:
-    """Scenario 3: Two obstacles very close together (narrow gap).
+    """Kịch bản 3: Hai vật cản nằm rất gần nhau (khe hẹp).
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     scenario = create_scenario(
         {
@@ -65,9 +65,9 @@ def scenario3_narrow_gap() -> Scenario:
         }
     )
 
-    # Manually add two close islands. Coordinates are written as floats because
-    # a PolygonCoords ring is list[tuple[float, float]] and list is invariant;
-    # the values are unchanged.
+    # Thêm thủ công 2 đảo gần nhau. Tọa độ được viết dưới dạng số thực float vì
+    # PolygonCoords là list[tuple[float, float]] (list mang tính invariant);
+    # các giá trị tọa độ giữ nguyên không đổi.
     island1: PolygonCoords = [
         (22000.0, 20000.0),
         (24000.0, 20000.0),
@@ -92,10 +92,10 @@ def scenario3_narrow_gap() -> Scenario:
 
 
 def scenario4_complex_maze() -> Scenario:
-    """Scenario 4: Complex maze with many obstacles.
+    """Kịch bản 4: Mê cung phức tạp với nhiều vật cản.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -103,21 +103,21 @@ def scenario4_complex_maze() -> Scenario:
             "start_heading": 0,
             "goal": (480000, 480000),
             "goal_heading": 0,
-            "num_islands": 12,  # Reduced from 20 for better traversability
-            "num_dynamic_obstacles": 6,  # Reduced from 10
+            "num_islands": 12,  # Giảm từ 20 để tăng khả năng thông qua đường bay
+            "num_dynamic_obstacles": 6,  # Giảm từ 10
             "seed": 12345,
         }
     )
 
 
-# ============ EASY SCENARIOS (Few obstacles, simple paths) ============
+# ============ KỊCH BẢN DỄ (Ít chướng ngại vật, đường bay đơn giản) ============
 
 
 def scenario5_sparse_islands() -> Scenario:
-    """Scenario 5: Easy - Sparse islands, plenty of open water.
+    """Kịch bản 5: Dễ - Các đảo thưa thớt, vùng nước thoáng rộng rãi.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -133,10 +133,10 @@ def scenario5_sparse_islands() -> Scenario:
 
 
 def scenario6_coastal_path() -> Scenario:
-    """Scenario 6: Easy - Light coastal dynamic obstacles, open corridor.
+    """Kịch bản 6: Dễ - Chướng ngại vật động ven bờ nhẹ, hành lang mở.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -152,10 +152,10 @@ def scenario6_coastal_path() -> Scenario:
 
 
 def scenario7_diagonal_crossing() -> Scenario:
-    """Scenario 7: Easy - Minimal obstacles, diagonal crossing.
+    """Kịch bản 7: Dễ - Ít vật cản, bay chéo bản đồ.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -171,10 +171,10 @@ def scenario7_diagonal_crossing() -> Scenario:
 
 
 def scenario8_open_with_dynamic_obstacles() -> Scenario:
-    """Scenario 8: Easy - Open terrain with scattered dynamic obstacles.
+    """Kịch bản 8: Dễ - Địa hình mở với các chướng ngại vật động rải rác.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -189,14 +189,14 @@ def scenario8_open_with_dynamic_obstacles() -> Scenario:
     )
 
 
-# ============ MEDIUM SCENARIOS (Moderate complexity) ============
+# ============ KỊCH BẢN TRUNG BÌNH (Độ phức tạp vừa phải) ============
 
 
 def scenario9_island_archipelago() -> Scenario:
-    """Scenario 9: Medium - Archipelago with multiple islands.
+    """Kịch bản 9: Trung bình - Quần đảo với nhiều đảo nhỏ.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -212,10 +212,10 @@ def scenario9_island_archipelago() -> Scenario:
 
 
 def scenario10_dense_dynamic_obstacles() -> Scenario:
-    """Scenario 10: Medium - Dense dynamic obstacle field with some islands.
+    """Kịch bản 10: Trung bình - Mật độ chướng ngại vật động dày kèm một số đảo.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -231,10 +231,10 @@ def scenario10_dense_dynamic_obstacles() -> Scenario:
 
 
 def scenario11_serpentine_route() -> Scenario:
-    """Scenario 11: Medium - Serpentine path through obstacle field.
+    """Kịch bản 11: Trung bình - Đường bay zíc zắc uốn lượn qua bãi vật cản.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -250,10 +250,10 @@ def scenario11_serpentine_route() -> Scenario:
 
 
 def scenario12_perimeter_dynamic_obstacles() -> Scenario:
-    """Scenario 12: Medium - Goal protected by perimeter dynamic obstacles.
+    """Kịch bản 12: Trung bình - Đích được bảo vệ bởi vành đai chướng ngại vật động.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -268,14 +268,14 @@ def scenario12_perimeter_dynamic_obstacles() -> Scenario:
     )
 
 
-# ============ HARD SCENARIOS (High complexity, many obstacles) ============
+# ============ KỊCH BẢN KHÓ (Độ phức tạp cao, nhiều chướng ngại vật) ============
 
 
 def scenario13_dense_island_field() -> Scenario:
-    """Scenario 13: Hard - Very dense island field.
+    """Kịch bản 13: Khó - Mật độ đảo rất dày đặc.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -291,10 +291,10 @@ def scenario13_dense_island_field() -> Scenario:
 
 
 def scenario14_combined_obstacles() -> Scenario:
-    """Scenario 14: Hard - Combined island and dynamic obstacle.
+    """Kịch bản 14: Khó - Kết hợp nhiều loại chướng ngại vật.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -310,10 +310,10 @@ def scenario14_combined_obstacles() -> Scenario:
 
 
 def scenario15_narrow_channel() -> Scenario:
-    """Scenario 15: Hard - Forced through narrow channels between obstacles.
+    """Kịch bản 15: Khó - Eo biển hẹp giữa các đảo.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -329,10 +329,10 @@ def scenario15_narrow_channel() -> Scenario:
 
 
 def scenario16_extreme_complexity() -> Scenario:
-    """Scenario 16: Very Hard - Extreme complexity test.
+    """Kịch bản 16: Rất khó - Kiểm thử độ phức tạp cực hạn.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -348,16 +348,17 @@ def scenario16_extreme_complexity() -> Scenario:
 
 
 def scenario17_reversed_approach_open() -> Scenario:
-    """Scenario 17: the seeker must arrive flying BACK along the outbound leg.
+    """Kịch bản 17: Đầu dò phải tiếp cận bằng cách bay NGƯỢC LẠI dọc theo chặng bay đến.
 
-    ``goal_heading`` is 180 deg from the start->goal bearing, so no straight run
-    at the goal can turn onto it in one corner (that needs a turn > ALPHA_MAX):
-    the terminal is a genuine turn-around. Every other preset here approaches
-    within 45 deg of the outbound bearing, which left the whole regime
-    unmeasured -- and the analytic goal shot exists precisely for it.
+    ``goal_heading`` lệch 180 độ so với phương vị start->goal, do đó không có đoạn
+    bay thẳng nào vào đích có thể rẽ vào đó chỉ bằng một góc rẽ
+    (yêu cầu góc rẽ > ALPHA_MAX): pha cuối thực sự là một thao tác quay đầu.
+    Mọi kịch bản mẫu khác ở đây đều tiếp cận trong phạm vi 45 độ so với phương vị
+    bay đến, khiến toàn bộ chế độ này chưa được đo đạc -- và phát bắn
+    analytic goal shot tồn tại chính là vì trường hợp này.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -373,10 +374,10 @@ def scenario17_reversed_approach_open() -> Scenario:
 
 
 def scenario18_reversed_approach_cluttered() -> Scenario:
-    """Scenario 18: the same turn-around, with obstacles to turn around inside.
+    """Kịch bản 18: Thao tác quay đầu tương tự, có chướng ngại vật bao quanh bên trong.
 
     Returns:
-        Scenario: The configured mission scenario.
+        Scenario: Kịch bản nhiệm vụ đã cấu hình.
     """
     return create_scenario(
         {
@@ -392,38 +393,39 @@ def scenario18_reversed_approach_cluttered() -> Scenario:
 
 
 def get_all_scenarios() -> dict[str, Callable[[], Scenario]]:
-    """Return all 18 predefined scenarios organized by difficulty.
+    """Trả về toàn bộ 18 kịch bản định sẵn được phân loại theo độ khó.
 
     Returns:
-        dict[str, Callable]: Mapping of scenario names to builder functions.
+        dict[str, Callable]: Ánh xạ từ tên kịch bản tới hàm khởi tạo tương ứng.
     """
     return {
-        # Original scenarios
+        # Các kịch bản gốc
         "scenario_01_open_ocean": scenario1_open_ocean,
         "scenario_02_single_obstacle": scenario2_single_obstacle,
         "scenario_03_narrow_gap": scenario3_narrow_gap,
         "scenario_04_complex_maze": scenario4_complex_maze,
-        # Easy scenarios
+        # Kịch bản dễ
         "scenario_05_sparse_islands": scenario5_sparse_islands,
         "scenario_06_coastal_path": scenario6_coastal_path,
         "scenario_07_diagonal_crossing": scenario7_diagonal_crossing,
         "scenario_08_open_with_dynamic_obstacles": (
             scenario8_open_with_dynamic_obstacles
         ),
-        # Medium scenarios
+        # Kịch bản trung bình
         "scenario_09_island_archipelago": scenario9_island_archipelago,
         "scenario_10_dense_dynamic_obstacles": (scenario10_dense_dynamic_obstacles),
         "scenario_11_serpentine_route": scenario11_serpentine_route,
         "scenario_12_perimeter_dynamic_obstacles": (
             scenario12_perimeter_dynamic_obstacles
         ),
-        # Hard scenarios
+        # Kịch bản khó
         "scenario_13_dense_island_field": scenario13_dense_island_field,
         "scenario_14_combined_obstacles": scenario14_combined_obstacles,
         "scenario_15_narrow_channel": scenario15_narrow_channel,
         "scenario_16_extreme_complexity": scenario16_extreme_complexity,
-        # Reversed approach: goal_heading points back down the outbound leg, so
-        # the terminal needs two corners. Nothing above covers this.
+        # Hướng tiếp cận đảo ngược: goal_heading quay ngược lại đường bay đến,
+        # do đó chặng cuối cần 2 góc rẽ. Không có kịch bản nào ở trên bao phủ
+        # trường hợp này.
         "scenario_17_reversed_approach_open": scenario17_reversed_approach_open,
         "scenario_18_reversed_approach_cluttered": (
             scenario18_reversed_approach_cluttered

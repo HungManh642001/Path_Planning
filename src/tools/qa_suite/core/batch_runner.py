@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -130,7 +130,7 @@ class BatchRegressionEngine:
         ]
         path_length_stats = _calculate_path_length_stats(successful_lengths)
 
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
 
         return BatchSummary(
             total_tests=total_tests,

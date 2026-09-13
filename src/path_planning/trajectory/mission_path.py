@@ -18,17 +18,17 @@ def full_mission_path(
 ) -> list[PlannerState]:
     """Thêm điểm cất cánh O vào đầu và mục tiêu T vào cuối chuỗi waypoint.
 
-    Endpoints already present (within 1 m) are not duplicated, so calling this
-    twice is harmless.
+    Các điểm đầu cuối nếu đã hiện diện (trong phạm vi 1 m) sẽ không bị lặp lại,
+    do đó gọi hàm này nhiều lần vẫn an toàn.
 
     Args:
-        path: The searched interior waypoints as ``(waypoint, heading)`` pairs.
-        preprocessed: The prepared scenario supplying ``start_pos``/``goal_pos``
-            and the endpoint headings. ``None``, or a dict without those keys,
-            returns the path unchanged.
+        path: Chuỗi waypoint bên trong tìm được dạng các cặp (waypoint, heading).
+        preprocessed: Kịch bản tiền xử lý cung cấp ``start_pos``/``goal_pos``
+            và hướng bay tại các đầu mút. Nếu ``None`` hoặc thiếu các khóa này,
+            hàm trả về chuỗi đường bay ban đầu.
 
     Returns:
-        The full mission path, endpoints included.
+        Đường bay nhiệm vụ hoàn chỉnh bao gồm cả hai điểm đầu cuối O và T.
     """
     waypoints = list(path)
     if preprocessed is None:
@@ -47,8 +47,8 @@ def full_mission_path(
         not waypoints or math.dist(target, waypoints[-1][0]) > 1.0
     ):
         if goal_heading is None:
-            # Free-goal mode leaves goal_heading None; the arrival heading is
-            # then the bearing of the final leg into T.
+            # Chế độ đích tự do (free-goal) để goal_heading là None; hướng tiếp cận
+            # khi đó là phương vị của chặng bay cuối cùng tiến vào T.
             last = waypoints[-1][0] if waypoints else None
             goal_heading = (
                 math.atan2(target[1] - last[1], target[0] - last[0]) if last else 0.0

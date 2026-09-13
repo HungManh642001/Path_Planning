@@ -110,7 +110,7 @@ request xong - đo được vẫn mất 3,79-5,12 s MỖI request dù đã cache
 tức là không rẻ đi chút nào.
 
 Tính ở MODULE LEVEL thì khác: tiến trình forkserver, khi khởi động (một lần,
-trước khi DDS tồn tại - xem ``PlanRunner.start()``), tự import module này như
+trước khi transport mạng tồn tại - xem ``PlanRunner.start()``), tự import module này như
 một phần của ``_PRELOAD`` và trả phí ``git describe`` đúng MỘT LẦN ở đó. Mọi
 tiến trình con fork() ra sau, kế thừa qua copy-on-write, đã có sẵn giá trị này
 trong bộ nhớ - không tốn subprocess nào trên đường request nữa.

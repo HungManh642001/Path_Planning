@@ -27,18 +27,18 @@ from path_planning.types import (
 def inflation_ring(*, safe_margin: float = config.SAFE_MARGIN) -> float:
     """Trả về khoảng cách đệm giãn nở chướng ngại vật dùng để hiển thị.
 
-    There is a SINGLE ring, ``safe_margin`` -- exactly what
-    :func:`inflate_obstacles` applies. This used to return a PAIR because a
-    second ring added a ``R*(1/cos(alpha_max/2)-1)`` turn term reserving the
-    worst-case fillet bulge; that term is gone (the search checks each arc
-    exactly instead), so the two values had become identical and the only caller
-    was already discarding the second.
+    Chỉ có DUY NHẤT một vành đệm, ``safe_margin`` -- chính là khoảng cách mà
+    :func:`inflate_obstacles` áp dụng. Hàm này trước đây trả về MỘT CẶP vì
+    vành thứ hai cộng thêm số hạng quay ``R*(1/cos(alpha_max/2)-1)`` để dự trữ
+    độ phồng góc xấu nhất; số hạng này đã bị loại bỏ (thuật toán tìm kiếm giờ
+    đây kiểm tra chính xác từng cung lượn), nên hai giá trị giống hệt nhau và
+    bên gọi duy nhất cũng đã bỏ qua giá trị thứ hai.
 
     Args:
-        safe_margin: The operator's minimum stand-off distance (m).
+        safe_margin: Khoảng cách an toàn tối thiểu của người vận hành (m).
 
     Returns:
-        The boundary offset in metres.
+        Khoảng cách giãn nở biên tính bằng mét.
     """
     return safe_margin
 
@@ -48,26 +48,25 @@ def inflate_obstacles(
 ) -> list[Obstacle]:
     """Giãn nở biên chướng ngại vật ra ngoài một khoảng an toàn safe_margin.
 
-    Obstacles stay independent -- no early convex hull, so a corridor between
-    two of them survives.
+    Các chướng ngại vật được giữ độc lập -- không tính bao lồi sớm, giúp duy trì
+    hành lang bay thông suốt giữa hai vật cản.
 
     Args:
-        obstacles: Raw obstacle records.
-        safe_margin: The operator's minimum stand-off distance (m).
+        obstacles: Danh sách bản ghi vật cản thô ban đầu.
+        safe_margin: Khoảng cách an toàn tối thiểu của người vận hành (m).
 
     Returns:
-        New obstacle records with boundaries offset outward; inputs are not
-        mutated.
+        Danh sách bản ghi vật cản mới với biên đã giãn nở ra ngoài;
+        dữ liệu đầu vào không bị thay đổi.
     """
-    # SAFE_MARGIN only. The old `R*(1/cos(alpha_max/2)-1)` turn term covered the
-    # worst-case bulge of a fillet arc into the corner it cuts; it is gone
-    # because the search now checks that bulge EXACTLY, per corner, with the
-    # real turn angle (`_is_corner_arc_clear`). Sized for alpha_max and applied to
-    # every obstacle, the term closed 49% of all corridors between obstacle
-    # pairs (measured, 1536 pairs) - a straight transit paid the same 3.3 km as
-    # a 90-degree corner. Inflation is now purely the operator's minimum
-    # stand-off distance. See docs/superpowers/specs/2026-08-08-obstacle-
-    # inflation-safe-margin-design.md.
+    # Chỉ dùng SAFE_MARGIN. Số hạng góc lượn cũ `R*(1/cos(alpha_max/2)-1)` dự phòng
+    # độ phồng xấu nhất của cung fillet lấn vào góc cua; số hạng này đã bị loại bỏ
+    # vì thuật toán tìm kiếm hiện kiểm tra độ phồng đó CHÍNH XÁC theo từng góc cua
+    # với góc bẻ lái thực tế (`_is_corner_arc_clear`). Nếu tính theo alpha_max và
+    # áp dụng cho mọi chướng ngại vật, số hạng này sẽ bít kín 49% hành lang giữa
+    # các cặp vật cản (đo trên 1536 cặp) - một đường bay thẳng phải chịu cùng
+    # khoản đệm 3.3 km như một góc rẽ 90 độ. Quá trình giãn nở giờ đây thuần túy
+    # là khoảng cách an toàn tối thiểu của người vận hành.
     inflated: list[Obstacle] = []
     for obstacle in obstacles:
         if obstacle["type"] == "circle":
@@ -93,24 +92,25 @@ def calculate_start_state(
 ) -> StartState:
     """Tính toán waypoint đầu tiên W_1 và hướng bay sau khi cất cánh.
 
-    From the dynamics ``d_1 = l_1 + R * tan(alpha_1 / 2)`` under the constraint
-    ``l_1 >= L_0``. ``W_1`` is placed at distance ``d_1`` along ``init_heading``.
+    Từ ràng buộc động học ``d_1 = l_1 + R * tan(alpha_1 / 2)`` với điều kiện
+    ``l_1 >= L_0``. Điểm ``W_1`` được đặt ở khoảng cách ``d_1`` dọc theo hướng
+    ``init_heading``.
 
     Args:
-        origin: Takeoff point ``O``.
-        init_heading: Initial heading (rad).
-        l0: Minimum straight distance for level-flight stabilisation (m).
-        turn_radius: Vehicle turn radius (m).
-        alpha_max_rad: Maximum turn angle allowed (rad).
+        origin: Điểm cất cánh ``O``.
+        init_heading: Hướng bay ban đầu (rad).
+        l0: Chiều dài đoạn bay thẳng tối thiểu để ổn định bay bằng (m).
+        turn_radius: Bán kính quay vòng của khí tài (m).
+        alpha_max_rad: Góc bẻ lái tối đa cho phép (rad).
 
     Returns:
-        The start state: waypoint, heading, straight length ``l_1`` and
-        distance ``d_1`` from the origin.
+        Trạng thái xuất phát: waypoint, hướng bay, chiều dài đoạn thẳng ``l_1`` và
+        khoảng cách ``d_1`` tính từ điểm xuất phát O.
     """
     straight_length = l0
-    # Conservative: reserve tangent length for the worst-case first turn
-    # alpha_1 = alpha_max, so d_1 = L0 + R*tan(alpha_max/2) and l_1 = L0
-    # exactly (l_1 >= L0 holds).
+    # Bảo thủ: dự trữ chiều dài tiếp tuyến cho trường hợp góc rẽ đầu tiên xấu nhất
+    # alpha_1 = alpha_max, do đó d_1 = L0 + R*tan(alpha_max/2) và l_1 = L0
+    # chính xác (thỏa mãn l_1 >= L0).
     distance_from_origin = straight_length + turn_radius * math.tan(alpha_max_rad / 2)
     return {
         "waypoint": (
@@ -133,22 +133,22 @@ def calculate_end_state(
 ) -> GoalState:
     """Tính toán waypoint cuối cùng W_{n-1} trước khi tiếp cận mục tiêu.
 
-    From the dynamics ``d_n = l_n + d_ss + R * tan(alpha_{n-1} / 2)`` with
-    ``l_n = 0``, so ``d_n = d_ss + R * tan(alpha_{n-1} / 2)``.
+    Từ ràng buộc động học ``d_n = l_n + d_ss + R * tan(alpha_{n-1} / 2)`` với
+    ``l_n = 0``, suy ra ``d_n = d_ss + R * tan(alpha_{n-1} / 2)``.
 
     Args:
-        target: Goal position ``T``.
-        target_heading: Required final approach heading (rad).
-        dss: Straight run-in distance for terminal camera sensor lock (m).
-        turn_radius: Vehicle turn radius (m).
-        alpha_max_rad: Maximum turn angle allowed (rad).
+        target: Vị trí mục tiêu ``T``.
+        target_heading: Hướng tiếp cận mục tiêu yêu cầu (rad).
+        dss: Chiều dài đoạn thẳng tự dẫn để đầu dò camera khóa mục tiêu (m).
+        turn_radius: Bán kính quay vòng của khí tài (m).
+        alpha_max_rad: Góc bẻ lái tối đa cho phép (rad).
 
     Returns:
-        The goal state: waypoint, heading, engagement distance and the distance
-        back from the target.
+        Trạng thái đích: waypoint, hướng bay, khoảng cách tiếp cận và khoảng
+        cách lùi từ mục tiêu.
     """
     distance_to_target = dss + turn_radius * math.tan(alpha_max_rad / 2)
-    # Work backwards from the target along the approach heading.
+    # Đi lùi từ mục tiêu dọc theo hướng tiếp cận.
     return {
         "waypoint": (
             target[0] - distance_to_target * math.cos(target_heading),
@@ -166,11 +166,12 @@ def compute_inflated_obstacles(
     """Giãn nở tất cả chướng ngại vật và phân loại theo kiểu tròn/đa giác.
 
     Args:
-        obstacles: Raw obstacle records.
-        safe_margin: The operator's minimum stand-off distance (m).
+        obstacles: Danh sách bản ghi vật cản thô ban đầu.
+        safe_margin: Khoảng cách an toàn tối thiểu của người vận hành (m).
 
     Returns:
-        The inflated obstacle list plus its circle and polygon views.
+        Danh sách chướng ngại vật đã giãn nở kèm danh sách tách riêng cho
+        hình tròn và đa giác.
     """
     inflated = inflate_obstacles(obstacles, safe_margin=safe_margin)
     circle_obstacles: list[CircleGeometry] = []
@@ -190,24 +191,28 @@ def compute_inflated_obstacles(
 def prepare_scenario(
     scenario: Scenario,
     *,
-    turn_radius: float = config.R,
     l0: float = config.L0,
     dss: float = config.DSS,
-    safe_margin: float = config.SAFE_MARGIN,
+    turn_radius: float = config.R,
     alpha_max_rad: float = config.ALPHA_MAX_RAD,
+    safe_margin: float = config.SAFE_MARGIN,
 ) -> PreprocessedScenario:
-    """Tiền xử lý kịch bản: giãn nở vật cản và tính điểm W_1, W_{n-1}.
+    """Xử lý thô kịch bản trước khi đưa vào thuật toán tìm kiếm đường đi.
+
+    Tính toán trước trạng thái xuất phát ``W_1``, trạng thái đích ``W_{n-1}``,
+    giãn nở chướng ngại vật theo khoảng an toàn, và tách riêng hình học tròn/đa giác
+    để tối ưu hóa hiệu năng kiểm tra va chạm.
 
     Args:
-        scenario: A scenario dict from :mod:`core.map_generator`.
-        turn_radius: Vehicle turn radius (m).
-        l0: Minimum straight distance for takeoff stabilisation (m).
-        dss: Straight run-in distance for terminal sensor lock (m).
-        safe_margin: Distance to expand obstacle boundaries by (m).
-        alpha_max_rad: Maximum turn angle allowed (rad).
+        scenario: Dictionary cấu hình kịch bản đầu vào.
+        l0: Chiều dài đoạn bay thẳng cất cánh tối thiểu (m).
+        dss: Chiều dài đoạn thẳng tự dẫn khóa mục tiêu (m).
+        turn_radius: Bán kính quay vòng tối thiểu của khí tài (m).
+        alpha_max_rad: Góc bẻ lái tối đa cho phép (rad).
+        safe_margin: Khoảng cách an toàn tối thiểu của người vận hành (m).
 
     Returns:
-        The preprocessed scenario the planner consumes.
+        Dictionary cấu hình kịch bản đã qua xử lý sẵn sàng cho thuật toán tìm kiếm.
     """
     start_state = calculate_start_state(
         scenario["start"],
@@ -216,13 +221,14 @@ def prepare_scenario(
         turn_radius=turn_radius,
         alpha_max_rad=alpha_max_rad,
     )
-    goal_heading = scenario["goal_heading"]
+    goal_heading = scenario.get("goal_heading")
+    goal_state: GoalState | None = None
     if goal_heading is None:
-        # Free terminal approach direction: there is no fixed goal_heading to
-        # offset W_{n-1} along, so the search targets T itself and the final
-        # searched edge becomes the straight seeker run-in (>= DSS, any
-        # direction). heading=None flags free mode for the planner.
-        goal_state: GoalState = {
+        # Hướng tiếp cận mục tiêu tự do: không có hướng goal_heading cố định để
+        # tính lùi W_{n-1}, nên thuật toán nhắm thẳng tới T và cạnh tìm kiếm cuối cùng
+        # trở thành đoạn bay thẳng của đầu dò (>= DSS, theo bất kỳ hướng nào).
+        # heading=None đánh dấu cờ chế độ tiếp cận tự do cho bộ lập kế hoạch.
+        goal_state = {
             "waypoint": scenario["goal"],
             "heading": None,
             "engagement_distance": dss,
@@ -241,11 +247,11 @@ def prepare_scenario(
         scenario["obstacles"], safe_margin=safe_margin
     )
 
-    # Raw (uninflated) obstacle sets, threaded through for callers that want to
-    # measure or draw the true obstacle. They are NO LONGER the arc-clearance
-    # reference: straight legs and turn arcs both clear the inflated set
-    # (raw + SAFE_MARGIN) now that inflation carries no turn term - see
-    # path_validation.path_is_valid.
+    # Tập chướng ngại vật thô (chưa giãn nở), chuyển tiếp cho các thành phần
+    # cần đo đạc hoặc vẽ vật cản thực tế. Chúng KHÔNG CÒN là mốc tham chiếu
+    # khoảng cách an toàn của cung lượn: cả đoạn thẳng và cung lượn đều kiểm tra
+    # an toàn với tập vật cản đã giãn nở (thô + SAFE_MARGIN) vì phép giãn nở
+    # không còn chứa số hạng góc lượn.
     raw_circles: list[CircleGeometry] = [
         (o["center"], o["radius"])
         for o in scenario["obstacles"]
@@ -272,11 +278,15 @@ def prepare_scenario(
         "raw_polygon_obstacles": raw_polygons,
         "islands": scenario.get("islands", []),
         "dynamic_obstacles": scenario.get("dynamic_obstacles", []),
-        # Per-scenario operating area / bounds. `safezones` is an optional list
-        # of polygons (the aircraft must stay inside their union); `map_bounds`
-        # is the legacy (width, height) rectangle. Both are threaded through so
-        # the planner can constrain the search to them instead of the global
-        # config.MAP_WIDTH/HEIGHT.
+        # Vùng hoạt động / giới hạn riêng của kịch bản. `safezones` là danh sách
+        # đa giác tùy chọn (khí tài bay phải nằm hoàn toàn trong hợp của chúng);
+        # `map_bounds` là hình chữ nhật (chiều rộng, chiều cao). Cả hai được
+        # chuyển tiếp để bộ lập kế hoạch ràng buộc tìm kiếm thay vì dùng
+        # config.MAP_WIDTH/HEIGHT toàn cục.
         "safezones": scenario.get("safezones"),
         "map_bounds": scenario.get("map_bounds"),
     }
+
+
+# Bí danh tương thích ngược
+preprocess_scenario = prepare_scenario

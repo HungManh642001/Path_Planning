@@ -8,14 +8,8 @@ Quy ước đơn vị đo: Khoảng cách tính bằng mét (m), góc tính bằ
 
 from __future__ import annotations
 
-import sys
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
-
-if sys.version_info >= (3, 11):
-    from typing import NotRequired
-else:
-    from typing_extensions import NotRequired
 
 # --- Kiểu hình học nguyên thủy ------------------------------------------------
 

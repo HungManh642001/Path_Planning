@@ -174,7 +174,7 @@ class NatsStressTester:
                         is_success = True
                     else:
                         is_error = True
-                except (TimeoutError, asyncio.TimeoutError):
+                except TimeoutError:
                     t1 = time.perf_counter()
                     lat = t1 - t0
                     is_timeout = True

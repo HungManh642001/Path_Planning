@@ -9,12 +9,11 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TypeAlias
 
 from path_planning.types import Point
 
 
-GoalConeEntry: TypeAlias = tuple[float, float, float, float]
+GoalConeEntry = tuple[float, float, float, float]
 """(arrival_heading, cos(arrival_heading), sin(arrival_heading), reserve_terminal)"""
 
 

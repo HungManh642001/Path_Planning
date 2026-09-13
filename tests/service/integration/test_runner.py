@@ -45,7 +45,7 @@ def _build_request(**overrides: object) -> PlanRequest:
 
 
 @pytest.fixture()
-def runner() -> Generator[PlanRunner, None, None]:
+def runner() -> Generator[PlanRunner]:
     """Fixture cung cấp instance PlanRunner đã khởi động và tự dọn dẹp sau test."""
     instance = PlanRunner(preloaded=None)
     instance.start()

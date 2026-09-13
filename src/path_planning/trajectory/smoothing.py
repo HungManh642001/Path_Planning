@@ -42,24 +42,24 @@ def smooth_path(
 ) -> list[PlannerState]:
     """Tìm chuỗi con waypoint ngắn nhất KHẢ THI bằng quy hoạch động từ O tới T.
 
-    Evaluates candidate edge transitions with near and far fillet clearances
-    under dominance pruning to produce the optimal smoothed path.
+    Đánh giá các cạnh chuyển tiếp ứng viên với khoảng hở cung lượn gần và xa,
+    kết hợp cắt tỉa theo quan hệ thống trị Pareto để sinh đường bay tối ưu.
 
     Args:
-        path: Raw searched waypoints as (point, heading) tuples.
-        origin: Takeoff position O coordinate (x, y) in metres.
-        target: Terminal goal position T coordinate (x, y) in metres.
-        collision_detector: Spatial collision checking engine.
-        turn_radius: Minimum vehicle turning radius in metres.
-        alpha_max_rad: Maximum allowed turning angle per corner in radians.
-        l0: Takeoff straight stabilization length in metres.
-        dss: Terminal sensor lock straight distance in metres.
-        start_heading: Aircraft takeoff heading angle in radians.
-        goal_heading: Required arrival heading angle in radians, or None if free.
-        is_goal_heading_free: Whether terminal heading constraint is relaxed.
+        path: Chuỗi waypoint thô ban đầu gồm các tuple (point, heading).
+        origin: Tọa độ điểm cất cánh O (x, y) tính bằng mét.
+        target: Tọa độ điểm đích mục tiêu T (x, y) tính bằng mét.
+        collision_detector: Động cơ kiểm tra va chạm không gian hình học.
+        turn_radius: Bán kính quay vòng tối thiểu của phương tiện (m).
+        alpha_max_rad: Giới hạn góc rẽ tối đa cho phép mỗi góc (rad).
+        l0: Chiều dài đoạn bay thẳng ổn định sau cất cánh (m).
+        dss: Khoảng cách bay thẳng đoản trình khóa mục tiêu (m).
+        start_heading: Góc hướng bay lúc cất cánh tính bằng radian.
+        goal_heading: Hướng tiếp cận đích bắt buộc (rad), hoặc None nếu tự do.
+        is_goal_heading_free: Cho biết hướng tiếp cận đích có tự do không.
 
     Returns:
-        The smoothed subsequence of waypoints maintaining all kinematic limits.
+        Chuỗi con waypoint đã làm mượt, đảm bảo mọi giới hạn động học.
     """
     if len(path) < 3:
         return path

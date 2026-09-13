@@ -234,7 +234,7 @@ class PlotlyVisualizer2D:
         goal: Point = scenario["goal"]
         goal_heading: float | None = scenario.get("goal_heading")
 
-        # Start Marker
+        # Điểm xuất phát (Start Marker)
         fig.add_trace(
             go.Scatter(
                 x=[start[0]],
@@ -264,7 +264,7 @@ class PlotlyVisualizer2D:
         )
         arrow_len = max(2000.0, 0.04 * max(map_bounds[0], map_bounds[1]))
 
-        # Start heading arrow
+        # Mũi tên chỉ hướng xuất phát (Start heading arrow)
         hx = start[0] + arrow_len * math.cos(start_heading)
         hy = start[1] + arrow_len * math.sin(start_heading)
         fig.add_annotation(
@@ -284,7 +284,7 @@ class PlotlyVisualizer2D:
             text="",
         )
 
-        # Goal Marker
+        # Điểm đích (Goal Marker)
         goal_hover = f"Goal Point T: ({goal[0]:.1f}, {goal[1]:.1f})<br>" + (
             f"Heading: {math.degrees(goal_heading):.1f}°"
             if goal_heading is not None

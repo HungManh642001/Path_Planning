@@ -42,16 +42,17 @@ class KinodynamicAstar:
     alpha_max, chiều dài ổn định sau cất cánh L0 và khoảng cách tiếp cận thẳng DSS.
 
     Attributes:
-        scenario: Preprocessed scenario containing inflated obstacles and limits.
-        time_budget_s: Maximum allocated search time in seconds.
-        goal_state: Terminal goal state representation.
-        collision_detector: Spatial collision detection engine.
-        successor_generator: Lattice state expansion and candidate generator.
-        search_engine: Core priority queue search loop and budgeting controller.
-        raw_route: Unsmoothed sequence of states found by A* before shortcutting.
-        start_corners: Seeded takeoff corner states along the initial climb ray.
-        R: Minimum turn radius in metres.
-        alpha_max_rad: Maximum allowed turning angle per corner in radians.
+        scenario: Kịch bản tiền xử lý chứa chướng ngại vật đã giãn nở và các giới hạn.
+        time_budget_s: Thời gian tìm kiếm tối đa được phân bổ tính bằng giây.
+        goal_state: Biểu diễn trạng thái đích cuối cùng.
+        collision_detector: Động cơ phát hiện va chạm không gian.
+        successor_generator: Bộ sinh trạng thái kế tiếp và ứng viên trên lưới.
+        search_engine: Vòng lặp tìm kiếm hàng đợi ưu tiên và bộ kiểm soát quỹ thời gian.
+        raw_route: Chuỗi trạng thái thô chưa làm mịn tìm thấy bởi A* trước khi đi tắt.
+        start_corners: Các trạng thái góc cất cánh được gieo mầm dọc theo tia
+            leo cao ban đầu.
+        R: Bán kính quay vòng tối thiểu tính bằng mét.
+        alpha_max_rad: Góc chuyển hướng tối đa cho phép tại mỗi góc cua (rad).
     """
 
     def __init__(
@@ -62,14 +63,14 @@ class KinodynamicAstar:
         """Khởi tạo bộ lập kế hoạch Kinodynamic A* từ kịch bản đã tiền xử lý.
 
         Args:
-            preprocessed_scenario: Output dictionary from
+            preprocessed_scenario: Dictionary đầu ra từ
                 :func:`path_planning.scenario.preprocessing.prepare_scenario`.
-            time_budget_s: Maximum search duration in seconds. If None, falls back
-                to :data:`path_planning.config.TIME_BUDGET_S`.
+            time_budget_s: Thời lượng tìm kiếm tối đa tính bằng giây. Nếu là None,
+                sử dụng :data:`path_planning.config.TIME_BUDGET_S`.
 
         Raises:
-            ValueError: If start/goal are missing in `preprocessed_scenario`,
-                or if `time_budget_s` is non-positive / invalid.
+            ValueError: Nếu thiếu start/goal trong `preprocessed_scenario`,
+                hoặc nếu `time_budget_s` không dương / không hợp lệ.
         """
         self.scenario = preprocessed_scenario
         self.time_budget_s = config.resolve_time_budget_s(
@@ -141,30 +142,38 @@ class KinodynamicAstar:
         )
 
     def search(self) -> list[PlannerState] | None:
-        """Execute the A* search loop until a path is found or time budget expires.
+        """Thực thi vòng lặp tìm kiếm A* cho đến khi tới đích hoặc hết thời gian.
 
         Returns:
-            List of (waypoint, heading) states if found, or None on failure/timeout.
+            Danh sách các trạng thái (waypoint, heading) nếu tìm thấy,
+            hoặc None nếu thất bại / hết giờ.
         """
         return self.search_engine.search()
 
     def get_search_stats(self) -> SearchStats:
-        """Return diagnostic metrics and counters from search execution.
+        """Trả về các số liệu thống kê và bộ đếm chẩn đoán từ quá trình tìm kiếm.
 
         Returns:
-            Dictionary containing search iteration count, set sizes, and budget status.
+            Dictionary chứa số lượt lặp tìm kiếm, kích thước tập hợp và
+            trạng thái quỹ thời gian.
         """
         return self.search_engine.get_search_stats()
 
     def smooth_path(self, path: list[PlannerState]) -> list[PlannerState]:
-        """Optimize and shortcut path using dynamic programming subsequence selection.
+        """Tối ưu và đi tắt đường bay bằng quy hoạch động chọn dãy con.
+
+        Chỉ chạy thuật toán làm mịn khi số điểm waypoint thô nằm trong giới hạn
+        an toàn xử lý để kiểm soát thời gian tính toán.
 
         Args:
-            path: Raw waypoint sequence from A* search.
+            path: Chuỗi trạng thái thô (waypoint, heading) dọc theo đường bay.
 
         Returns:
-            Optimized sequence of waypoints maintaining all kinematic invariants.
+            Chuỗi trạng thái rút gọn đã làm mịn thỏa mãn mọi ràng buộc động học.
         """
+        raw_waypoints = [w for w, _ in path]
+        if len(raw_waypoints) > config.SMOOTH_MAX_NODES:
+            return path
         start_h = self.scenario["start_state"]["heading"]
         goal_h = self.scenario.get("goal_heading")
         return smooth_path(
@@ -185,11 +194,12 @@ class KinodynamicAstar:
         """Thực thi toàn bộ quy trình: kiểm tra, tìm kiếm, làm mượt và kiểm định.
 
         Args:
-            verbose: If True, log detailed search progress to standard logger.
+            verbose: Nếu True, ghi nhật ký chi tiết tiến trình tìm kiếm ra
+                logger tiêu chuẩn.
 
         Returns:
-            PlanResult dictionary containing trajectory path, success flag, reason,
-            and execution statistics.
+            Dictionary PlanResult chứa đường bay quỹ đạo, cờ thành công, lý do,
+            và số liệu thống kê thực thi.
         """
         if not self.start_corners:
             return self._result(None, False, "start_leg_blocked")
@@ -232,7 +242,7 @@ class KinodynamicAstar:
     def _result(
         self, path: list[PlannerState] | None, is_success: bool, reason: str | None
     ) -> PlanResult:
-        """Package internal search outcomes into canonical PlanResult dictionary."""
+        """Đóng gói kết quả tìm kiếm nội bộ vào dictionary chuẩn PlanResult."""
         return {
             "path": path,
             "is_success": is_success,
@@ -251,13 +261,14 @@ def plan_trajectory(
     """Lập kế hoạch đường bay tự hành hoàn chỉnh từ kịch bản tiền xử lý.
 
     Args:
-        preprocessed_scenario: Prepared mission dictionary containing endpoints,
-            inflated obstacles, turn limits, and safezone geometries.
-        verbose: If True, logs step-by-step solver progression.
-        time_budget_s: Wall-clock computation budget limit in seconds.
+        preprocessed_scenario: Dictionary kịch bản nhiệm vụ đã tiền xử lý chứa
+            điểm đầu cuối, vật cản đã giãn nở, giới hạn góc rẽ và vùng an toàn.
+        verbose: Nếu True, ghi log chi tiết từng bước giải thuật toán.
+        time_budget_s: Giới hạn quỹ thời gian tính toán thực tế tính bằng giây.
 
     Returns:
-        Canonical PlanResult containing the smoothed flyable path and diagnostics.
+        Dictionary PlanResult chuẩn chứa đường bay đã làm mịn khả thi
+        và số liệu chẩn đoán.
     """
     if verbose:
         logger.info("Initializing Kinodynamic A*...")

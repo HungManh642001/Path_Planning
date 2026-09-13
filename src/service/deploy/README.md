@@ -25,9 +25,8 @@ sudo systemctl enable --now vtx-planner
 
 ## Phụ thuộc
 
-**Hai gói**: `shapely` và một binding DDS. Không numpy trực tiếp, không scipy,
-không matplotlib, không pyproj. Xem `requirements.txt` để biết vì sao cái pin
-`numpy==1.26.4` ở gốc repo không áp dụng ở đây.
+**Các gói**: `shapely`, `nats-py`, `protobuf`. Không numpy trực tiếp, không scipy,
+không matplotlib, không pyproj. Xem `requirements.txt` để biết chi tiết.
 
 ## `PYTHONPATH`
 
@@ -93,17 +92,17 @@ phải chờ.
 ## Những gì service CHƯA làm
 
 - **Chỉ hệ toạ độ Oxy phẳng, mét.** Không WGS84.
-- **Một request tại một thời điểm.** Không có phát hiện "bận": `PLAN_BUSY` là giá trị RESERVED, không đường mã nào sinh ra nó. Vòng phục vụ tuần tự trên một reader `KEEP_ALL`, nên một request đến khi service đang bận được DDS (RELIABLE + KEEP_ALL) **xếp hàng** và trả lời sau, theo đúng thứ tự - không bị từ chối.
+- **Một request tại một thời điểm.** Không có phát hiện "bận": `PLAN_BUSY` là giá trị RESERVED, không đường mã nào sinh ra nó. Vòng phục vụ tuần tự trên Queue Group NATS, nên một request đến khi service đang bận được NATS xếp hàng và trả lời sau, theo đúng thứ tự - không bị từ chối.
 
 ## Chẩn đoán
 
 | triệu chứng | nguyên nhân thường gặp |
 | --- | --- |
-| Client không nhận reply nào | Sai `--domain-id`, hoặc discovery bị chặn. Kiểm tra log "sẵn sàng trên domain". |
-| Mọi reply là `PLAN_INVALID_REQUEST` | `idl_version` lệch: client và service build từ hai bản IDL khác nhau. |
+| Client không nhận reply nào | Sai URL NATS server (`--nats-server`) hoặc subject (`--subject`). Kiểm tra kết nối tới NATS broker. |
+| Mọi reply là `PLAN_INVALID_REQUEST` | `idl_version` hoặc protobuf schema lệch giữa client và service. |
 | `PLAN_INVALID_REQUEST` kèm "preloaded map" | Client đặt `use_preloaded_map` nhưng service khởi động không có `--preloaded-map`. |
 | `PLAN_TIMEOUT` lặp lại | Bản đồ quá khó cho ngân sách đang áp dụng, hoặc máy quá tải. Xem `applied_time_budget_s` (ngân sách thật đã dùng) và `stats.budget_bound` trên các reply thành công. |
 | Đường bay đúng độ dài nhưng sai hướng 90 độ | Quy ước phương vị. Trên dây LUÔN là phương vị thật, thuận kim đồng hồ từ bắc, `+y` bắc. |
-| Service treo cứng sau một thời gian chạy | Nghi ngờ đầu tiên: có ai đó đổi `PlanRunner` sang `fork` trần, hoặc đảo thứ tự `runner.start()` và khởi tạo DDS. Xem mục 3 của spec. |
-| Reply thiếu mẫu tin với bản đồ lớn | Phân mảnh UDP; cần chỉnh cấu hình transport của binding DDS. |
+| Service treo cứng sau một thời gian chạy | Nghi ngờ đầu tiên: có ai đó đổi `PlanRunner` sang `fork` trần, hoặc đảo thứ tự `runner.start()` và khởi tạo NATS transport. Xem mục 3 của spec. |
+| Reply bị lỗi phân giải Protobuf | Sai phiên bản schema Protobuf giữa client và service. |
 | `PLAN_INTERNAL_ERROR` | Tiến trình con ném lỗi, hoặc lỗi khi dịch/ghi reply. `detail` mang traceback rút gọn - được log lại ở mức WARNING trên chính service (`journalctl -u vtx-planner`), không chỉ gửi cho client. |

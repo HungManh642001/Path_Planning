@@ -370,7 +370,7 @@ def simplify_polygon_rdp(
         is_closed = True
 
     if is_closed:
-        # For a closed loop, find point farthest from pts[0] to split into 2 chains
+        # Với vòng lặp khép kín, tìm điểm xa pts[0] nhất để tách thành 2 chuỗi
         dmax = -1.0
         split_idx = 1
         for i in range(1, len(pts) - 1):
@@ -385,7 +385,7 @@ def simplify_polygon_rdp(
     else:
         simplified = _rdp_recursive(pts, epsilon)
 
-    # Ensure at least 3 vertices if input had >= 3 vertices
+    # Đảm bảo có ít nhất 3 đỉnh nếu đầu vào có >= 3 đỉnh
     if len(simplified) < 3 and len(pts) >= 3:
         dmax = -1.0
         best_idx = 1

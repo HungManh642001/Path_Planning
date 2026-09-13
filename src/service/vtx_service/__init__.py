@@ -1,7 +1,6 @@
-"""Service path planning: bọc thuật toán thành một API thuần Python.
+"""Service path planning: bọc thuật toán thành một microservice NATS thuần Python.
 
-Không module nào trong package này ngoài `transport` được phép import DDS.
-Xem docs/superpowers/specs/2026-08-22-dds-path-planning-service-design.md
+Xem docs/superpowers/specs/2026-08-31-nats-service-redesign.md
 """
 
 from __future__ import annotations

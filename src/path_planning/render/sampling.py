@@ -16,7 +16,8 @@ from path_planning.trajectory import mission_path as mission_path
 from path_planning.types import PlannerState, Point, PreprocessedScenario
 
 
-_ARC_SAMPLES = 24  # even -> a sample lands exactly on the waypoint (arc midpoint)
+# Số chẵn -> một điểm mẫu rơi chính xác vào waypoint (trung điểm cung lượn)
+_ARC_SAMPLES = 24
 
 RenderMode = Literal["straight", "dubins"]
 """Chế độ kết xuất quỹ đạo bay của hàm :func:`sample_trajectory`."""
@@ -26,10 +27,11 @@ class TurnMarker(TypedDict):
     """Thông tin vị trí tiếp điểm bắt đầu, đỉnh rẽ và kết thúc của cung lượn.
 
     Attributes:
-        start: Entry tangent point, where the arc leaves the incoming leg.
-        mid: The waypoint the arc is symmetric about.
-        end: Exit tangent point, where the arc rejoins the outgoing leg.
-        angle_deg: Signed heading change; positive is left/CCW.
+        start: Tiếp điểm vào, nơi cung lượn rời khỏi đoạn bay đến.
+        mid: Waypoint đỉnh rẽ mà cung lượn đối xứng qua.
+        end: Tiếp điểm ra, nơi cung lượn nhập lại vào đoạn bay đi.
+        angle_deg: Góc đổi hướng có dấu; giá trị dương là rẽ trái / ngược chiều
+            kim đồng hồ.
     """
 
     start: Point
@@ -47,15 +49,15 @@ def sample_trajectory(
     """Lấy mẫu quỹ đạo bay thành chuỗi điểm dày đặc để vẽ đồ thị.
 
     Args:
-        path: Waypoints as ``(waypoint, heading)`` pairs.
-        turn_radius: Fillet arc radius (m).
-        mode: ``'straight'`` to join waypoints directly, ``'dubins'`` to round
-            each interior corner with a tangent arc.
-        step: Sample spacing along straight legs (m); defaults to
+        path: Danh sách waypoint dạng các cặp ``(waypoint, heading)``.
+        turn_radius: Bán kính cung lượn fillet (m).
+        mode: ``'straight'`` để nối thẳng các waypoint, ``'dubins'`` để bo tròn
+            từng góc cua bên trong bằng một cung tiếp tuyến.
+        step: Bước lấy mẫu dọc theo các đoạn thẳng (m); mặc định là
             ``turn_radius / 8``.
 
     Returns:
-        The polyline points; empty for an empty path.
+        Danh sách các điểm đường gấp khúc (polyline); rỗng nếu đường bay rỗng.
     """
     if not path:
         return []
@@ -74,12 +76,12 @@ def turn_markers(path: Sequence[PlannerState], turn_radius: float) -> list[TurnM
     """Xác định vị trí các điểm tiếp xúc của từng cung lượn dọc theo đường bay.
 
     Args:
-        path: Waypoints as ``(waypoint, heading)`` pairs.
-        turn_radius: Fillet arc radius (m).
+        path: Danh sách waypoint dạng các cặp ``(waypoint, heading)``.
+        turn_radius: Bán kính cung lượn fillet (m).
 
     Returns:
-        One marker per turn, in path order. Straight legs produce no markers,
-        and a path of fewer than three waypoints has no interior corner at all.
+        Một marker cho mỗi góc rẽ, theo thứ tự đường bay. Các đoạn thẳng không
+        sinh marker, và đường bay có ít hơn 3 waypoint sẽ không có góc rẽ nào.
     """
     waypoints = [wp for wp, _ in path]
     if len(waypoints) < 3:
@@ -93,32 +95,31 @@ def build_full_path(
 ) -> list[PlannerState]:
     """Thêm điểm cất cánh O và đích T để đường bay bao phủ toàn bộ hành trình.
 
-    Thin alias for :func:`core.mission.full_mission_path`, kept because this is
-    the name the render layer, the GUI and the tests already call. The planners
-    validate the path they emit with the SAME function, which is the point: the
-    drawn trajectory and the oracle's verdict must be about one list of
-    waypoints.
+    Bí danh chuyển tiếp gọn cho
+    :func:`path_planning.trajectory.mission_path.full_mission_path`, được giữ
+    lại vì tầng hiển thị render, GUI và các bài test đã gọi tên này. Bộ lập kế
+    hoạch kiểm định đường bay phát ra bằng CHÍNH hàm này: quỹ đạo vẽ ra và phán
+    quyết của oracle phải cùng dựa trên một danh sách waypoint duy nhất.
 
     Args:
-        result_path: The planner's interior waypoints.
-        preprocessed: The prepared scenario supplying the endpoints.
+        result_path: Các waypoint bên trong do bộ lập kế hoạch tìm được.
+        preprocessed: Kịch bản đã tiền xử lý cung cấp các điểm đầu cuối.
 
     Returns:
-        The full mission path, endpoints included.
+        Đường bay nhiệm vụ đầy đủ, bao gồm cả điểm xuất phát và đích.
     """
     return mission_path.full_mission_path(result_path, preprocessed)
 
 
 # --------------------------------------------------------------------------
-# Internal geometry
+# Hình học nội bộ
 # --------------------------------------------------------------------------
 
 
 def _extend_straight(points: list[Point], target: Point, step: float) -> None:
-    """Append samples along the straight segment ``points[-1] -> target``.
+    """Nối thêm các điểm mẫu dọc theo đoạn thẳng ``points[-1] -> target``.
 
-    The starting point is not repeated. A degenerate (sub-nanometre) segment
-    appends nothing.
+    Điểm bắt đầu không bị lặp lại. Đoạn thẳng suy biến (< 1e-9 m) sẽ không thêm gì.
     """
     x0, y0 = points[-1]
     x1, y1 = target
@@ -146,42 +147,43 @@ def _dubins_arc_path(
 ) -> tuple[list[Point], list[TurnMarker]]:
     """Tạo các đoạn thẳng và cung lượn tròn bo góc.
 
-    Each arc is tangent to both legs and symmetric about the waypoint, so entry
-    and exit headings are preserved exactly.
+    Mỗi cung tiếp tuyến với cả hai chặng bay và đối xứng qua waypoint,
+    đảm bảo góc hướng bay vào và ra được bảo toàn chính xác.
 
     Args:
-        waypoints: Corner positions in path order.
-        turn_radius: Fillet arc radius (m).
-        step: Sample spacing along straight legs (m).
-        arc_samples: Samples emitted per arc.
+        waypoints: Danh sách tọa độ góc rẽ theo thứ tự đường bay.
+        turn_radius: Bán kính cung lượn fillet arc (m).
+        step: Bước lấy mẫu dọc theo đoạn thẳng (m).
+        arc_samples: Số mẫu sinh ra trên mỗi cung lượn.
 
     Returns:
-        A ``(points, turns)`` pair: a dense continuous polyline, and one
-        :class:`TurnMarker` per arc.
+        Cặp ``(points, turns)``: danh sách điểm tọa độ liên tục dày đặc và danh
+        sách :class:`TurnMarker` ứng với từng góc rẽ.
     """
     points: list[Point] = [waypoints[0]]
     turns: list[TurnMarker] = []
     for i in range(1, len(waypoints) - 1):
         wp_prev, wp, wp_next = waypoints[i - 1], waypoints[i], waypoints[i + 1]
-        u = _unit(wp_prev, wp)  # incoming leg direction
-        v = _unit(wp, wp_next)  # outgoing leg direction
+        u = _unit(wp_prev, wp)  # hướng chặng bay đến
+        v = _unit(wp, wp_next)  # hướng chặng bay đi
         h_in = math.atan2(u[1], u[0])
         h_out = math.atan2(v[1], v[0])
         alpha = math.atan2(math.sin(h_out - h_in), math.cos(h_out - h_in))
         a_abs = abs(alpha)
         if a_abs < 1e-9:
-            _extend_straight(points, wp, step)  # no turn: straight to wp
+            # không đổi hướng: bay thẳng tới waypoint
+            _extend_straight(points, wp, step)
             continue
-        # Tangent inset t = R*tan(alpha/2) - unchanged radius R.
+        # Độ lùi tiếp điểm t = R*tan(alpha/2) với bán kính R không đổi
         t = turn_radius * math.tan(a_abs / 2.0)
         s = 1.0 if alpha > 0 else -1.0
-        start = (wp[0] - u[0] * t, wp[1] - u[1] * t)  # entry tangent point
-        end = (wp[0] + v[0] * t, wp[1] + v[1] * t)  # exit tangent point
-        n_in = (-u[1] * s, u[0] * s)  # inward normal
+        start = (wp[0] - u[0] * t, wp[1] - u[1] * t)  # tiếp điểm vào cung lượn
+        end = (wp[0] + v[0] * t, wp[1] + v[1] * t)  # tiếp điểm ra khỏi cung lượn
+        n_in = (-u[1] * s, u[0] * s)  # pháp tuyến hướng vào tâm quay
         cx = start[0] + turn_radius * n_in[0]
         cy = start[1] + turn_radius * n_in[1]
         ang0 = math.atan2(start[1] - cy, start[0] - cx)
-        _extend_straight(points, start, step)  # straight leg into the turn
+        _extend_straight(points, start, step)  # chặng bay thẳng dẫn vào góc rẽ
         for k in range(1, arc_samples + 1):
             a = ang0 + s * a_abs * (k / arc_samples)
             points.append(
@@ -190,5 +192,5 @@ def _dubins_arc_path(
         turns.append(
             {"start": start, "mid": wp, "end": end, "angle_deg": math.degrees(alpha)}
         )
-    _extend_straight(points, waypoints[-1], step)  # final straight leg
+    _extend_straight(points, waypoints[-1], step)  # chặng bay thẳng cuối cùng
     return points, turns

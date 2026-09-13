@@ -1,19 +1,20 @@
 """Trực quan hóa kịch bản nhiệm vụ, chướng ngại vật và quỹ đạo bay.
 
-Consumes the planner's output; nothing here feeds back into the search, so the
-dependency runs render -> core and never the reverse.
+Tiếp nhận dữ liệu đầu ra của bộ lập kế hoạch; không có gì ở đây phản hồi ngược
+vào tìm kiếm, do đó quan hệ phụ thuộc là render -> core và không bao giờ đảo ngược.
 
-Note on typing: matplotlib ships only partial type information, so this package
-is checked in pyright's `standard` mode rather than `strict` (see the
-executionEnvironments block in pyproject.toml). Every function here is still
-fully annotated; what is relaxed is only the demand that matplotlib's own
-signatures be fully known.
+Ghi chú về kiểu dữ liệu: matplotlib chỉ cung cấp một phần stubs kiểu, do đó
+gói này được kiểm tra ở chế độ `standard` của pyright thay vì `strict` (xem khối
+executionEnvironments trong pyproject.toml). Mọi hàm ở đây vẫn được chú thích
+kiểu đầy đủ; sự nới lỏng duy nhất là không đòi hỏi các chữ ký hàm của chính
+matplotlib phải được định kiểu hoàn chỉnh.
 """
 
 from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Sequence
 from itertools import pairwise
 from typing import TYPE_CHECKING, Literal
 
@@ -25,12 +26,7 @@ from path_planning import config
 from path_planning.render import sampling
 
 
-logger = logging.getLogger(__name__)
-
-
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from matplotlib.figure import Figure
 
     from path_planning.render.sampling import RenderMode
@@ -42,23 +38,25 @@ if TYPE_CHECKING:
         Scenario,
     )
 
+logger = logging.getLogger(__name__)
+
 Extents = tuple[tuple[float, float], tuple[float, float]]
-"""Axis limits as ``((xmin, xmax), (ymin, ymax))``."""
+"""Giới hạn trục tọa độ dạng ``((xmin, xmax), (ymin, ymax))``."""
 
 Fit = Literal["map", "content"]
-"""How :func:`plot_scenario` frames the view."""
+"""Cách :func:`plot_scenario` căn chỉnh khung hình hiển thị."""
 
 
 def _plot_extents(scenario: Scenario | None, pad: float = 2000.0) -> Extents:
     """Tính toán giới hạn trục tọa độ cho kịch bản theo góc nhìn toàn bản đồ.
 
     Args:
-        scenario: The scenario being drawn, or ``None``.
-        pad: Margin added around the bounding box (m).
+        scenario: Kịch bản đang được vẽ, hoặc ``None``.
+        pad: Khoảng đệm bổ sung xung quanh hộp bao (m).
 
     Returns:
-        The axis limits: the bounding box of all safezone polygons plus padding
-        when present, else the global ``config.MAP_WIDTH/HEIGHT`` rectangle.
+        Giới hạn trục tọa độ: hộp bao của tất cả đa giác safezone cộng phần đệm
+        khi có mặt, nếu không sẽ dùng hình chữ nhật ``config.MAP_WIDTH/HEIGHT``.
     """
     safezones = scenario.get("safezones") if scenario else None
     if safezones:
@@ -69,7 +67,7 @@ def _plot_extents(scenario: Scenario | None, pad: float = 2000.0) -> Extents:
 
 
 def _obstacle_bbox(obstacle: Obstacle) -> tuple[float, float, float, float]:
-    """Return ``(xmin, xmax, ymin, ymax)`` of one obstacle, inflated or raw."""
+    """Trả về ``(xmin, xmax, ymin, ymax)`` của một vật cản, đã giãn nở hoặc thô."""
     if obstacle["type"] == "circle":
         (cx, cy), r = obstacle["center"], obstacle["radius"]
         return (cx - r, cx + r, cy - r, cy + r)
@@ -88,36 +86,37 @@ def _content_extents(
 ) -> Extents:
     """Tính toán giới hạn trục tọa độ tự động khớp theo nội dung đường bay.
 
-    Two passes: first the mission CORE (start/goal, interior waypoints and the
-    flown path ONLY), then everything else NEAR the core -- obstacles whose bbox
-    intersects, and safezone-boundary vertices that fall within, the core
-    expanded by ``obstacle_gate_frac * core_span``. This keeps the flight
-    prominent even when the scenario carries a giant enclosing safezone (a quad
-    spanning the whole map) or a far-off obstacle cluster hundreds of km
-    off-route: those still get drawn, just clipped.
+    Hai lượt duyệt: trước hết là TRỌNG TÂM nhiệm vụ (CHỈ gồm start/goal, các
+    waypoint trung gian và quỹ đạo bay thực tế), sau đó là tất cả những gì GẦN
+    vùng trọng tâm -- các vật cản có bbox giao cắt, và các đỉnh biên safezone
+    nằm trong vùng trọng tâm mở rộng thêm ``obstacle_gate_frac * core_span``.
+    Điều này giữ cho đường bay luôn nổi bật ngay cả khi kịch bản mang một
+    safezone bao bọc khổng lồ (hình tứ giác trải rộng toàn bản đồ) hoặc một
+    cụm vật cản xa hàng trăm km ngoài đường bay: những đối tượng đó vẫn được vẽ,
+    chỉ là bị cắt theo khung nhìn.
 
     Args:
-        scenario: The scenario being drawn, or ``None``.
-        preprocessed: The prepared scenario supplying endpoints and obstacles.
-        result: The plan result supplying the flown path.
-        pad_frac: Margin as a fraction of the framed span.
-        min_pad: Minimum margin (m).
-        obstacle_gate_frac: How far beyond the core, in core spans, an obstacle
-            may sit and still widen the frame.
+        scenario: Kịch bản đang được vẽ, hoặc ``None``.
+        preprocessed: Kịch bản tiền xử lý cung cấp các điểm đầu cuối và vật cản.
+        result: Kết quả kế hoạch cung cấp đường bay thực tế.
+        pad_frac: Tỷ lệ đệm theo chiều rộng khung hình.
+        min_pad: Khoảng đệm tối thiểu (m).
+        obstacle_gate_frac: Khoảng cách vượt ngoài vùng trọng tâm (tính theo độ
+            rộng trọng tâm) mà một vật cản vẫn có thể làm mở rộng khung hình.
 
     Returns:
-        The axis limits, falling back to the ``config.MAP_WIDTH/HEIGHT``
-        rectangle when there is no mission core to frame.
+        Giới hạn trục tọa độ, mặc định dùng hình chữ nhật ``config.MAP_WIDTH/HEIGHT``
+        khi không có vùng trọng tâm nhiệm vụ để căn khung.
     """
     xs: list[float] = []
     ys: list[float] = []
 
     def add(p: Point) -> None:
-        """Include one point in the frame."""
+        """Đưa một điểm vào khung hình."""
         xs.append(p[0])
         ys.append(p[1])
 
-    # --- Pass 1: mission core (endpoints, interior waypoints, flown path) ---
+    # --- Lượt 1: Vùng trọng tâm nhiệm vụ (điểm đầu/cuối, waypoint, quỹ đạo) ---
     if preprocessed:
         start_pos = preprocessed.get("start_pos")
         if start_pos is not None:
@@ -137,13 +136,13 @@ def _content_extents(
             (-min_pad, config.MAP_HEIGHT + min_pad),
         )
 
-    # --- Gate: the core bbox expanded by obstacle_gate_frac * core_span ---
+    # --- Cổng lọc (Gate): bbox trọng tâm mở rộng thêm gate * core_span ---
     cxmin, cxmax, cymin, cymax = min(xs), max(xs), min(ys), max(ys)
     gate = obstacle_gate_frac * max(cxmax - cxmin, cymax - cymin, 1.0)
     gxmin, gxmax = cxmin - gate, cxmax + gate
     gymin, gymax = cymin - gate, cymax + gate
 
-    # --- Pass 2a: obstacles whose bbox intersects the gate ---
+    # --- Lượt 2a: Các chướng ngại vật có bbox giao cắt với cổng lọc ---
     obstacles: list[Obstacle] = (
         list(preprocessed.get("obstacles", [])) if preprocessed else []
     )
@@ -162,9 +161,9 @@ def _content_extents(
             add((oxmin, oymin))
             add((oxmax, oymax))
 
-    # --- Pass 2b: safezone-boundary vertices that fall within the gate ---
-    # A real operating corridor near the flight is shown; a giant enclosing
-    # safezone contributes no in-gate vertices, so it does not blow up the frame.
+    # --- Lượt 2b: Các đỉnh biên safezone nằm trong phạm vi cổng lọc ---
+    # Hiển thị hành lang bay thực tế gần đường bay; vùng an toàn safezone bao quanh
+    # khổng lồ không đóng góp đỉnh nào trong cổng lọc, tránh làm phình khung hình.
     for safezone in (scenario.get("safezones") or []) if scenario else []:
         for vx, vy in safezone:
             if gxmin <= vx <= gxmax and gymin <= vy <= gymax:
@@ -177,14 +176,14 @@ def _content_extents(
 
 
 def _point_at_arclength(pts: Sequence[Point], s: float) -> Point:
-    """Find the point at arc length ``s`` along a polyline.
+    """Tìm điểm tại chiều dài cung ``s`` dọc theo đường gấp khúc polyline.
 
     Args:
-        pts: The polyline points.
-        s: Arc length from the start (m); clamped to the polyline's ends.
+        pts: Danh sách các điểm của đường gấp khúc.
+        s: Chiều dài cung tính từ điểm bắt đầu (m); được kẹp trong giới hạn 2 đầu mút.
 
     Returns:
-        The interpolated point.
+        Tọa độ điểm nội suy.
     """
     if s <= 0:
         return pts[0]
@@ -199,7 +198,7 @@ def _point_at_arclength(pts: Sequence[Point], s: float) -> Point:
 
 
 def _draw_operating_area(ax: Axes, scenario: Scenario) -> None:
-    """Draw each safezone polygon, or the full map rectangle when none is given."""
+    """Vẽ từng đa giác safezone, hoặc hình chữ nhật toàn bản đồ nếu không có."""
     safezones = scenario.get("safezones")
     if safezones:
         for safezone in safezones:
@@ -232,7 +231,7 @@ def _draw_operating_area(ax: Axes, scenario: Scenario) -> None:
 def _draw_obstacles(
     ax: Axes, scenario: Scenario, preprocessed: PreprocessedScenario
 ) -> None:
-    """Draw the raw obstacles, and the inflated buffer zones as dashed outlines."""
+    """Vẽ các vật cản thô, và vùng đệm an toàn giãn nở dưới dạng nét đứt."""
     for island in scenario.get("islands", []):
         ax.add_patch(
             MplPolygon(
@@ -274,11 +273,11 @@ def _draw_obstacles(
 
 
 def _draw_endpoints(ax: Axes, preprocessed: PreprocessedScenario) -> None:
-    """Mark the takeoff point, the goal, and the two mandatory leg directions.
+    """Đánh dấu điểm cất cánh O, đích T và hướng bay của hai đoạn thẳng bắt buộc.
 
-    A scenario without both endpoints has nothing to mark, so it is skipped
-    rather than defaulted -- a placeholder would draw a marker at the map origin
-    and read as real data.
+    Kịch bản thiếu điểm đầu cuối sẽ không có gì để vẽ, nên được bỏ qua
+    thay vì gán mặc định -- điểm giữ chỗ có thể vẽ một điểm tại gốc tọa độ (0, 0)
+    và bị hiểu nhầm là dữ liệu thực.
     """
     takeoff = preprocessed.get("start_pos")
     target = preprocessed.get("goal_pos")
@@ -319,7 +318,7 @@ def _draw_endpoints(ax: Axes, preprocessed: PreprocessedScenario) -> None:
 
 
 def _draw_waypoints_only(ax: Axes, waypoints: Sequence[Point]) -> None:
-    """Draw the path as bare straight segments; the fallback when sampling fails."""
+    """Vẽ đường bay chỉ gồm các đoạn thẳng thô; cơ chế dự phòng khi lấy mẫu thất bại."""
     for i in range(len(waypoints) - 1):
         ax.plot(
             [waypoints[i][0], waypoints[i + 1][0]],
@@ -336,23 +335,23 @@ def _draw_trajectory(
     result: PlanResultView,
     trajectory_mode: RenderMode,
 ) -> None:
-    """Draw the flown trajectory: straight legs plus radius-R turn arcs.
+    """Vẽ quỹ đạo bay thực tế: các đoạn thẳng nối với cung lượn fillet bán kính R.
 
-    This is the planner's actual kinodynamic model. It replaced a legacy Dubins
-    renderer whose placeholder sampler dropped whole segments (LRL/RRL produced
-    no samples), so the line appeared to jump between waypoints.
+    Đây là mô hình kinodynamic thực tế của bộ lập kế hoạch. Nó thay thế bộ kết
+    xuất Dubins cũ vốn từng làm rơi các phân đoạn (LRL/RRL không sinh mẫu),
+    khiến đường bay bị nhảy cóc giữa các waypoint.
 
     Args:
-        ax: The axes to draw on.
-        preprocessed: The prepared scenario supplying R and the endpoints.
-        result: The plan result supplying the path.
-        trajectory_mode: Straight legs or filleted arcs.
+        ax: Trục tọa độ matplotlib để vẽ.
+        preprocessed: Kịch bản tiền xử lý cung cấp bán kính R và các điểm đầu cuối.
+        result: Kết quả kế hoạch cung cấp đường bay.
+        trajectory_mode: Đoạn thẳng 'straight' hoặc cung lượn 'dubins'.
     """
     path = result["path"] or []
     waypoints = [wp for wp, _heading in path]
 
     turn_radius = preprocessed.get("turn_radius", config.R)
-    # Span the full mission O..T (the planner path covers only W_1..W_{n-1}).
+    # Bao phủ toàn bộ nhiệm vụ O..T (đường bay của planner chỉ gồm W_1..W_{n-1}).
     full = sampling.build_full_path(path, preprocessed)
     samples = sampling.sample_trajectory(full, turn_radius, mode=trajectory_mode)
     if len(samples) < 2:
@@ -376,7 +375,7 @@ def _draw_trajectory(
         if i % label_every == 0:
             ax.text(wp[0] + 300, wp[1] + 300, f"W{i}", fontsize=9, alpha=0.6)
 
-    # Mark where each turn arc begins and ends (small dots).
+    # Đánh dấu vị trí bắt đầu và kết thúc của từng cung lượn (chấm nhỏ).
     if trajectory_mode == "dubins":
         for j, turn in enumerate(sampling.turn_markers(full, turn_radius)):
             ax.plot(
@@ -396,9 +395,9 @@ def _draw_trajectory(
                 label="Turn end" if j == 0 else None,
             )
 
-    # Mark the mandatory-straight endpoints ON the flown path: L0 after O (end
-    # of the takeoff straight) and d_ss before T (start of the engagement
-    # run-in), both located by arc length rather than by waypoint index.
+    # Đánh dấu các mốc đoạn thẳng bắt buộc TRÊN quỹ đạo bay: L0 sau O (kết thúc
+    # chặng thẳng cất cánh) và d_ss trước T (bắt đầu chặng tiếp cận khóa mục tiêu),
+    # cả hai đều được xác định theo chiều dài cung thay vì theo chỉ số waypoint.
     l0 = preprocessed["start_state"].get("straight_length", config.L0)
     dss = preprocessed["goal_state"].get("engagement_distance", config.DSS)
     flown_len = sum(math.dist(a, b) for a, b in pairwise(samples))
@@ -425,16 +424,16 @@ def _info_footer(
 ) -> str:
     """Xây dựng chuỗi văn bản tóm tắt thông số và kết quả hiển thị dưới chân bản đồ.
 
-    Parameters come from the preprocessed scenario -- the values the planner
-    actually used -- not from ``config``.
+    Các tham số lấy từ kịch bản tiền xử lý -- các giá trị mà bộ lập kế hoạch
+    thực sự sử dụng -- không lấy từ ``config``.
 
     Args:
-        scenario: The scenario being drawn.
-        preprocessed: The prepared scenario.
-        result: The plan result, if planning ran.
+        scenario: Kịch bản đang được vẽ.
+        preprocessed: Kịch bản tiền xử lý.
+        result: Kết quả kế hoạch, nếu đã chạy lập kế hoạch.
 
     Returns:
-        The footer text, one or two lines.
+        Chuỗi văn bản footer, một hoặc hai dòng.
     """
     turn_radius = preprocessed.get("turn_radius", config.R)
     alpha_deg = math.degrees(preprocessed.get("alpha_max_rad", config.ALPHA_MAX_RAD))
@@ -462,8 +461,8 @@ def _info_footer(
 
     path = result.get("path")
     if path:
-        # Total flown distance over the FULL mission O -> W1 ... W_{n-1} -> T
-        # (straight chords, the same measure performance_eval uses).
+        # Tổng khoảng cách bay trên TOÀN BỘ nhiệm vụ O -> W1 ... W_{n-1} -> T
+        # (các đoạn thẳng, cùng phép đo mà performance_eval sử dụng).
         full_mission = sampling.build_full_path(path, preprocessed)
         total_km = (
             sum(
@@ -489,21 +488,19 @@ def plot_scenario(
     """Vẽ đồ thị kịch bản nhiệm vụ và quỹ đạo đường bay đã lập kế hoạch.
 
     Args:
-        scenario: The original scenario from :mod:`core.map_generator`.
-        preprocessed: The prepared scenario from
-            :func:`core.preprocessing.prepare_scenario`.
-        result: The plan result; omitted, only the scenario is drawn.
-        title: Figure title.
-        save_path: Where to save the figure; the figure is closed after saving.
-        figsize: Figure size in inches.
-        trajectory_mode: Straight legs or filleted arcs.
-        fit: View framing. ``'map'`` keeps the legacy full-map / safezone-bbox
-            view; ``'content'`` auto-fits the axes to the flown path, endpoints
-            and nearby obstacles so a small mission is easy to follow inside a
-            large map.
+        scenario: Kịch bản gốc từ :mod:`path_planning.scenario.generator`.
+        preprocessed: Kịch bản tiền xử lý từ
+            :func:`path_planning.scenario.preprocessing.prepare_scenario`.
+        result: Kết quả lập kế hoạch; nếu bỏ trống chỉ vẽ kịch bản.
+        title: Tiêu đề biểu đồ.
+        save_path: Đường dẫn lưu ảnh; đóng figure sau khi lưu nếu có.
+        figsize: Kích thước biểu đồ (inch).
+        trajectory_mode: Đoạn thẳng 'straight' hoặc cung lượn 'dubins'.
+        fit: Chế độ căn khung hình. ``'map'`` giữ khung toàn bộ bản đồ/safezone;
+            ``'content'`` tự căn chỉnh theo quỹ đạo bay và vật cản lân cận.
 
     Returns:
-        The matplotlib figure.
+        Đối tượng matplotlib figure.
     """
     fig, ax = plt.subplots(figsize=figsize, dpi=config.FIGURE_DPI)
 
@@ -530,9 +527,9 @@ def plot_scenario(
                 "Arc interpolation failed, degrading to straight line.",
                 exc_info=exc,
             )
-            # Degrade to bare segments rather than losing the whole plot: this
-            # runs inside the batch harness, where one unplottable scenario must
-            # not abort the other fifteen.
+            # Hạ cấp xuống vẽ các đoạn thẳng thô thay vì làm mất toàn bộ biểu đồ:
+            # đoạn này chạy trong batch harness, nơi một kịch bản không vẽ được
+            # không được phép làm dừng mười lăm kịch bản còn lại.
             waypoints = [wp for wp, _heading in result["path"] or []]
             _draw_waypoints_only(ax, waypoints)
             for wp in waypoints:
@@ -542,9 +539,9 @@ def plot_scenario(
     ax.set_ylabel("North (m)", fontsize=11)
     ax.set_title(title, fontsize=13, fontweight="bold")
 
-    # Legend inside the axes, upper-left; the info box lives below the axes as a
-    # figure footer so the two never overlap. Deduplicated by label because the
-    # per-turn markers would otherwise contribute one entry each.
+    # Chú giải đặt bên trong trục tọa độ, góc trên bên trái; hộp thông tin nằm
+    # dưới trục dạng footer để không bao giờ bị đè lên nhau. Khử trùng lặp theo
+    # nhãn vì mỗi điểm đánh dấu góc rẽ sẽ sinh ra một mục riêng.
     handles, labels = ax.get_legend_handles_labels()
     by_label = dict(zip(labels, handles, strict=True))
     ax.legend(

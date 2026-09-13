@@ -25,27 +25,27 @@ class AstarSearchEngine:
     """Vòng lặp tìm kiếm A* chính trên hàng đợi ưu tiên kèm kiểm soát deadline.
 
     Attributes:
-        start_corners: Seeded initial search corner states.
-        goal_state: Target goal state.
-        successors: Successor candidate generator.
-        collision: Spatial collision checker.
-        time_budget_s: Maximum allowable search duration in seconds.
-        origin: Aircraft takeoff location.
-        target: Mission target destination.
-        is_goal_heading_free: Whether goal approach heading is unconstrained.
-        turn_radius: Minimum turning radius in metres.
-        dss: Seeker approach distance in metres.
-        l0: Takeoff straight stabilization distance in metres.
-        alpha_build: Construction turn angle limit in radians.
-        heuristic_fn: Distance estimation heuristic function.
-        open_set: Priority queue of active states sorted by f-score.
-        closed_set: Set of visited states.
-        g_scores: Map from State to minimum known cost-to-come.
-        iteration_count: Number of loop iterations completed.
-        nodes_expanded: Number of distinct nodes popped from open set.
-        is_budget_bound: True if search was truncated by time budget.
-        is_search_failed: True if search queue emptied without reaching goal.
-        shot_armed: True if analytic two-corner goal shot solver is active.
+        start_corners: Danh sách các trạng thái điểm rẽ xuất phát được gieo mầm.
+        goal_state: Trạng thái đích mục tiêu.
+        successors: Bộ sinh các ứng viên trạng thái kế tiếp.
+        collision: Bộ kiểm tra va chạm không gian hình học.
+        time_budget_s: Thời gian tìm kiếm tối đa cho phép tính bằng giây.
+        origin: Tọa độ điểm cất cánh của máy bay (O).
+        target: Tọa độ đích mục tiêu nhiệm vụ (T).
+        is_goal_heading_free: Cho biết hướng tiếp cận đích có tự do hay không.
+        turn_radius: Bán kính quay vòng tối thiểu tính bằng mét.
+        dss: Chiều dài đoản trình tiếp cận cảm biến thẳng về đích (m).
+        l0: Chiều dài đoạn bay thẳng ổn định sau cất cánh (m).
+        alpha_build: Giới hạn góc rẽ dùng trong khâu dựng hình (rad).
+        heuristic_fn: Hàm heuristic ước lượng khoảng cách tới đích.
+        open_set: Hàng đợi ưu tiên chứa các trạng thái mở sắp theo f-score.
+        closed_set: Tập hợp các trạng thái đã duyệt đóng.
+        g_scores: Bản đồ lưu chi phí g_cost nhỏ nhất đã biết tới mỗi State.
+        iteration_count: Số vòng lặp tìm kiếm đã thực thi.
+        nodes_expanded: Số lượng nút trạng thái đã mở rộng từ open_set.
+        is_budget_bound: True nếu tìm kiếm bị dừng sớm do hết thời gian.
+        is_search_failed: True nếu hàng đợi rỗng mà không tìm thấy đường tới đích.
+        shot_armed: True nếu cơ chế giải tích bắn 2 góc rẽ về đích được kích hoạt.
     """
 
     def __init__(
@@ -68,19 +68,19 @@ class AstarSearchEngine:
         """Khởi tạo động cơ tìm kiếm A* với các điểm rẽ xuất phát và hạn mức thời gian.
 
         Args:
-            start_corners: List of seeded initial corner states.
-            goal_state: Target goal state.
-            successor_generator: Successor state generator instance.
-            collision_detector: Collision detection engine instance.
-            time_budget_s: Maximum allowed search time in seconds.
-            origin: Aircraft takeoff point O.
-            target: Mission target point T.
-            is_goal_heading_free: True if arrival heading is unconstrained.
-            turn_radius: Minimum vehicle turn radius in metres.
-            dss: Terminal sensor engagement distance in metres.
-            l0: Takeoff stabilization distance in metres.
-            alpha_build: Construction turn angle limit in radians.
-            heuristic_fn: Distance heuristic function (state, goal) -> float.
+            start_corners: Danh sách các trạng thái điểm rẽ xuất phát.
+            goal_state: Trạng thái đích mục tiêu.
+            successor_generator: Thực thể bộ sinh trạng thái kế tiếp.
+            collision_detector: Thực thể bộ phát hiện va chạm hình học.
+            time_budget_s: Hạn mức thời gian tìm kiếm tối đa (giây).
+            origin: Tọa độ điểm cất cánh O.
+            target: Tọa độ điểm mục tiêu đích T.
+            is_goal_heading_free: True nếu hướng tiếp cận đích không bị ràng buộc.
+            turn_radius: Bán kính quay vòng tối thiểu của phương tiện (m).
+            dss: Khoảng cách bay thẳng đoản trình khóa mục tiêu (m).
+            l0: Chiều dài đoạn bay thẳng ổn định sau cất cánh (m).
+            alpha_build: Góc rẽ tối đa cho phép khi dựng hình (rad).
+            heuristic_fn: Hàm heuristic ước tính chi phí (state, goal) -> float.
         """
         self.start_corners = start_corners
         self.goal_state = goal_state
@@ -132,10 +132,10 @@ class AstarSearchEngine:
         """Kiểm tra trạng thái hiện tại đã đạt điều kiện tới đích hay chưa.
 
         Args:
-            current: State to evaluate.
+            current: Trạng thái cần đánh giá.
 
         Returns:
-            True if state satisfies terminal approach conditions; False otherwise.
+            True nếu trạng thái thỏa mãn các điều kiện tiếp cận đích; ngược lại False.
         """
         if self.is_goal_heading_free:
             parent = current.parent
@@ -157,13 +157,13 @@ class AstarSearchEngine:
         """Truy vết ngược các con trỏ parent về xuất phát để tạo chuỗi waypoint.
 
         Args:
-            state: Reached terminal goal state.
+            state: Trạng thái đích đã chạm tới.
 
         Returns:
-            Sequence of (waypoint, heading) states from start to goal.
+            Chuỗi các trạng thái (waypoint, heading) từ xuất phát tới đích.
 
         Raises:
-            TypeError: If any reconstructed state is missing a heading.
+            TypeError: Nếu bất kỳ trạng thái nào thiếu thông tin góc hướng bay.
         """
         states: list[State] = []
         current: State | None = state
@@ -186,8 +186,8 @@ class AstarSearchEngine:
         """Trả về thống kê chẩn đoán hiệu năng của quá trình tìm kiếm.
 
         Returns:
-            Dictionary containing iteration count, closed/open set sizes, time budget,
-            and timeout flags.
+            Từ điển chứa số vòng lặp, kích thước tập đóng/mở, ngân sách thời gian,
+            và cờ báo trạng thái kết thúc tìm kiếm.
         """
         return {
             "iterations": self.iteration_count,
@@ -202,7 +202,7 @@ class AstarSearchEngine:
         """Thực thi vòng lặp tìm kiếm A* cho đến khi tới đích hoặc hết thời gian.
 
         Returns:
-            Reconstructed path of (waypoint, heading) tuples, or None on failure.
+            Chuỗi đường bay dạng các tuple (waypoint, heading), hoặc None nếu thất bại.
         """
         started_at = time.perf_counter()
         budget_s = self.time_budget_s

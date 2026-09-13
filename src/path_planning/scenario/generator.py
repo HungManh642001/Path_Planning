@@ -27,7 +27,7 @@ from path_planning.types import (
 
 
 _MAX_PLACEMENT_ATTEMPTS = 1000
-"""Consecutive rejected placements before a generator gives up on the rest."""
+"""Số lần thử đặt vị trí thất bại liên tiếp tối đa trước khi bộ sinh dừng lại."""
 
 
 @dataclass(frozen=True)
@@ -35,11 +35,11 @@ class _StartGoalGeometry:
     """Hình học đoạn thẳng nối điểm xuất phát và đích.
 
     Attributes:
-        mx: Midpoint x between start and goal.
-        my: Midpoint y between start and goal.
-        angle_start_goal: Bearing from start to goal (rad).
-        angle_perp: The perpendicular to that bearing (rad).
-        dist_sg: Separation between start and goal (m).
+        mx: Tọa độ x trung điểm giữa start và goal.
+        my: Tọa độ y trung điểm giữa start và goal.
+        angle_start_goal: Góc phương vị từ start đến goal (rad).
+        angle_perp: Góc vuông góc với phương vị start-goal (rad).
+        dist_sg: Khoảng cách giữa start và goal (m).
     """
 
     mx: float
@@ -66,34 +66,34 @@ def _sample_center(
 ) -> Point:
     """Lấy mẫu tọa độ tâm chướng ngại vật trong phạm vi 80% diện tích giữa bản đồ.
 
-    Shared by both generators -- they placed centres with the same 20 lines and
-    the same three topologies, and a divergence between them would be silent.
+    Dùng chung cho cả 2 hàm sinh -- đều bố trí tâm theo cùng 20 dòng code và
+    3 dạng topo giống nhau, tránh sự phân kỳ ngầm giữa chúng.
 
-    The draw ORDER is part of the contract: scenarios are reproduced from a
-    seed, so every branch must consume exactly the random values it consumed
-    before (two uniforms, two gausses, or t-then-noise).
+    Thứ tự rút ngẫu nhiên là một phần của cam kết: kịch bản được tái lập chính
+    xác từ seed, do đó mỗi nhánh phải tiêu thụ đúng các giá trị ngẫu nhiên như cũ
+    (hai giá trị đều, hai giá trị gauss, hoặc t kèm nhiễu).
 
     Args:
-        topology: Placement strategy.
-        map_bounds: The ``(width, height)`` map rectangle.
-        geom: Precomputed start-goal line geometry.
+        topology: Chiến lược bố trí vật cản.
+        map_bounds: Hình chữ nhật giới hạn bản đồ ``(width, height)``.
+        geom: Thông số hình học tính trước của đoạn nối start-goal.
 
     Returns:
-        A candidate centre inside the middle 80% of the map.
+        Tọa độ tâm ứng viên nằm trong phạm vi 80% diện tích giữa bản đồ.
 
     Raises:
-        ValueError: If ``topology`` is not one of the three known strategies.
+        ValueError: Nếu ``topology`` không thuộc 3 chiến lược đã định nghĩa.
     """
     width, height = map_bounds
     if topology == "random":
         center_x = random.uniform(width * 0.1, width * 0.9)
         center_y = random.uniform(height * 0.1, height * 0.9)
     elif topology == "center_cluster":
-        # Gaussian around the midpoint between start and goal.
+        # Phân phối Gauss quanh trung điểm nối giữa start và goal.
         center_x = random.gauss(geom.mx, geom.dist_sg / 3)
         center_y = random.gauss(geom.my, geom.dist_sg / 3)
     elif topology == "wall_block":
-        # Along a line perpendicular to the start-goal line.
+        # Dọc theo đường vuông góc với đoạn nối start-goal.
         t = random.uniform(-150000, 150000)
         noise = random.uniform(-geom.dist_sg / 3, geom.dist_sg / 3)
         center_x = (
@@ -107,9 +107,9 @@ def _sample_center(
             + noise * math.sin(geom.angle_start_goal)
         )
     else:
-        # Previously this fell through with center_x unbound: a NameError on the
-        # first pass, or -- worse -- silently reusing the previous iteration's
-        # centre on later ones, so every obstacle landed on the same spot.
+        # Trước đây trường hợp này bị lọt khiến center_x không được gán: gây lỗi
+        # NameError ở lượt đầu, hoặc tái dùng ngầm tâm của vòng lặp trước đó,
+        # khiến mọi vật cản bị đặt chồng lên cùng một vị trí.
         raise ValueError(
             f"unknown topology {topology!r}; expected 'random', "
             "'center_cluster' or 'wall_block'"
@@ -123,16 +123,17 @@ def _sample_center(
 def _clears_endpoints(shape: ShapelyPolygon, start: Point, goal: Point) -> bool:
     """Kiểm tra vật cản có cách ly an toàn khỏi điểm cất cánh và đích không.
 
-    The buffer used to be ``config.EPS`` (1e-6 m), which let an obstacle touch
-    the start point and left the mandatory takeoff or seeker leg born blocked.
+    Vùng đệm trước đây dùng ``config.EPS`` (1e-6 m), khiến vật cản có thể chạm
+    sát điểm xuất phát và làm chặng bay cất cánh hoặc tự dẫn bị chặn ngay từ đầu.
 
     Args:
-        shape: The candidate obstacle geometry.
-        start: Start position.
-        goal: Goal position.
+        shape: Hình học vật cản ứng viên.
+        start: Vị trí xuất phát.
+        goal: Vị trí đích.
 
     Returns:
-        ``True`` if both endpoints keep ``config.SPAWN_CLEARANCE_M``.
+        ``True`` nếu cả hai điểm đầu cuối đều duy trì khoảng cách tối thiểu
+        ``config.SPAWN_CLEARANCE_M``.
     """
     return (
         shape.distance(ShapelyPoint(start)) >= config.SPAWN_CLEARANCE_M
@@ -152,22 +153,23 @@ def generate_random_islands(
     """Sinh danh sách các đảo đa giác ngẫu nhiên không giao nhau.
 
     Args:
-        num_islands: Number of islands to place.
-        map_bounds: The ``(width, height)`` map rectangle.
-        start: Start position, kept clear of obstacles.
-        goal: Goal position, kept clear of obstacles.
-        topology: Placement strategy.
-        seed: Random seed for reproducibility.
+        num_islands: Số lượng đảo cần bố trí.
+        map_bounds: Hình chữ nhật giới hạn bản đồ ``(width, height)``.
+        start: Vị trí xuất phát, được giữ cách ly khỏi vật cản.
+        goal: Vị trí đích, được giữ cách ly khỏi vật cản.
+        topology: Chiến lược bố trí vật cản.
+        seed: Seed ngẫu nhiên để tái lập kết quả.
 
     Returns:
-        The placed islands, each an open ring of ``(x, y)`` vertices. Fewer than
-        ``num_islands`` if the map is too tight to fit them all.
+        Danh sách các đảo đã bố trí, mỗi đảo là một vành hở gồm các đỉnh
+        ``(x, y)``. Có thể ít hơn ``num_islands`` nếu bản đồ không đủ chỗ.
     """
     if seed is not None:
         random.seed(seed)
 
     islands: list[PolygonCoords] = []
-    placed: list[ShapelyPolygon] = []  # Polygon form of `islands`, for separation
+    # Dạng ShapelyPolygon của các đảo để kiểm tra khoảng cách cách ly
+    placed: list[ShapelyPolygon] = []
     attempts = 0
     geom = _start_goal_geometry(start, goal)
 
@@ -178,7 +180,7 @@ def generate_random_islands(
             config.ISLAND_VERTICES_MIN, config.ISLAND_VERTICES_MAX
         )
 
-        # Irregular star-like polygon: each vertex radius perturbed independently.
+        # Đa giác dạng sao bất quy tắc: bán kính mỗi đỉnh được làm nhiễu độc lập.
         island: PolygonCoords = []
         for i in range(num_vertices):
             angle = 2 * math.pi * i / num_vertices
@@ -192,9 +194,9 @@ def generate_random_islands(
 
         island_polygon = ShapelyPolygon(island)
 
-        # Islands must not overlap each other, the same rule the circle
-        # generator enforces. Compared as real polygon distance rather than a
-        # centre-distance heuristic, so irregular shapes are handled exactly.
+        # Các đảo không được chồng lấn nhau, tuân theo quy tắc tương tự bộ sinh
+        # hình tròn. So sánh theo khoảng cách đa giác thực tế thay vì ước lượng
+        # khoảng cách tâm thô, giúp xử lý chính xác các hình dạng bất quy tắc.
         valid = all(
             island_polygon.distance(p) >= config.ISLAND_MIN_SEPARATION_M for p in placed
         ) and _clears_endpoints(island_polygon, start, goal)
@@ -221,16 +223,16 @@ def generate_dynamic_obstacles(
     """Sinh danh sách các chướng ngại vật hình tròn không giao nhau.
 
     Args:
-        num_sites: Number of obstacles to place.
-        map_bounds: The ``(width, height)`` map rectangle.
-        start: Start position, kept clear of obstacles.
-        goal: Goal position, kept clear of obstacles.
-        topology: Placement strategy.
-        seed: Random seed for reproducibility.
+        num_sites: Số lượng chướng ngại vật cần bố trí.
+        map_bounds: Hình chữ nhật giới hạn bản đồ ``(width, height)``.
+        start: Vị trí xuất phát, được giữ cách ly khỏi vật cản.
+        goal: Vị trí đích, được giữ cách ly khỏi vật cản.
+        topology: Chiến lược bố trí vật cản.
+        seed: Seed ngẫu nhiên để tái lập kết quả.
 
     Returns:
-        The placed obstacles as ``(center, radius)``. Fewer than ``num_sites``
-        if the map is too tight to fit them all.
+        Danh sách các chướng ngại vật đã bố trí dạng ``(tâm, bán_kính)``. Có thể ít hơn
+        ``num_sites`` nếu bản đồ quá chật không thể xếp đủ.
     """
     if seed is not None:
         random.seed(seed)
@@ -243,10 +245,10 @@ def generate_dynamic_obstacles(
         center = _sample_center(topology, map_bounds, geom)
         radius = random.uniform(config.OBSTACLE_RADIUS_MIN, config.OBSTACLE_RADIUS_MAX)
 
-        # Separation is measured between the two BOUNDARIES (r_i + r_j + gap),
-        # not against a flat 2*max_radius heuristic: charging every pair the
-        # worst-case radius made the effective spacing 100.5 km on a 500 km map,
-        # which capped the map at ~13 circles however many were requested.
+        # Khoảng cách cách ly được đo giữa BIÊN của hai hình tròn (r_i + r_j + gap),
+        # thay vì dùng ngưỡng thô 2*max_radius: việc gán bán kính xấu nhất cho mọi cặp
+        # từng khiến khoảng cách hiệu dụng lên tới 100.5 km trên bản đồ 500 km,
+        # giới hạn tối đa chỉ ~13 hình tròn bất kể số lượng yêu cầu là bao nhiêu.
         valid = all(
             math.hypot(center[0] - other_center[0], center[1] - other_center[1])
             >= radius + other_radius + config.CIRCLE_MIN_SEPARATION_M
@@ -266,18 +268,18 @@ def create_scenario(scenario_config: ScenarioConfig) -> Scenario:
     """Tạo kịch bản nhiệm vụ hoàn chỉnh gồm điểm đầu cuối và tập chướng ngại vật.
 
     Args:
-        scenario_config: The recipe. ``start`` and ``goal`` are mandatory; the
-            generator knobs (``num_islands``, ``num_dynamic_obstacles``,
-            ``topology``, ``seed``, ``map_bounds``, ``safezones``) all default.
-            A ``goal_heading`` of ``None`` selects free-goal mode.
+        scenario_config: Cấu hình kịch bản. ``start`` và ``goal`` là bắt buộc;
+            các tham số bộ sinh (``num_islands``, ``num_dynamic_obstacles``,
+            ``topology``, ``seed``, ``map_bounds``, ``safezones``) có giá trị
+            mặc định. ``goal_heading`` bằng ``None`` tương ứng với chế độ tiếp
+            cận đích tự do (free-goal).
 
     Returns:
-        The generated scenario.
+        Kịch bản đã được sinh.
 
     Raises:
-        ValueError: If ``start`` or ``goal`` is missing. Both are required
-            because the topology samplers place obstacles relative to the
-            start-goal line.
+        ValueError: Nếu thiếu ``start`` hoặc ``goal``. Cả hai đều bắt buộc
+            vì các bộ lấy mẫu topo bố trí vật cản tương đối so với đoạn nối start-goal.
     """
     start = scenario_config.get("start")
     goal = scenario_config.get("goal")
@@ -317,12 +319,12 @@ def create_scenario(scenario_config: ScenarioConfig) -> Scenario:
         "start": start,
         "start_heading": scenario_config.get("start_heading", 0),
         "goal": goal,
-        # None => free terminal approach direction (the planner chooses it).
+        # None => hướng tiếp cận đích tự do (bộ lập kế hoạch tự chọn).
         "goal_heading": scenario_config.get("goal_heading"),
         "map_bounds": map_bounds,
-        # Optional operating areas: a LIST of polygons, each a list of (x, y)
-        # vertices. The aircraft must stay inside their union. None/empty =>
-        # fall back to the config.MAP_WIDTH/HEIGHT rectangle.
+        # Vùng an toàn hoạt động tùy chọn: DANH SÁCH các đa giác (đỉnh (x, y)).
+        # Khí tài bay phải nằm hoàn toàn trong hợp (union) của các vùng này.
+        # None/rỗng => mặc định dùng hình chữ nhật config.MAP_WIDTH/HEIGHT.
         "safezones": scenario_config.get("safezones"),
         "islands": islands,
         "dynamic_obstacles": dynamic_obstacles,
@@ -339,21 +341,21 @@ def generate_random_scenario(
     """Sinh kịch bản ngẫu nhiên hoàn chỉnh với đảo và chướng ngại vật tròn.
 
     Args:
-        seed: Random seed for reproducibility.
-        topology: Optional obstacle topology ("random", "center_cluster", "wall_block").
-            If None, a topology is sampled randomly.
+        seed: Seed ngẫu nhiên để tái lập kết quả.
+        topology: Chiến lược topo vật cản tùy chọn ("random", "center_cluster",
+            "wall_block"). Nếu là None, một topo sẽ được lấy mẫu ngẫu nhiên.
 
     Returns:
-        Scenario: Dictionary containing map bounds, start/goal, islands, and dynamic
-            obstacles.
+        Scenario: Dictionary chứa giới hạn bản đồ, điểm start/goal, danh sách
+            đảo và chướng ngại vật tròn.
     """
     random.seed(seed)
 
-    # Map bounds
+    # Giới hạn bản đồ
     map_bounds = (config.MAP_WIDTH, config.MAP_HEIGHT)
     width, height = map_bounds
 
-    # Random start and goal positions within the map bounds
+    # Tọa độ ngẫu nhiên của điểm xuất phát và đích trong giới hạn bản đồ
     while True:
         start = (
             random.uniform(width * 0.1, width * 0.9),
@@ -365,7 +367,7 @@ def generate_random_scenario(
         )
         if (
             spatial.distance(start, goal) > 400000
-        ):  # Ensure start and goal are not too close
+        ):  # Đảm bảo start và goal không quá gần nhau
             break
 
     heading_start_to_goal = spatial.angle_to_heading(start, goal)
@@ -385,12 +387,12 @@ def generate_random_scenario(
             "start_heading": heading_start_to_goal
             + random.uniform(
                 -math.pi / 2, math.pi / 2
-            ),  # Add some randomness to the start heading
+            ),  # Thêm độ lệch ngẫu nhiên vào góc hướng xuất phát
             "goal": goal,
             "goal_heading": heading_start_to_goal
             + random.uniform(
                 -math.pi / 2, math.pi / 2
-            ),  # Add some randomness to the goal heading
+            ),  # Thêm độ lệch ngẫu nhiên vào góc hướng tiếp cận đích
             "num_islands": random.randint(0, 20),
             "num_dynamic_obstacles": random.randint(0, 20),
             "topology": selected_topology,

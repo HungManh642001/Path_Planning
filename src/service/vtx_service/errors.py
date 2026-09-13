@@ -1,6 +1,6 @@
 """Lỗi nội bộ: traceback ở lại server, client nhận một mã tra cứu.
 
-``PlanReply.detail`` đi thẳng ra dây DDS tới mọi client trên domain. Trước
+``PlanReply.detail`` đi thẳng ra dây mạng tới mọi client. Trước
 module này, ``runner._child`` nhét ``traceback.format_exc()`` vào đó, nên một
 lỗi bất kỳ trong planner phát tán đường dẫn tuyệt đối trên server và cấu trúc
 thư mục của nó ra ngoài - thông tin không client nào cần và không client nào

@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from path_planning import config
@@ -125,7 +125,7 @@ def scenario_to_plan_request(
 _scenario_to_plan_request = scenario_to_plan_request
 
 
-class ExecutionMode(str, Enum):
+class ExecutionMode(StrEnum):
     """Chế độ thực thi thuật toán lập lịch."""
 
     LOCAL = "local"

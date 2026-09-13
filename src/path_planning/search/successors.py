@@ -164,14 +164,14 @@ class SuccessorGenerator:
         """Kiểm tra và cập nhật ngân sách đoạn bay thẳng cho một bước chuyển tiếp.
 
         Args:
-            current: Preceding state.
-            leg_len: Length of the candidate chord in metres.
-            turn: Turn angle required at current state in radians.
-            far_reserve: Turn fillet reserve required at the far end in metres.
-            advance: Distance slid along heading ray before turning in metres.
+            current: Trạng thái tiền nhiệm.
+            leg_len: Chiều dài đoạn hợp âm ứng viên tính bằng mét.
+            turn: Góc rẽ yêu cầu tại trạng thái hiện tại tính bằng radian.
+            far_reserve: Dự trữ cung lượn fillet tại đầu mút xa tính bằng mét.
+            advance: Khoảng cách trượt dọc tia trước khi rẽ tính bằng mét.
 
         Returns:
-            Updated straight budget on the new leg if feasible; None if infeasible.
+            Ngân sách đoạn thẳng mới nếu khả thi; None nếu không khả thi.
         """
         reserve = self.turn_radius * math.tan(turn / 2.0)
         if current.straight_budget + advance - reserve < current.min_straight_in:
@@ -200,7 +200,7 @@ class SuccessorGenerator:
         successors: list[tuple[State, float]] = []
         position = current_state.waypoint
 
-        # Wrap step off circle boundary
+        # Bước quấn tiếp tục men theo biên vòng tròn
         if self.collision_detector.on_circle_boundary(position):
             forward = (
                 position[0] + config.WRAP_STEP_M * math.cos(heading),
@@ -211,7 +211,7 @@ class SuccessorGenerator:
             ) and self.collision_detector.is_collision_free(position, forward):
                 successors.append((State(forward, heading), config.WRAP_STEP_M))
 
-        # Strategy A: candidates
+        # Chiến lược A: Các điểm ứng viên (tiếp tuyến và đỉnh đa giác)
         goal_wp = self.goal_state.waypoint
         candidates: list[Point] = []
         for center, radius in self.scenario["circle_obstacles"]:
@@ -258,7 +258,7 @@ class SuccessorGenerator:
         ):
             return successors
 
-        # Strategy B: radial fan
+        # Chiến lược B: Quạt nan hướng tâm (radial fan)
         num_directions = config.RADIAL_FAN_DIRECTIONS
         for i in range(num_directions):
             heading_offset = -self.alpha_build + 2 * self.alpha_build * i / (
@@ -443,15 +443,15 @@ class SuccessorGenerator:
         """Xây dựng phương án cơ động giải tích 2 góc rẽ bắn thẳng về mục tiêu đích.
 
         Args:
-            current: Current search state.
-            leg1_memo: Clearance memoization dictionary for leg 1 rays.
-            leg2_memo: Clearance memoization dictionary for leg 2 rays.
+            current: Trạng thái tìm kiếm hiện tại.
+            leg1_memo: Bảng tra cứu ghi nhớ kiểm tra khoảng hở tia chặng 1.
+            leg2_memo: Bảng tra cứu ghi nhớ kiểm tra khoảng hở tia chặng 2.
 
         Returns:
-            Terminal goal state linked via corner if shot succeeds; None otherwise.
+            Trạng thái đích nối qua điểm rẽ nếu bắn thành công; None nếu thất bại.
 
         Raises:
-            TypeError: If current heading or goal heading is missing in fixed-goal mode.
+            TypeError: Nếu thiếu góc hướng bay ở chế độ đích ràng buộc.
         """
         if self.is_goal_heading_free:
             return None

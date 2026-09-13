@@ -9,7 +9,7 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def fixed_seed() -> Generator[None, None, None]:
+def fixed_seed() -> Generator[None]:
     """Cố định seed ngẫu nhiên mặc định để đảm bảo tính quyết định (determinism).
 
     Yields:

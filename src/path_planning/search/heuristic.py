@@ -14,11 +14,11 @@ def euclidean_heuristic(state: State, goal_state: State) -> float:
     """Ước lượng khoảng cách Euclid còn lại từ state tới goal_state.
 
     Args:
-        state: Current search state node.
-        goal_state: Target goal state node.
+        state: Nút trạng thái tìm kiếm hiện tại.
+        goal_state: Nút trạng thái đích mục tiêu.
 
     Returns:
-        Admissible straight-line Euclidean distance in metres.
+        Khoảng cách Euclid đường chim bay tính bằng mét (admissible heuristic).
     """
     dx = goal_state.waypoint[0] - state.waypoint[0]
     dy = goal_state.waypoint[1] - state.waypoint[1]

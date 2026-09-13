@@ -10,7 +10,8 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
-from shapely.geometry import LineString, MultiPolygon, Point as ShapelyPoint, Polygon
+from shapely.geometry import LineString, Point as ShapelyPoint, Polygon
+from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from shapely.prepared import PreparedGeometry, prep as shp_prep
 
@@ -27,17 +28,17 @@ class CollisionDetector:
     """Động cơ kiểm tra va chạm tầm nhìn đoạn thẳng và không gian cung lượn bo góc.
 
     Attributes:
-        scenario: Preprocessed scenario containing obstacles and boundaries.
-        turn_radius: Minimum vehicle turn radius in metres.
-        construct_delta: Clearance buffer added to obstacle geometry in metres.
-        polygons: List of Shapely polygon representations of island obstacles.
-        poly_bboxes: Bounding boxes (minx, miny, maxx, maxy) for all polygon obstacles.
-        circles: List of circular obstacles as (center_x, center_y, radius).
-        safezone: Enclosing multi-polygon safe operational area, if defined.
-        safezone_prep: Prepared Shapely geometry for fast spatial containment queries.
-        has_explicit_bounds: Whether bounding box limits were provided.
-        bounds_w: Operational area width in metres.
-        bounds_h: Operational area height in metres.
+        scenario: Kịch bản tiền xử lý chứa chướng ngại vật và các đường biên.
+        turn_radius: Bán kính quay vòng tối thiểu của phương tiện (m).
+        construct_delta: Vùng đệm khoảng cách an toàn cộng thêm vào vật cản (m).
+        polygons: Danh sách đa giác Shapely đại diện cho các đảo chướng ngại vật.
+        poly_bboxes: Hộp bao (minx, miny, maxx, maxy) cho tất cả các đảo.
+        circles: Danh sách chướng ngại vật tròn dạng (center_x, center_y, radius).
+        safezone: Đa giác/đa đa giác bao bọc vùng an toàn, nếu được định nghĩa.
+        safezone_prep: Hình học Shapely chuẩn bị sẵn để truy vấn điểm nhanh.
+        has_explicit_bounds: Cờ xác định giới hạn hộp bao bản đồ có được cấp không.
+        bounds_w: Chiều rộng vùng hoạt động tính bằng mét.
+        bounds_h: Chiều cao vùng hoạt động tính bằng mét.
     """
 
     def __init__(
@@ -49,8 +50,8 @@ class CollisionDetector:
         """Khởi tạo hình học chướng ngại vật, hộp bao và vùng an toàn.
 
         Args:
-            preprocessed_scenario: Preprocessed scenario dictionary.
-            turn_radius: Minimum vehicle turning radius in metres.
+            preprocessed_scenario: Dictionary kịch bản đã tiền xử lý.
+            turn_radius: Bán kính quay vòng tối thiểu của phương tiện tính bằng mét.
         """
         self.scenario = preprocessed_scenario
         self.turn_radius = turn_radius
@@ -67,8 +68,8 @@ class CollisionDetector:
         ]
 
         safezones = preprocessed_scenario.get("safezones")
-        self.safezone: Polygon | MultiPolygon | None = (
-            unary_union([Polygon(sz) for sz in safezones]) if safezones else None  # pyright: ignore[reportAttributeAccessIssue]
+        self.safezone: BaseGeometry | None = (
+            unary_union([Polygon(sz) for sz in safezones]) if safezones else None
         )
         self.safezone_prep: PreparedGeometry | None = (
             shp_prep(self.safezone) if self.safezone is not None else None
@@ -85,17 +86,17 @@ class CollisionDetector:
     def is_collision_free(self, p1: Point, p2: Point) -> bool:
         """Kiểm tra đoạn thẳng nối p1 -> p2 có an toàn và không va chạm vật cản không.
 
-        Applies axis-aligned bounding box filtering before computing exact
-        point-to-segment distances for circular obstacles and Shapely relate_pattern
-        topological intersection tests for polygonal obstacles.
+        Áp dụng lọc hộp bao trục tọa độ (AABB) trước khi tính khoảng cách
+        từ điểm đến đoạn thẳng cho vật cản tròn và kiểm tra giao cắt topo
+        Shapely relate_pattern cho các chướng ngại vật đa giác.
 
         Args:
-            p1: Segment start coordinate (x, y) in metres.
-            p2: Segment end coordinate (x, y) in metres.
+            p1: Tọa độ điểm đầu đoạn thẳng (x, y) tính bằng mét.
+            p2: Tọa độ điểm cuối đoạn thẳng (x, y) tính bằng mét.
 
         Returns:
-            True if the segment clears all obstacles and remains inside safezone;
-            False otherwise.
+            True nếu đoạn thẳng tránh được toàn bộ vật cản và nằm trong vùng an toàn;
+            False nếu ngược lại.
         """
         x0, x1 = (p1[0], p2[0]) if p1[0] <= p2[0] else (p2[0], p1[0])
         y0, y1 = (p1[1], p2[1]) if p1[1] <= p2[1] else (p2[1], p1[1])
@@ -131,12 +132,13 @@ class CollisionDetector:
         """Kiểm tra cung lượn fillet arc bán kính R bo góc rẽ w có an toàn không.
 
         Args:
-            h_in: Inbound heading angle into corner w in radians.
-            w: Corner waypoint position (x, y) in metres.
-            w_next: Outbound destination waypoint position (x, y) in metres.
+            h_in: Góc hướng bay vào góc rẽ w tính bằng radian.
+            w: Tọa độ waypoint góc rẽ (x, y) tính bằng mét.
+            w_next: Tọa độ waypoint bay ra tiếp theo (x, y) tính bằng mét.
 
         Returns:
-            True if the fillet curve does not intersect any obstacles; False otherwise.
+            True nếu đường cong fillet không giao cắt với bất kỳ vật cản nào;
+            False nếu ngược lại.
         """
         prev = (w[0] - math.cos(h_in), w[1] - math.sin(h_in))
         pts = oracle.arc_points(
@@ -183,11 +185,13 @@ class CollisionDetector:
         """Kiểm tra điểm có nằm trên biên chướng ngại vật tròn nào không.
 
         Args:
-            point: Query point coordinate (x, y).
-            tol: Distance tolerance in metres. If None, uses default construction delta.
+            point: Tọa độ điểm cần kiểm tra (x, y).
+            tol: Dung sai khoảng cách tính bằng mét. Nếu None, dùng khoảng hở
+                dựng hình mặc định.
 
         Returns:
-            True if point is within tolerance of a circle boundary; False otherwise.
+            True nếu điểm nằm trong phạm vi dung sai của biên hình tròn;
+            False nếu ngược lại.
         """
         if tol is None:
             tol = self.construct_delta + config.GEOM_EPS_M
@@ -199,10 +203,10 @@ class CollisionDetector:
         """Kiểm tra điểm có nằm trong phạm vi bản đồ hoặc vùng an toàn safezone không.
 
         Args:
-            point: Query coordinate (x, y) in metres.
+            point: Tọa độ điểm cần kiểm tra (x, y) tính bằng mét.
 
         Returns:
-            True if inside map boundary / safezone; False otherwise.
+            True nếu nằm trong giới hạn bản đồ / vùng an toàn; False nếu ngược lại.
         """
         if self.safezone_prep is not None:
             return self.safezone_prep.covers(ShapelyPoint(*point))
@@ -215,11 +219,11 @@ class CollisionDetector:
         """Kiểm tra đoạn thẳng tiếp cận mục tiêu W_{n-1} -> T có thông suốt không.
 
         Args:
-            goal_wp: Penultimate waypoint position W_{n-1}.
-            target: Final target destination T.
+            goal_wp: Vị trí waypoint áp chót W_{n-1}.
+            target: Vị trí mục tiêu đích T.
 
         Returns:
-            True if terminal run-in straight chord is collision-free; False otherwise.
+            True nếu đoạn thẳng tự dẫn vào đích không va chạm; False nếu ngược lại.
         """
         return self.is_collision_free(goal_wp, target)
 
@@ -234,14 +238,15 @@ class CollisionDetector:
         """Kiểm tra va chạm đoạn thẳng dọc theo tia kèm ghi nhớ đoạn thông suốt/bị chặn.
 
         Args:
-            memo: Ray clearance map from ray angle to [min_clear, max_blocked].
-            ray: Ray angle in radians.
-            dist: Distance from ray origin to end point in metres.
-            p1: Segment start point (x, y).
-            p2: Segment end point (x, y).
+            memo: Bảng ghi nhớ khoảng cách an toàn từ góc tia tới
+                [khoảng_an_toàn_nhỏ_nhất, khoảng_chặn_lớn_nhất].
+            ray: Góc tia tính bằng radian.
+            dist: Khoảng cách từ gốc tia đến điểm cuối tính bằng mét.
+            p1: Tọa độ điểm đầu đoạn thẳng (x, y).
+            p2: Tọa độ điểm cuối đoạn thẳng (x, y).
 
         Returns:
-            True if chord is collision-free; False if blocked.
+            True nếu đoạn thẳng không va chạm; False nếu bị chặn.
         """
         span = memo.get(ray)
         if span is None:

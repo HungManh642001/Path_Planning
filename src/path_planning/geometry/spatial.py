@@ -137,6 +137,18 @@ def circle_tangent_points(point: Point, center: Point, radius: float) -> list[Po
     ]
 
 
+def _extract_points(path: Sequence[PlannerState] | Sequence[Point]) -> list[Point]:
+    """Trích xuất danh sách tọa độ 2D (x, y) từ Sequence Point hoặc PlannerState."""
+    pts: list[Point] = []
+    for p in path:
+        first = p[0]
+        if isinstance(first, tuple):
+            pts.append(first)
+        else:
+            pts.append((float(first), float(p[1])))
+    return pts
+
+
 def calculate_polyline_length(
     path: Sequence[PlannerState] | Sequence[Point],
 ) -> float:
@@ -150,7 +162,7 @@ def calculate_polyline_length(
     """
     if len(path) < 2:
         return 0.0
-    pts: list[Point] = [p[0] if isinstance(p[0], tuple) else p for p in path]  # type: ignore[misc]
+    pts = _extract_points(path)
     return sum(distance(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
 
 
@@ -172,7 +184,7 @@ def calculate_dubins_path_length(
     """
     if len(path) < 2:
         return 0.0
-    pts: list[Point] = [p[0] if isinstance(p[0], tuple) else p for p in path]  # type: ignore[misc]
+    pts = _extract_points(path)
     if len(pts) == 2:
         return distance(pts[0], pts[1])
 

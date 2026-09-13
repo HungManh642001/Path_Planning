@@ -9,17 +9,14 @@ Giết một tiến trình con là cách trung thực duy nhất để có thờ
 Thứ hai, planner đọc 35 hằng số global từ ``config``. Trong một tiến trình con
 dùng-một-lần thì mọi thay đổi đều chết theo nó.
 
-VÌ SAO ``forkserver`` CHỨ KHÔNG PHẢI ``fork``: DDS chạy thread nền ở tầng C, và
-``fork()`` từ một tiến trình có thread là công thức kinh điển của deadlock trong
-bản sao - fork chỉ mang theo thread đang gọi, nên một mutex do thread khác đang
-giữ sẽ bị giữ vĩnh viễn. Đo trên máy phát triển: ``fork`` với ``core`` nạp sẵn
-là 37,7 ms và sống sót 15/15 lần dưới lưu lượng DDS, nhưng 15 lần thành công
-không phải bằng chứng an toàn cho một deadlock xác suất. ``forkserver`` +
-preload, khởi động TRƯỚC khi DDS tồn tại, là 56,4 ms và an toàn về CẤU TRÚC.
-40 ms là vô nghĩa so với 16 ms - 4 s thời gian lập kế hoạch.
+VÌ SAO ``forkserver`` CHỨ KHÔNG PHẢI ``fork``: Lớp transport mạng thường chạy thread
+nền hoặc event loop, và ``fork()`` từ một tiến trình có thread là công thức kinh điển
+của deadlock trong bản sao - fork chỉ mang theo thread đang gọi, nên một mutex do
+thread khác đang giữ sẽ bị giữ vĩnh viễn. ``forkserver`` + preload, khởi động TRƯỚC
+khi transport tồn tại, đảm bảo an toàn về CẤU TRÚC.
 
-Hệ quả với chỗ gọi: :meth:`PlanRunner.start` phải chạy TRƯỚC khi khởi tạo bất kỳ
-thứ gì thuộc DDS.
+Hệ quả với chỗ gọi: :meth:`PlanRunner.start` phải chạy TRƯỚC khi khởi tạo kết nối
+mạng hoặc transport.
 """
 
 from __future__ import annotations
@@ -150,12 +147,12 @@ class PlanRunner:
         self._force_raise_next = False
 
     def start(self) -> None:
-        """Khởi động forkserver. PHẢI gọi trước khi khởi tạo DDS."""
+        """Khởi động forkserver. PHẢI gọi trước khi khởi tạo transport/network."""
         _ensure_pythonpath_for_forkserver()
         mp.set_forkserver_preload(_PRELOAD)
         self._ctx = mp.get_context("forkserver")
         # Ép forkserver ra đời NGAY BÂY GIỜ, trong khi tiến trình này còn sạch
-        # thread. Nếu để nó ra đời ở request đầu tiên thì DDS đã lên rồi.
+        # thread. Nếu để nó ra đời ở request đầu tiên thì transport/network đã lên rồi.
         # `join()` chứ không bỏ mặc: một Process không join để lại zombie tới
         # khi bị thu gom, và ở đây không có lý do gì để không chờ nó.
         primer = self._ctx.Process(target=_noop)

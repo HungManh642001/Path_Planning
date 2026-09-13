@@ -30,25 +30,25 @@ class State:
     """Một nút trạng thái tìm kiếm đại diện cho vị trí 2D và hướng bay.
 
     Attributes:
-        waypoint: Planar 2D coordinate (x, y) in metres.
-        heading: Vehicle orientation angle in radians, or None for free-goal.
-        cos_h: Cosine of heading angle for fast dot-product prefiltering.
-        sin_h: Sine of heading angle for fast dot-product prefiltering.
-        parent: Pointer to preceding state on the search path.
-        g_cost: Accumulated cost from takeoff to this state in metres.
-        h_cost: Estimated heuristic cost from this state to the goal in metres.
-        straight_budget: Remaining straight flight length on the inbound leg (m).
-        min_straight_in: Minimum required straight flight threshold (m).
-        is_start_corner: True if state is one of the initial seeded takeoff corners.
-        via: Optional intermediate waypoint inserted during pivot sliding.
+        waypoint: Tọa độ 2D mặt phẳng (x, y) tính bằng mét.
+        heading: Góc hướng bay tính bằng radian, hoặc None nếu đích tự do.
+        cos_h: Cosine góc hướng bay dùng để lọc nhanh tích vô hướng.
+        sin_h: Sine góc hướng bay dùng để lọc nhanh tích vô hướng.
+        parent: Con trỏ tới trạng thái tiền nhiệm trên đường tìm kiếm.
+        g_cost: Chi phí tích lũy từ điểm xuất phát tới trạng thái này (m).
+        h_cost: Chi phí heuristic ước lượng từ trạng thái này tới đích (m).
+        straight_budget: Chiều dài đoạn bay thẳng còn lại trên chặng bay vào (m).
+        min_straight_in: Ngưỡng chiều dài bay thẳng tối thiểu bắt buộc (m).
+        is_start_corner: True nếu là một trong các điểm rẽ xuất phát được gieo mầm.
+        via: Waypoint trung gian tùy chọn được chèn khi trượt điểm pivot.
     """
 
     def __init__(self, waypoint: Point, heading: float | None) -> None:
         """Khởi tạo một nút trạng thái trên lưới tìm kiếm.
 
         Args:
-            waypoint: 2D planar coordinates (x, y) in metres.
-            heading: Heading angle in radians, or None for headingless goal target.
+            waypoint: Tọa độ 2D mặt phẳng (x, y) tính bằng mét.
+            heading: Góc hướng bay (rad), hoặc None nếu đích không ràng buộc.
         """
         self.waypoint: Point = waypoint
         self.heading: float | None = heading
@@ -70,7 +70,7 @@ class State:
             Tuple (x_bin, y_bin, heading_bin).
 
         Raises:
-            TypeError: If heading is None.
+            TypeError: Nếu hướng bay heading là None.
         """
         if self.heading is None:
             raise TypeError("a headingless goal target has no lattice key")
@@ -80,7 +80,7 @@ class State:
         """Băm nút trạng thái theo ô lưới lượng tử hóa.
 
         Returns:
-            Integer hash value.
+            Giá trị băm nguyên.
         """
         key = self._key
         if key is None:
@@ -91,10 +91,10 @@ class State:
         """So sánh bằng nhau dựa trên khóa ô lưới lượng tử hóa.
 
         Args:
-            other: Comparison target object.
+            other: Đối tượng mục tiêu cần so sánh.
 
         Returns:
-            True if other is State and falls in the same quantized lattice cell.
+            True nếu other là State và rơi vào cùng ô lưới rời rạc; False ngược lại.
         """
         if not isinstance(other, State):
             return NotImplemented
@@ -110,10 +110,10 @@ class State:
         """So sánh thứ tự ưu tiên theo tổng chi phí ước lượng f = g + w*h.
 
         Args:
-            other: Another State to compare with.
+            other: Nút State khác cần so sánh.
 
         Returns:
-            True if this state has strictly lower f-cost than other.
+            True nếu trạng thái này có chi phí f thấp hơn rõ rệt.
         """
         return (self.g_cost + config.HEURISTIC_WEIGHT * self.h_cost) < (
             other.g_cost + config.HEURISTIC_WEIGHT * other.h_cost
